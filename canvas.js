@@ -1,44 +1,71 @@
-// canvas.js - Controller for Detective Map Standalone Canvas Window
+// canvas.js - Detective Map V2.0 Living Learning Map Controller
 
 document.addEventListener('DOMContentLoaded', async () => {
   // DOM Elements
   const viewportContainer = document.getElementById('viewport-container');
   const gridBackground = document.getElementById('grid-background');
-  const worldCardsLayer = document.getElementById('world-cards-layer');
+  const worldMapLayer = document.getElementById('world-map-layer');
+  const svgEdgesLayer = document.getElementById('svg-edges-layer');
+  const conceptsContainer = document.getElementById('concepts-container');
   const inkCanvas = document.getElementById('ink-canvas');
+  const scratchCanvas = document.getElementById('scratch-canvas');
   const ctx = inkCanvas.getContext('2d');
+  const scratchCtx = scratchCanvas.getContext('2d');
 
-  // Toolbar & Status Elements
+  // Toolbar Elements
+  const selectWorkspace = document.getElementById('select-workspace');
+  const btnNewWorkspace = document.getElementById('btn-new-workspace');
   const toolBtns = document.querySelectorAll('.tool-btn');
+  const btnAddSource = document.getElementById('btn-add-source');
+  const btnAddConcept = document.getElementById('btn-add-concept');
   const btnUndo = document.getElementById('btn-undo');
-  const btnClearInk = document.getElementById('btn-clear-ink');
-  const btnZoomIn = document.getElementById('btn-zoom-in');
-  const btnZoomOut = document.getElementById('btn-zoom-out');
   const btnZoomFit = document.getElementById('btn-zoom-fit');
-  const zoomLevelText = document.getElementById('zoom-level');
   const btnExport = document.getElementById('btn-export-canvas');
-  const fileImport = document.getElementById('file-import-canvas');
-
   const btnCloudSync = document.getElementById('btn-cloud-sync');
   const cloudSyncIcon = document.getElementById('cloud-sync-icon');
   const cloudSyncLabel = document.getElementById('cloud-sync-label');
 
-  // Pairing Modal Elements
+  // Status & Modal Elements
+  const pointerDeviceTag = document.getElementById('pointer-device-tag');
+  const coordsTag = document.getElementById('coords-tag');
+  const conceptCountTag = document.getElementById('concept-count-tag');
+  const edgeCountTag = document.getElementById('edge-count-tag');
+  const strokeCountTag = document.getElementById('stroke-count-tag');
+
+  const proposalToast = document.getElementById('proposal-toast');
+  const proposalSummary = document.getElementById('proposal-summary');
+  const proposalStats = document.getElementById('proposal-stats');
+  const btnApplyProposalAll = document.getElementById('btn-apply-proposal-all');
+  const btnDismissProposal = document.getElementById('btn-dismiss-proposal');
+
+  const evidenceDrawer = document.getElementById('evidence-drawer');
+  const drawerConceptTitle = document.getElementById('drawer-concept-title');
+  const drawerContent = document.getElementById('drawer-content');
+  const btnCloseDrawer = document.getElementById('btn-close-drawer');
+
+  const addSourceModal = document.getElementById('add-source-modal');
+  const formAddSource = document.getElementById('form-add-source');
+  const inputSourceTitle = document.getElementById('input-source-title');
+  const inputSourceUrl = document.getElementById('input-source-url');
+  const inputSourceText = document.getElementById('input-source-text');
+  const sourceWordCount = document.getElementById('source-word-count');
+  const btnCloseSourceModal = document.getElementById('btn-close-source-modal');
+
   const pairingModal = document.getElementById('pairing-modal');
   const formPair = document.getElementById('form-pair');
   const inputPairingCode = document.getElementById('input-pairing-code');
   const pairingErrorMsg = document.getElementById('pairing-error-msg');
 
-  const pointerDeviceTag = document.getElementById('pointer-device-tag');
-  const coordsTag = document.getElementById('coords-tag');
-  const cardCountTag = document.getElementById('card-count-tag');
-  const strokeCountTag = document.getElementById('stroke-count-tag');
-
-  // Application State
-  let quotes = [];
+  // State
+  let activeWorkspaceId = 'ws_default';
+  let workspaces = [];
+  let concepts = [];
+  let edges = [];
+  let sources = [];
   let strokes = [];
-  let viewport = { panX: 0, panY: 0, zoom: 1.0 };
-  let activeTool = 'select'; // 'select' | 'pen' | 'highlighter' | 'eraser'
+  let pendingProposals = [];
+  let viewport = { panX: 100, panY: 100, zoom: 1.0 };
+  let activeTool = 'select'; // 'select' | 'connect' | 'pen' | 'highlighter' | 'eraser'
   let undoStack = [];
 
   // Interaction State
@@ -49,22 +76,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   let panStart = { x: 0, y: 0 };
   let panOrigin = { x: 0, y: 0 };
 
-  // Card Dragging State
-  let isDraggingCard = false;
-  let draggedCardId = null;
-  let cardDragOffset = { x: 0, y: 0 };
-  let cardInitialPos = { x: 0, y: 0 };
+  let isDraggingConcept = false;
+  let draggedConceptId = null;
+  let conceptDragOffset = { x: 0, y: 0 };
 
-  // Multi-touch gestures (Pinch-to-zoom on iPad / touchscreens)
+  // Connect Mode State
+  let connectingFromId = null;
+
+  // Multi-touch gestures (Pinch-to-zoom on iPad)
   const activePointers = new Map();
   let initialPinchDistance = null;
   let initialPinchZoom = 1.0;
   let pinchCenterScreen = { x: 0, y: 0 };
-
-  // Device Pixel Ratio for crisp rendering on Retina / iPad displays
   let dpr = window.devicePixelRatio || 1;
 
-  // Initialize Canvas
+  // Initialize
   await init();
 
   async function init() {
@@ -72,193 +98,270 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.addEventListener('resize', handleResize);
 
     // Load initial data
-    const [savedQuotes, savedStrokes, savedViewport] = await Promise.all([
-      Storage.getQuotes(),
-      Storage.getStrokes(),
-      Storage.getViewport()
-    ]);
-
-    quotes = savedQuotes;
-    strokes = savedStrokes;
-    viewport = savedViewport || { panX: 0, panY: 0, zoom: 1.0 };
-
-    updateViewportTransforms();
-    renderCards();
-    renderAllStrokes();
-    updateStatusPills();
+    activeWorkspaceId = await Storage.getActiveWorkspaceId();
+    await loadWorkspaceData();
 
     setupToolListeners();
     setupPointerListeners();
     setupKeyboardListeners();
-    setupStorageSync();
+    setupModals();
     setupCloudSyncUI();
+    setupStorageSync();
 
-    // Default to Select tool and set proper pointer-events routing
     setActiveTool('select');
   }
 
-  /**
-   * Setup High-DPI Resolution for iPad Retina Displays
-   */
   function setupCanvasResolution() {
     dpr = window.devicePixelRatio || 1;
     const rect = viewportContainer.getBoundingClientRect();
-    inkCanvas.width = rect.width * dpr;
-    inkCanvas.height = rect.height * dpr;
-    inkCanvas.style.width = `${rect.width}px`;
-    inkCanvas.style.height = `${rect.height}px`;
+    [inkCanvas, scratchCanvas].forEach(c => {
+      c.width = rect.width * dpr;
+      c.height = rect.height * dpr;
+      c.style.width = `${rect.width}px`;
+      c.style.height = `${rect.height}px`;
+    });
   }
 
   function handleResize() {
     setupCanvasResolution();
     renderAllStrokes();
+    renderEdges();
   }
 
-  /**
-   * Update Viewport Transforms for DOM Cards, Grid, and Canvas Context
-   */
-  function updateViewportTransforms() {
-    // 1. Transform DOM Cards Container
-    worldCardsLayer.style.transform = `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})`;
+  async function loadWorkspaceData() {
+    workspaces = await Storage.getWorkspaces();
+    updateWorkspaceDropdown();
 
-    // 2. Transform Dot Grid Background
+    [concepts, edges, sources, strokes, pendingProposals] = await Promise.all([
+      Storage.getConcepts(),
+      Storage.getEdges(),
+      Storage.getSources(),
+      Storage.getStrokes(),
+      Storage.getProposals()
+    ]);
+
+    updateViewportTransforms();
+    renderConcepts();
+    renderEdges();
+    renderAllStrokes();
+    updateStatusPills();
+    checkPendingProposals();
+  }
+
+  function updateWorkspaceDropdown() {
+    selectWorkspace.innerHTML = '';
+    workspaces.forEach(ws => {
+      const opt = document.createElement('option');
+      opt.value = ws.id;
+      opt.textContent = ws.title || 'Untitled Map';
+      opt.selected = ws.id === activeWorkspaceId;
+      selectWorkspace.appendChild(opt);
+    });
+  }
+
+  function updateViewportTransforms() {
+    worldMapLayer.style.transform = `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})`;
+
     const gridSize = 32 * viewport.zoom;
     gridBackground.style.backgroundSize = `${gridSize}px ${gridSize}px`;
     gridBackground.style.backgroundPosition = `${viewport.panX}px ${viewport.panY}px`;
 
-    // 3. Update Zoom Text
-    zoomLevelText.textContent = `${Math.round(viewport.zoom * 100)}%`;
-
-    // 4. Redraw Ink Strokes in World Space
+    renderEdges();
     renderAllStrokes();
   }
 
-  /**
-   * Render All Quotes as DOM Cards in the World Layer
-   */
-  function renderCards() {
-    worldCardsLayer.innerHTML = '';
+  // --- Concept Nodes & Edges Rendering ---
+  function renderConcepts() {
+    conceptsContainer.innerHTML = '';
 
-    quotes.forEach(quote => {
-      const cardEl = document.createElement('div');
-      cardEl.className = 'canvas-card';
-      cardEl.id = `card-${quote.id}`;
-      cardEl.style.left = `${quote.x}px`;
-      cardEl.style.top = `${quote.y}px`;
-      cardEl.style.width = `${quote.width || 320}px`;
+    concepts.forEach(c => {
+      const node = document.createElement('div');
+      node.className = 'concept-node';
+      node.id = `concept-${c.id}`;
+      node.style.left = `${c.x}px`;
+      node.style.top = `${c.y}px`;
+      node.style.width = `${c.width || 240}px`;
 
-      const domain = CanvasCore.extractDomain(quote.sourceUrl);
-      const timeDisplay = CanvasCore.formatCaptureTime(quote.capturedAt);
-      const safeText = escapeHtml(quote.text);
-      const safeTitle = escapeHtml(quote.sourceTitle || domain);
-      const safeUrl = quote.sourceUrl ? escapeHtml(quote.sourceUrl) : '#';
+      const sourceCount = (c.sourceRefs || []).length;
+      const badgeHtml = sourceCount > 0 ? `<span class="badge-sources" data-id="${c.id}" title="View supporting evidence">📚 ${sourceCount}</span>` : '';
 
-      cardEl.innerHTML = `
-        <div class="canvas-card-header" data-id="${quote.id}">
-          <div class="card-header-left">
-            <a href="${safeUrl}" target="_blank" class="card-source-link" title="${safeTitle}">
-              <span>↗</span> ${domain}
-            </a>
-          </div>
-          <div class="card-header-actions">
-            <span class="card-time">${timeDisplay}</span>
-            <button class="btn-card-close" data-id="${quote.id}" title="Delete Quote">✕</button>
+      node.innerHTML = `
+        <div class="concept-header" data-id="${c.id}">
+          <span class="concept-title" contenteditable="true" data-id="${c.id}">${escapeHtml(c.label)}</span>
+          <div class="concept-actions">
+            ${badgeHtml}
+            <button class="btn-card-close" data-id="${c.id}" title="Delete Concept">✕</button>
           </div>
         </div>
-        <div class="canvas-card-body">${safeText}</div>
+        <div class="concept-body" contenteditable="true" data-id="${c.id}">${escapeHtml(c.description || '')}</div>
+        <div class="concept-connector" data-id="${c.id}" title="Drag to connect"></div>
       `;
 
-      // Header drag handler for Card movement in Select mode
-      const headerEl = cardEl.querySelector('.canvas-card-header');
-      headerEl.addEventListener('pointerdown', (e) => handleCardPointerDown(e, quote));
+      // Header dragging in Select mode
+      const headerEl = node.querySelector('.concept-header');
+      headerEl.addEventListener('pointerdown', (e) => handleConceptPointerDown(e, c));
 
-      // Close button handler
-      const closeBtn = cardEl.querySelector('.btn-card-close');
+      // Inline text editing
+      const titleEl = node.querySelector('.concept-title');
+      titleEl.addEventListener('blur', async () => {
+        const newLabel = titleEl.textContent.trim();
+        if (newLabel && newLabel !== c.label) {
+          c.label = newLabel;
+          await Storage.updateConcept(c.id, { label: newLabel });
+        }
+      });
+
+      const bodyEl = node.querySelector('.concept-body');
+      bodyEl.addEventListener('blur', async () => {
+        const newDesc = bodyEl.textContent.trim();
+        if (newDesc !== c.description) {
+          c.description = newDesc;
+          await Storage.updateConcept(c.id, { description: newDesc });
+        }
+      });
+
+      // Evidence drawer badge click
+      const badgeEl = node.querySelector('.badge-sources');
+      if (badgeEl) {
+        badgeEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openEvidenceDrawer(c);
+        });
+      }
+
+      // Connector dot (Connect mode)
+      const connectorEl = node.querySelector('.concept-connector');
+      connectorEl.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        connectingFromId = c.id;
+        viewportContainer.classList.add('cursor-connect');
+      });
+
+      node.addEventListener('pointerup', async () => {
+        if (connectingFromId && connectingFromId !== c.id) {
+          await Storage.addEdge({
+            fromId: connectingFromId,
+            toId: c.id,
+            relation: 'relates',
+            label: ''
+          });
+          edges = await Storage.getEdges();
+          renderEdges();
+          connectingFromId = null;
+          viewportContainer.classList.remove('cursor-connect');
+        }
+      });
+
+      // Delete concept
+      const closeBtn = node.querySelector('.btn-card-close');
       closeBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
-        if (confirm('Remove this quote card?')) {
-          quotes = await Storage.deleteQuote(quote.id);
-          renderCards();
+        if (confirm(`Remove concept "${c.label}"?`)) {
+          concepts = concepts.filter(item => item.id !== c.id);
+          await Storage.saveConceptsLocal(concepts);
+          renderConcepts();
+          renderEdges();
           updateStatusPills();
         }
       });
 
-      worldCardsLayer.appendChild(cardEl);
+      conceptsContainer.appendChild(node);
     });
 
     updateStatusPills();
   }
 
-  /**
-   * Hardware-Accelerated Redraw of All Ink Strokes
-   */
+  function renderEdges() {
+    svgEdgesLayer.innerHTML = '';
+
+    edges.forEach(edge => {
+      const fromEl = document.getElementById(`concept-${edge.fromId || edge.from}`);
+      const toEl = document.getElementById(`concept-${edge.toId || edge.to}`);
+      if (!fromEl || !toEl) return;
+
+      const fromX = parseFloat(fromEl.style.left) + (parseFloat(fromEl.style.width) || 240) / 2;
+      const fromY = parseFloat(fromEl.style.top) + fromEl.offsetHeight / 2;
+      const toX = parseFloat(toEl.style.left) + (parseFloat(toEl.style.width) || 240) / 2;
+      const toY = parseFloat(toEl.style.top) + toEl.offsetHeight / 2;
+
+      // Draw SVG smooth curve
+      const dx = (toX - fromX) / 2;
+      const pathD = `M ${fromX} ${fromY} C ${fromX + dx} ${fromY}, ${toX - dx} ${toY}, ${toX} ${toY}`;
+
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', pathD);
+      path.setAttribute('class', 'edge-path');
+      svgEdgesLayer.appendChild(path);
+
+      if (edge.label) {
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('x', (fromX + toX) / 2);
+        text.setAttribute('y', (fromY + toY) / 2 - 5);
+        text.setAttribute('class', 'edge-label-text');
+        text.textContent = edge.label;
+        svgEdgesLayer.appendChild(text);
+      }
+    });
+
+    edgeCountTag.textContent = `${edges.length} Edge${edges.length === 1 ? '' : 's'}`;
+  }
+
+  // --- Hardware-Accelerated Dual Canvas Ink Engine (120Hz iPad ProMotion) ---
   function renderAllStrokes() {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, inkCanvas.width, inkCanvas.height);
 
-    // Apply world-to-screen matrix with DPR scaling
     ctx.setTransform(
       viewport.zoom * dpr, 0,
       0, viewport.zoom * dpr,
       viewport.panX * dpr, viewport.panY * dpr
     );
 
-    // Draw saved strokes
-    strokes.forEach(stroke => drawSingleStroke(stroke));
-
-    // Draw active drawing stroke if in progress
-    if (currentStroke && currentStroke.points.length > 0) {
-      drawSingleStroke(currentStroke);
-    }
+    strokes.forEach(stroke => drawStrokeOnContext(ctx, stroke));
   }
 
-  function drawSingleStroke(stroke) {
+  function drawStrokeOnContext(targetCtx, stroke) {
     if (!stroke || !stroke.points || stroke.points.length === 0) return;
 
-    ctx.save();
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
+    targetCtx.save();
+    targetCtx.lineCap = 'round';
+    targetCtx.lineJoin = 'round';
 
     if (stroke.tool === 'highlighter') {
-      ctx.strokeStyle = stroke.color || '#f59e0b';
-      ctx.lineWidth = stroke.width || 20;
-      ctx.globalAlpha = stroke.opacity || 0.35;
+      targetCtx.strokeStyle = stroke.color || '#f59e0b';
+      targetCtx.lineWidth = stroke.width || 20;
+      targetCtx.globalAlpha = stroke.opacity || 0.35;
     } else {
-      ctx.strokeStyle = stroke.color || '#38bdf8';
-      ctx.lineWidth = stroke.width || 3;
-      ctx.globalAlpha = stroke.opacity || 1.0;
+      targetCtx.strokeStyle = stroke.color || '#38bdf8';
+      targetCtx.lineWidth = stroke.width || 3;
+      targetCtx.globalAlpha = stroke.opacity || 1.0;
     }
 
     const pts = stroke.points;
     if (pts.length === 1) {
-      // Single dot
-      ctx.beginPath();
-      ctx.arc(pts[0].x, pts[0].y, (stroke.width || 3) / 2, 0, Math.PI * 2);
-      ctx.fillStyle = ctx.strokeStyle;
-      ctx.fill();
+      targetCtx.beginPath();
+      targetCtx.arc(pts[0].x, pts[0].y, (stroke.width || 3) / 2, 0, Math.PI * 2);
+      targetCtx.fillStyle = targetCtx.strokeStyle;
+      targetCtx.fill();
     } else {
-      ctx.beginPath();
-      ctx.moveTo(pts[0].x, pts[0].y);
-
+      targetCtx.beginPath();
+      targetCtx.moveTo(pts[0].x, pts[0].y);
       for (let i = 1; i < pts.length; i++) {
-        // Smooth quadratic interpolation between midpoints
         if (i < pts.length - 1) {
           const midX = (pts[i].x + pts[i + 1].x) / 2;
           const midY = (pts[i].y + pts[i + 1].y) / 2;
-          ctx.quadraticCurveTo(pts[i].x, pts[i].y, midX, midY);
+          targetCtx.quadraticCurveTo(pts[i].x, pts[i].y, midX, midY);
         } else {
-          ctx.lineTo(pts[i].x, pts[i].y);
+          targetCtx.lineTo(pts[i].x, pts[i].y);
         }
       }
-      ctx.stroke();
+      targetCtx.stroke();
     }
 
-    ctx.restore();
+    targetCtx.restore();
   }
 
-  /**
-   * Pointer Event Routing for Mouse, Touch, and Apple Pencil
-   */
+  // --- Pointer Routing & Apple Pencil Sub-Frame Acceleration ---
   function setupPointerListeners() {
     viewportContainer.addEventListener('pointerdown', handleViewportPointerDown);
     inkCanvas.addEventListener('pointerdown', handleInkPointerDown);
@@ -267,32 +370,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.addEventListener('pointerup', handlePointerUp);
     window.addEventListener('pointercancel', handlePointerUp);
 
-    // Mouse wheel zooming
     viewportContainer.addEventListener('wheel', handleWheel, { passive: false });
   }
 
   function handleViewportPointerDown(e) {
-    if (e.target.closest('.canvas-card')) return;
+    if (e.target.closest('.concept-node') || e.target.closest('.proposal-banner') || e.target.closest('.evidence-drawer')) return;
 
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     updatePointerDeviceTag(e);
 
-    // Multi-touch pinch-to-zoom detection
+    // Multi-touch pinch zoom
     if (activePointers.size === 2) {
       isDrawing = false;
       isPanning = false;
       const pts = Array.from(activePointers.values());
       initialPinchDistance = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
       initialPinchZoom = viewport.zoom;
-      pinchCenterScreen = {
-        x: (pts[0].x + pts[1].x) / 2,
-        y: (pts[0].y + pts[1].y) / 2
-      };
+      pinchCenterScreen = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
       return;
     }
 
-    // Left click on background in select mode, or Middle click / Space held in any mode
-    if (isSpacePressed || e.button === 1 || (activeTool === 'select' && e.button === 0)) {
+    // Touch navigation / Space panning / Select tool
+    if (isSpacePressed || e.button === 1 || e.pointerType === 'touch' || (activeTool === 'select' && e.button === 0)) {
       isPanning = true;
       panStart = { x: e.clientX, y: e.clientY };
       panOrigin = { x: viewport.panX, y: viewport.panY };
@@ -306,19 +405,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (activePointers.size === 2) {
       isDrawing = false;
-      currentStroke = null;
       isPanning = false;
-      const pts = Array.from(activePointers.values());
-      initialPinchDistance = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-      initialPinchZoom = viewport.zoom;
-      pinchCenterScreen = {
-        x: (pts[0].x + pts[1].x) / 2,
-        y: (pts[0].y + pts[1].y) / 2
-      };
       return;
     }
 
-    if (isSpacePressed || e.button === 1) {
+    if (isSpacePressed || e.button === 1 || (e.pointerType === 'touch' && activeTool !== 'pen' && activeTool !== 'highlighter')) {
       isPanning = true;
       panStart = { x: e.clientX, y: e.clientY };
       panOrigin = { x: viewport.panX, y: viewport.panY };
@@ -326,17 +417,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    const worldPoint = CanvasCore.screenToWorld(e.clientX, e.clientY, viewport.panX, viewport.panY, viewport.zoom);
+    const worldPoint = screenToWorld(e.clientX, e.clientY);
     updateCoordsTag(worldPoint);
 
-    // Drawing Tools (Pen & Highlighter)
+    // Drawing Tools (Apple Pencil & Mouse)
     if (activeTool === 'pen' || activeTool === 'highlighter') {
       isDrawing = true;
       inkCanvas.setPointerCapture(e.pointerId);
 
       currentStroke = {
-        id: `stroke-${Date.now()}-${Math.random().toString(36).substr(2, 7)}`,
-        type: 'ink',
+        id: `stroke_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+        workspaceId: activeWorkspaceId,
         tool: activeTool,
         width: activeTool === 'highlighter' ? 20 : 3,
         opacity: activeTool === 'highlighter' ? 0.35 : 1.0,
@@ -348,11 +439,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         }]
       };
 
-      renderAllStrokes();
+      scratchCtx.setTransform(
+        viewport.zoom * dpr, 0,
+        0, viewport.zoom * dpr,
+        viewport.panX * dpr, viewport.panY * dpr
+      );
       return;
     }
 
-    // Stroke Eraser
+    // Eraser Tool
     if (activeTool === 'eraser') {
       eraseStrokesAtPoint(worldPoint);
     }
@@ -363,7 +458,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     }
 
-    // Handle 2-finger pinch zoom
     if (activePointers.size === 2 && initialPinchDistance) {
       const pts = Array.from(activePointers.values());
       const currentDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
@@ -376,7 +470,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    // Handle Panning
     if (isPanning) {
       const dx = e.clientX - panStart.x;
       const dy = e.clientY - panStart.y;
@@ -386,40 +479,41 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    // Handle Card Dragging (Select mode)
-    if (isDraggingCard && draggedCardId) {
-      const worldPoint = CanvasCore.screenToWorld(e.clientX, e.clientY, viewport.panX, viewport.panY, viewport.zoom);
-      const newX = Math.round(worldPoint.x - cardDragOffset.x);
-      const newY = Math.round(worldPoint.y - cardDragOffset.y);
+    if (isDraggingConcept && draggedConceptId) {
+      const worldPoint = screenToWorld(e.clientX, e.clientY);
+      const newX = Math.round(worldPoint.x - conceptDragOffset.x);
+      const newY = Math.round(worldPoint.y - conceptDragOffset.y);
 
-      const cardEl = document.getElementById(`card-${draggedCardId}`);
-      if (cardEl) {
-        cardEl.style.left = `${newX}px`;
-        cardEl.style.top = `${newY}px`;
+      const node = document.getElementById(`concept-${draggedConceptId}`);
+      if (node) {
+        node.style.left = `${newX}px`;
+        node.style.top = `${newY}px`;
       }
+      renderEdges();
       return;
     }
 
-    const worldPoint = CanvasCore.screenToWorld(e.clientX, e.clientY, viewport.panX, viewport.panY, viewport.zoom);
+    const worldPoint = screenToWorld(e.clientX, e.clientY);
     updateCoordsTag(worldPoint);
 
-    // Handle Active Drawing (Pen / Highlighter)
+    // 120Hz Coalesced Event Ink Rendering
     if (isDrawing && currentStroke) {
-      const lastPt = currentStroke.points[currentStroke.points.length - 1];
-      const dist = Math.hypot(worldPoint.x - lastPt.x, worldPoint.y - lastPt.y);
-
-      if (dist >= 1.5) {
+      const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+      for (const ev of events) {
+        const pt = screenToWorld(ev.clientX, ev.clientY);
         currentStroke.points.push({
-          x: worldPoint.x,
-          y: worldPoint.y,
-          pressure: typeof e.pressure === 'number' && e.pressure > 0 ? e.pressure : 0.5
+          x: pt.x,
+          y: pt.y,
+          pressure: typeof ev.pressure === 'number' && ev.pressure > 0 ? ev.pressure : 0.5
         });
-        renderAllStrokes();
       }
+
+      // Fast scratch redraw
+      scratchCtx.clearRect(-10000, -10000, 20000, 20000);
+      drawStrokeOnContext(scratchCtx, currentStroke);
       return;
     }
 
-    // Handle Continuous Stroke Eraser
     if (activeTool === 'eraser' && (e.buttons === 1 || e.pressure > 0)) {
       eraseStrokesAtPoint(worldPoint);
     }
@@ -427,147 +521,158 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function handlePointerUp(e) {
     activePointers.delete(e.pointerId);
-
-    if (activePointers.size < 2) {
-      initialPinchDistance = null;
-    }
+    if (activePointers.size < 2) initialPinchDistance = null;
 
     if (isPanning) {
       isPanning = false;
       viewportContainer.classList.remove('cursor-panning-active');
-      Storage.saveViewport(viewport);
     }
 
-    if (isDraggingCard && draggedCardId) {
-      const cardEl = document.getElementById(`card-${draggedCardId}`);
-      if (cardEl) {
-        cardEl.classList.remove('dragging');
-        const finalX = parseFloat(cardEl.style.left);
-        const finalY = parseFloat(cardEl.style.top);
-
-        const quote = quotes.find(q => q.id === draggedCardId);
-        if (quote) {
-          quote.x = finalX;
-          quote.y = finalY;
-          await Storage.updateQuote(draggedCardId, { x: finalX, y: finalY });
-
-          undoStack.push({
-            type: 'MOVE_CARD',
-            id: draggedCardId,
-            prevX: cardInitialPos.x,
-            prevY: cardInitialPos.y,
-            newX: finalX,
-            newY: finalY
-          });
-        }
+    if (isDraggingConcept && draggedConceptId) {
+      const node = document.getElementById(`concept-${draggedConceptId}`);
+      if (node) {
+        node.classList.remove('dragging');
+        const finalX = parseFloat(node.style.left);
+        const finalY = parseFloat(node.style.top);
+        await Storage.updateConcept(draggedConceptId, { x: finalX, y: finalY });
       }
-      isDraggingCard = false;
-      draggedCardId = null;
+      isDraggingConcept = false;
+      draggedConceptId = null;
     }
 
     if (isDrawing && currentStroke) {
       isDrawing = false;
+      scratchCtx.clearRect(-10000, -10000, 20000, 20000);
+
       if (currentStroke.points.length > 0) {
         strokes.push(currentStroke);
         await Storage.addStroke(currentStroke);
-
-        undoStack.push({
-          type: 'ADD_STROKE',
-          stroke: currentStroke
-        });
+        renderAllStrokes();
         updateStatusPills();
       }
       currentStroke = null;
-      renderAllStrokes();
     }
   }
 
-  /**
-   * Card Dragging via Header (Select Mode)
-   */
-  function handleCardPointerDown(e, quote) {
-    if (e.target.closest('.btn-card-close') || e.target.closest('.card-source-link')) return;
+  function handleConceptPointerDown(e, concept) {
+    if (e.target.closest('.btn-card-close') || e.target.closest('.badge-sources') || e.target.getAttribute('contenteditable') === 'true') return;
 
     e.stopPropagation();
-    isDraggingCard = true;
-    draggedCardId = quote.id;
-    cardInitialPos = { x: quote.x, y: quote.y };
+    isDraggingConcept = true;
+    draggedConceptId = concept.id;
 
-    const worldPoint = CanvasCore.screenToWorld(e.clientX, e.clientY, viewport.panX, viewport.panY, viewport.zoom);
-    cardDragOffset = {
-      x: worldPoint.x - quote.x,
-      y: worldPoint.y - quote.y
+    const worldPoint = screenToWorld(e.clientX, e.clientY);
+    conceptDragOffset = {
+      x: worldPoint.x - concept.x,
+      y: worldPoint.y - concept.y
     };
 
-    const cardEl = document.getElementById(`card-${quote.id}`);
-    if (cardEl) {
-      cardEl.classList.add('dragging');
-    }
+    const node = document.getElementById(`concept-${concept.id}`);
+    if (node) node.classList.add('dragging');
   }
 
-  /**
-   * Stroke Eraser Logic (Deletes whole stroke upon touch)
-   */
   async function eraseStrokesAtPoint(worldPoint) {
-    const eraserRadius = 15 / viewport.zoom;
-    const hitStrokeIds = [];
-    const remainingStrokes = [];
-    const deletedStrokes = [];
+    const eraserRadius = 16 / viewport.zoom;
+    const hitIds = [];
+    const remaining = [];
 
     strokes.forEach(s => {
       if (CanvasCore.isStrokeHit(worldPoint, s, eraserRadius)) {
-        hitStrokeIds.push(s.id);
-        deletedStrokes.push(s);
+        hitIds.push(s.id);
       } else {
-        remainingStrokes.push(s);
+        remaining.push(s);
       }
     });
 
-    if (hitStrokeIds.length > 0) {
-      strokes = remainingStrokes;
-      await Storage.deleteStrokes(hitStrokeIds);
-
-      undoStack.push({
-        type: 'DELETE_STROKES',
-        strokes: deletedStrokes
-      });
-
+    if (hitIds.length > 0) {
+      strokes = remaining;
+      await Storage.deleteStrokes(hitIds);
       renderAllStrokes();
       updateStatusPills();
     }
   }
 
-  /**
-   * Mouse Wheel Smooth Zooming Toward Cursor
-   */
   function handleWheel(e) {
     e.preventDefault();
-
     if (e.ctrlKey || Math.abs(e.deltaY) > 0) {
       const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
       const targetZoom = viewport.zoom * zoomFactor;
-
-      const newVp = CanvasCore.zoomTowardPoint(
-        targetZoom,
-        viewport.zoom,
-        viewport.panX,
-        viewport.panY,
-        e.clientX,
-        e.clientY
-      );
-
-      viewport.zoom = newVp.zoom;
-      viewport.panX = newVp.panX;
-      viewport.panY = newVp.panY;
-
+      const newVp = CanvasCore.zoomTowardPoint(targetZoom, viewport.zoom, viewport.panX, viewport.panY, e.clientX, e.clientY);
+      viewport = newVp;
       updateViewportTransforms();
-      Storage.saveViewport(viewport);
     }
   }
 
-  /**
-   * Toolbar Mode Selector & Buttons
-   */
+  // --- Proposal Review & Ingestion UI ---
+  function checkPendingProposals() {
+    if (pendingProposals.length > 0) {
+      const p = pendingProposals[0];
+      const ops = p.operations || [];
+      const addCount = ops.filter(o => o.op === 'add_concept').length;
+      const enrichCount = ops.filter(o => o.op === 'enrich_concept').length;
+      const edgeCount = ops.filter(o => o.op === 'add_edge').length;
+
+      proposalSummary.textContent = p.summary || 'New learning material processed';
+      proposalStats.textContent = `+ ${addCount} Concepts  |  + ${edgeCount} Relationships  |  ~ ${enrichCount} Enriched`;
+      proposalToast.style.display = 'block';
+    } else {
+      proposalToast.style.display = 'none';
+    }
+  }
+
+  btnApplyProposalAll.addEventListener('click', async () => {
+    if (pendingProposals.length === 0) return;
+    const p = pendingProposals[0];
+    btnApplyProposalAll.textContent = 'Applying...';
+    btnApplyProposalAll.disabled = true;
+
+    await Storage.applyProposal(p.id, p.operations);
+    pendingProposals.shift();
+    await Storage.saveProposalsLocal(pendingProposals);
+
+    await loadWorkspaceData();
+    proposalToast.style.display = 'none';
+    btnApplyProposalAll.textContent = 'Apply All';
+    btnApplyProposalAll.disabled = false;
+  });
+
+  btnDismissProposal.addEventListener('click', async () => {
+    pendingProposals.shift();
+    await Storage.saveProposalsLocal(pendingProposals);
+    checkPendingProposals();
+  });
+
+  // --- Evidence Drawer ---
+  function openEvidenceDrawer(concept) {
+    drawerConceptTitle.textContent = concept.label;
+    drawerContent.innerHTML = '';
+
+    const refSet = new Set(concept.sourceRefs || []);
+    const matchingSources = sources.filter(s => refSet.has(s.id));
+
+    if (matchingSources.length === 0) {
+      drawerContent.innerHTML = '<p class="text-dim">No direct evidence captured for this concept.</p>';
+    } else {
+      matchingSources.forEach(s => {
+        const card = document.createElement('div');
+        card.className = 'evidence-card';
+        card.innerHTML = `
+          <div class="evidence-card-title">${escapeHtml(s.title || 'Source Evidence')}</div>
+          <div class="evidence-card-body">${escapeHtml(s.text)}</div>
+          ${s.url ? `<a href="${escapeHtml(s.url)}" target="_blank" class="card-source-link" style="margin-top:8px;">↗ Original Link</a>` : ''}
+        `;
+        drawerContent.appendChild(card);
+      });
+    }
+
+    evidenceDrawer.style.display = 'flex';
+  }
+
+  btnCloseDrawer.addEventListener('click', () => {
+    evidenceDrawer.style.display = 'none';
+  });
+
+  // --- Tool Listeners ---
   function setupToolListeners() {
     toolBtns.forEach(btn => {
       btn.addEventListener('click', () => {
@@ -576,100 +681,125 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     });
 
-    // Undo Button
-    btnUndo.addEventListener('click', handleUndo);
+    // Workspace Switching
+    selectWorkspace.addEventListener('change', async (e) => {
+      activeWorkspaceId = e.target.value;
+      await Storage.setActiveWorkspaceId(activeWorkspaceId);
+      await loadWorkspaceData();
+    });
 
-    // Clear Ink Button
-    btnClearInk.addEventListener('click', async () => {
-      if (strokes.length === 0) return;
-      if (confirm('Clear all ink strokes on this canvas?')) {
-        const prevStrokes = [...strokes];
-        strokes = [];
-        await Storage.saveStrokes([]);
-
-        undoStack.push({
-          type: 'DELETE_STROKES',
-          strokes: prevStrokes
-        });
-
-        renderAllStrokes();
-        updateStatusPills();
+    btnNewWorkspace.addEventListener('click', async () => {
+      const title = prompt('Enter new learning map name:', 'New Topic Map');
+      if (title) {
+        const ws = await Storage.createWorkspace(title);
+        activeWorkspaceId = ws.id;
+        await loadWorkspaceData();
       }
     });
 
-    // Zoom Buttons
-    btnZoomIn.addEventListener('click', () => {
-      const cx = window.innerWidth / 2;
-      const cy = window.innerHeight / 2;
-      const newVp = CanvasCore.zoomTowardPoint(viewport.zoom * 1.2, viewport.zoom, viewport.panX, viewport.panY, cx, cy);
-      viewport = newVp;
-      updateViewportTransforms();
-      Storage.saveViewport(viewport);
+    // Manual Add Concept
+    btnAddConcept.addEventListener('click', async () => {
+      const label = prompt('Enter Concept Name:');
+      if (label) {
+        const cx = window.innerWidth / 2;
+        const cy = window.innerHeight / 2;
+        const worldPt = screenToWorld(cx, cy);
+        await Storage.addConcept({
+          label,
+          description: '',
+          x: Math.round(worldPt.x - 120),
+          y: Math.round(worldPt.y - 40)
+        });
+        concepts = await Storage.getConcepts();
+        renderConcepts();
+      }
     });
 
-    btnZoomOut.addEventListener('click', () => {
-      const cx = window.innerWidth / 2;
-      const cy = window.innerHeight / 2;
-      const newVp = CanvasCore.zoomTowardPoint(viewport.zoom / 1.2, viewport.zoom, viewport.panX, viewport.panY, cx, cy);
-      viewport = newVp;
-      updateViewportTransforms();
-      Storage.saveViewport(viewport);
-    });
-
-    zoomLevelText.addEventListener('click', () => {
-      const cx = window.innerWidth / 2;
-      const cy = window.innerHeight / 2;
-      const newVp = CanvasCore.zoomTowardPoint(1.0, viewport.zoom, viewport.panX, viewport.panY, cx, cy);
-      viewport = newVp;
-      updateViewportTransforms();
-      Storage.saveViewport(viewport);
-    });
-
+    // Fit to Content
     btnZoomFit.addEventListener('click', fitToContent);
 
-    // Export JSON
+    // Export Data
     btnExport.addEventListener('click', async () => {
-      try {
-        const exportData = await Storage.exportAllData();
-        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `detective-map-canvas-${new Date().toISOString().slice(0, 10)}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-      } catch (err) {
-        alert('Export failed: ' + err.message);
-      }
-    });
-
-    // Import JSON
-    fileImport.addEventListener('change', async (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-
-      try {
-        const text = await file.text();
-        const json = JSON.parse(text);
-        const res = await Storage.importAllData(json);
-        alert(`Successfully imported ${res.quoteCount} cards and ${res.strokeCount} ink strokes!`);
-        quotes = await Storage.getQuotes();
-        strokes = await Storage.getStrokes();
-        viewport = await Storage.getViewport();
-        updateViewportTransforms();
-        renderCards();
-        renderAllStrokes();
-      } catch (err) {
-        alert('Import failed: ' + err.message);
-      } finally {
-        fileImport.value = '';
-      }
+      const exportData = {
+        version: '2.0.0',
+        workspace: workspaces.find(w => w.id === activeWorkspaceId),
+        concepts,
+        edges,
+        sources,
+        strokes
+      };
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `detective-map-${activeWorkspaceId}-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
     });
   }
 
-  /**
-   * Cloud Sync & Device Pairing UI
-   */
+  function setActiveTool(tool) {
+    activeTool = tool;
+    toolBtns.forEach(b => b.classList.toggle('active', b.getAttribute('data-tool') === tool));
+    viewportContainer.className = `cursor-${tool}`;
+
+    if (tool === 'select' || tool === 'connect') {
+      inkCanvas.style.pointerEvents = 'none';
+      scratchCanvas.style.pointerEvents = 'none';
+    } else {
+      inkCanvas.style.pointerEvents = 'auto';
+      scratchCanvas.style.pointerEvents = 'none';
+    }
+  }
+
+  // --- Modals Setup ---
+  function setupModals() {
+    btnAddSource.addEventListener('click', () => {
+      addSourceModal.style.display = 'flex';
+      inputSourceText.focus();
+    });
+
+    btnCloseSourceModal.addEventListener('click', () => {
+      addSourceModal.style.display = 'none';
+    });
+
+    inputSourceText.addEventListener('input', () => {
+      const text = inputSourceText.value.trim();
+      const words = text ? text.split(/\s+/).length : 0;
+      sourceWordCount.textContent = `${words} words`;
+    });
+
+    formAddSource.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const title = inputSourceTitle.value.trim() || 'Pasted Article';
+      const url = inputSourceUrl.value.trim();
+      const text = inputSourceText.value.trim();
+      if (!text) return;
+
+      const submitBtn = document.getElementById('btn-submit-source');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Ingesting...';
+
+      await Storage.addSource({
+        workspaceId: activeWorkspaceId,
+        type: 'pasted_article',
+        title,
+        url,
+        text
+      });
+
+      sources = await Storage.getSources();
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Analyze & Ingest';
+      addSourceModal.style.display = 'none';
+      inputSourceText.value = '';
+      inputSourceTitle.value = '';
+      inputSourceUrl.value = '';
+
+      alert('Source added! AI is analyzing and will propose incremental updates shortly.');
+    });
+  }
+
   function setupCloudSyncUI() {
     if (Storage.cloudSync) {
       Storage.cloudSync.onStatusChange((status) => {
@@ -696,99 +826,65 @@ document.addEventListener('DOMContentLoaded', async () => {
       inputPairingCode.focus();
     });
 
-    // Close pairing modal on outside click if already paired
-    pairingModal?.addEventListener('click', (e) => {
-      if (e.target === pairingModal && Storage.cloudSync.status === 'connected') {
-        pairingModal.style.display = 'none';
-      }
-    });
-
     formPair?.addEventListener('submit', async (e) => {
       e.preventDefault();
       const code = inputPairingCode.value.trim();
       if (!code) return;
 
-      pairingErrorMsg.style.display = 'none';
       const submitBtn = document.getElementById('btn-submit-pair');
       submitBtn.disabled = true;
       submitBtn.textContent = 'Verifying...';
 
-      const res = await Storage.cloudSync.pairDevice(code);
+      const res = await Storage.cloudSync.pairDevice(code, navigator.userAgent.includes('iPad') ? 'iPad' : 'Desktop');
       submitBtn.disabled = false;
       submitBtn.textContent = 'Pair & Connect';
 
       if (res.success) {
         pairingModal.style.display = 'none';
-        inputPairingCode.value = '';
       } else {
-        pairingErrorMsg.textContent = res.error || 'Invalid Pairing Code. Please try again.';
+        pairingErrorMsg.textContent = res.error || 'Invalid Pairing Code';
         pairingErrorMsg.style.display = 'block';
       }
     });
   }
 
-  /**
-   * Switch Active Tool and Dynamically Route Pointer Events
-   */
-  function setActiveTool(tool) {
-    activeTool = tool;
-    toolBtns.forEach(b => {
-      b.classList.toggle('active', b.getAttribute('data-tool') === tool);
-    });
-
-    viewportContainer.className = `cursor-${tool}`;
-
-    if (tool === 'select') {
-      inkCanvas.style.pointerEvents = 'none';
-    } else {
-      inkCanvas.style.pointerEvents = 'auto';
-    }
-  }
-
-  /**
-   * Undo Functionality
-   */
-  async function handleUndo() {
-    if (undoStack.length === 0) return;
-
-    const action = undoStack.pop();
-
-    if (action.type === 'ADD_STROKE') {
-      strokes = strokes.filter(s => s.id !== action.stroke.id);
-      await Storage.saveStrokes(strokes);
-      renderAllStrokes();
-      updateStatusPills();
-    } else if (action.type === 'DELETE_STROKES') {
-      strokes.push(...action.strokes);
-      await Storage.saveStrokes(strokes);
-      renderAllStrokes();
-      updateStatusPills();
-    } else if (action.type === 'MOVE_CARD') {
-      const quote = quotes.find(q => q.id === action.id);
-      if (quote) {
-        quote.x = action.prevX;
-        quote.y = action.prevY;
-        await Storage.updateQuote(action.id, { x: action.prevX, y: action.prevY });
-        const cardEl = document.getElementById(`card-${action.id}`);
-        if (cardEl) {
-          cardEl.style.left = `${action.prevX}px`;
-          cardEl.style.top = `${action.prevY}px`;
-        }
+  function setupStorageSync() {
+    Storage.onChanged(async (changes) => {
+      if (changes[STORAGE_KEYS.CONCEPTS]) {
+        concepts = await Storage.getConcepts();
+        renderConcepts();
+        renderEdges();
       }
-    }
+      if (changes[STORAGE_KEYS.EDGES]) {
+        edges = await Storage.getEdges();
+        renderEdges();
+      }
+      if (changes[STORAGE_KEYS.SOURCES]) {
+        sources = await Storage.getSources();
+      }
+      if (changes[STORAGE_KEYS.INK_STROKES]) {
+        strokes = await Storage.getStrokes();
+        renderAllStrokes();
+      }
+      if (changes[STORAGE_KEYS.PROPOSALS]) {
+        pendingProposals = await Storage.getProposals();
+        checkPendingProposals();
+      }
+      if (changes[STORAGE_KEYS.ACTIVE_WS]) {
+        activeWorkspaceId = await Storage.getActiveWorkspaceId();
+        await loadWorkspaceData();
+      }
+    });
   }
 
-  /**
-   * Fit Viewport to All Content (Cards + Ink Strokes)
-   */
   function fitToContent() {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
-    quotes.forEach(q => {
-      if (q.x < minX) minX = q.x;
-      if (q.y < minY) minY = q.y;
-      if (q.x + (q.width || 320) > maxX) maxX = q.x + (q.width || 320);
-      if (q.y + 200 > maxY) maxY = q.y + 200;
+    concepts.forEach(c => {
+      if (c.x < minX) minX = c.x;
+      if (c.y < minY) minY = c.y;
+      if (c.x + (c.width || 240) > maxX) maxX = c.x + (c.width || 240);
+      if (c.y + 150 > maxY) maxY = c.y + 150;
     });
 
     strokes.forEach(s => {
@@ -800,55 +896,30 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     });
 
-    if (minX === Infinity) {
-      viewport = { panX: 100, panY: 100, zoom: 1.0 };
-      updateViewportTransforms();
-      Storage.saveViewport(viewport);
-      return;
-    }
+    if (minX === Infinity) return;
 
-    const padding = 80;
-    const contentW = maxX - minX + padding * 2;
-    const contentH = maxY - minY + padding * 2;
     const screenW = window.innerWidth;
     const screenH = window.innerHeight;
-
-    const scaleX = screenW / contentW;
-    const scaleY = screenH / contentH;
-    const fitZoom = Math.min(1.5, Math.max(CanvasCore.MIN_ZOOM, Math.min(scaleX, scaleY)));
-
-    const centerX = (minX + maxX) / 2;
-    const centerY = (minY + maxY) / 2;
+    const padding = 100;
+    const fitZoom = Math.min(1.5, Math.max(CanvasCore.MIN_ZOOM, Math.min(screenW / (maxX - minX + padding * 2), screenH / (maxY - minY + padding * 2))));
 
     viewport.zoom = fitZoom;
-    viewport.panX = screenW / 2 - centerX * fitZoom;
-    viewport.panY = screenH / 2 - centerY * fitZoom;
-
+    viewport.panX = screenW / 2 - ((minX + maxX) / 2) * fitZoom;
+    viewport.panY = screenH / 2 - ((minY + maxY) / 2) * fitZoom;
     updateViewportTransforms();
-    Storage.saveViewport(viewport);
   }
 
-  /**
-   * Keyboard Shortcuts
-   */
   function setupKeyboardListeners() {
     window.addEventListener('keydown', (e) => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.getAttribute('contenteditable') === 'true') return;
 
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-        e.preventDefault();
-        handleUndo();
-      } else if (e.key === 'v' || e.key === 'V') {
-        setActiveTool('select');
-      } else if (e.key === 'p' || e.key === 'P') {
-        setActiveTool('pen');
-      } else if (e.key === 'h' || e.key === 'H') {
-        setActiveTool('highlighter');
-      } else if (e.key === 'e' || e.key === 'E') {
-        setActiveTool('eraser');
-      } else if (e.key === 'f' || e.key === 'F') {
-        fitToContent();
-      } else if (e.code === 'Space' && !isSpacePressed) {
+      if (e.key === 'v' || e.key === 'V') setActiveTool('select');
+      else if (e.key === 'c' || e.key === 'C') setActiveTool('connect');
+      else if (e.key === 'p' || e.key === 'P') setActiveTool('pen');
+      else if (e.key === 'h' || e.key === 'H') setActiveTool('highlighter');
+      else if (e.key === 'e' || e.key === 'E') setActiveTool('eraser');
+      else if (e.key === 'f' || e.key === 'F') fitToContent();
+      else if (e.code === 'Space' && !isSpacePressed) {
         isSpacePressed = true;
         viewportContainer.classList.add('cursor-panning');
       }
@@ -862,32 +933,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  /**
-   * Real-Time Storage Sync (Side Panel <-> Canvas Live Updates)
-   */
-  function setupStorageSync() {
-    Storage.onChanged(async (changes) => {
-      if (changes[STORAGE_KEYS.QUOTES]) {
-        quotes = await Storage.getQuotes();
-        renderCards();
-      }
-      if (changes[STORAGE_KEYS.STROKES]) {
-        strokes = await Storage.getStrokes();
-        renderAllStrokes();
-        updateStatusPills();
-      }
-    });
+  function screenToWorld(sx, sy) {
+    return {
+      x: (sx - viewport.panX) / viewport.zoom,
+      y: (sy - viewport.panY) / viewport.zoom
+    };
   }
 
-  /**
-   * Status Bar Indicators & Apple Pencil Detection
-   */
   function updatePointerDeviceTag(e) {
     if (!e) return;
     const type = e.pointerType || 'mouse';
     if (type === 'pen') {
-      const pressureText = e.pressure ? ` (${Math.round(e.pressure * 100)}% pressure)` : '';
-      pointerDeviceTag.textContent = `✍️ Apple Pencil Active${pressureText}`;
+      const p = e.pressure ? ` (${Math.round(e.pressure * 100)}%)` : '';
+      pointerDeviceTag.textContent = `✍️ Apple Pencil Active${p}`;
       pointerDeviceTag.style.color = '#38bdf8';
     } else if (type === 'touch') {
       pointerDeviceTag.textContent = `📱 Touch Gesture Active`;
@@ -904,17 +962,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function updateStatusPills() {
-    cardCountTag.textContent = `${quotes.length} Card${quotes.length === 1 ? '' : 's'}`;
+    conceptCountTag.textContent = `${concepts.length} Concept${concepts.length === 1 ? '' : 's'}`;
     strokeCountTag.textContent = `${strokes.length} Stroke${strokes.length === 1 ? '' : 's'}`;
   }
 
   function escapeHtml(str) {
     if (!str) return '';
-    return str
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
   }
 });

@@ -3,49 +3,58 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Detective Map - Side Panel</title>
+  <title>Detective Map — Side Panel</title>
   <link rel="stylesheet" href="sidepanel.css">
 </head>
 <body>
-  <header class="panel-header">
-    <div class="brand">
-      <div class="logo-icon">🔍</div>
-      <div class="brand-text">
-        <h1>Detective Map</h1>
-        <span class="motto">Read Left • Think Right</span>
+  <div id="sidepanel-container">
+    <!-- Header -->
+    <header class="sp-header">
+      <div class="sp-brand">
+        <span class="sp-logo">🔍</span>
+        <span class="sp-title">Detective Map</span>
       </div>
-    </div>
-    <div class="header-actions">
-      <button id="btn-open-canvas" class="btn-primary" title="Open Standalone Canvas Window for iPad">
-        <span class="icon">🖼️</span> Open Canvas
+      <div class="sp-actions">
+        <button id="btn-open-canvas" class="btn-icon-text" title="Open Full Screen Canvas Window">
+          <span>↗</span> Canvas
+        </button>
+      </div>
+    </header>
+
+    <!-- Active Workspace Selector -->
+    <section class="sp-workspace-section">
+      <label class="sp-section-label">Active Learning Map</label>
+      <div class="sp-workspace-row">
+        <select id="sp-select-workspace" class="sp-dropdown"></select>
+        <button id="sp-btn-new-ws" class="sp-btn-sm" title="New Learning Topic">+</button>
+      </div>
+    </section>
+
+    <!-- Ingestion Banner -->
+    <section class="sp-ingest-bar">
+      <button id="sp-btn-add-source" class="btn-primary-block">
+        <span>📥</span> + Add Notes / Article
       </button>
-    </div>
-  </header>
+    </section>
 
-  <div class="panel-stats">
-    <span id="quote-count" class="badge">0 Quotes</span>
-    <div class="quick-tools">
-      <button id="btn-export" class="btn-ghost" title="Export Backup JSON">💾 Export</button>
-      <label class="btn-ghost file-input-label" title="Import Backup JSON">
-        📂 Import
-        <input type="file" id="file-import" accept=".json" style="display:none;">
-      </label>
-    </div>
+    <!-- Sources & Capture Feed -->
+    <main class="sp-content">
+      <div class="sp-section-header">
+        <span class="sp-section-label">Captured Sources & Evidence</span>
+        <span id="sp-source-count" class="sp-badge">0</span>
+      </div>
+      <div id="sp-source-feed" class="sp-feed"></div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="sp-footer">
+      <div class="sp-status">
+        <span class="sp-dot"></span>
+        <span id="sp-sync-status">Sync Active</span>
+      </div>
+      <span class="sp-hint">Select text in ChatGPT → Right-click to capture</span>
+    </footer>
   </div>
-
-  <main class="panel-body">
-    <div id="empty-state" class="empty-state">
-      <div class="empty-icon">📝</div>
-      <h3>No quotes captured yet</h3>
-      <p>Highlight text on <strong>ChatGPT</strong> or any webpage, right-click, and select <strong>"Add to Detective Map"</strong>.</p>
-    </div>
-
-    <div id="quotes-list" class="quotes-list"></div>
-  </main>
-
-  <footer class="panel-footer">
-    <div class="hint">💡 Tip: Drag the Canvas Window to iPad via spacedesk for handwritten Apple Pencil notes.</div>
-  </footer>
 
   <script src="shared/storage.js"></script>
   <script src="shared/canvas-core.js"></script>

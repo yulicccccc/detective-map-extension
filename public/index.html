@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Detective Map">
   <link rel="apple-touch-icon" href="icons/icon128.png">
-  <title>Detective Map - Spatial Thinking Canvas</title>
+  <title>Detective Map V2.0 — Living Learning Map</title>
   <link rel="stylesheet" href="canvas.css">
 </head>
 <body>
@@ -21,13 +21,25 @@
 
       <div class="toolbar-divider"></div>
 
-      <!-- Mode & Drawing Tools -->
+      <!-- Workspace Selector -->
+      <div class="toolbar-group workspace-group">
+        <select id="select-workspace" class="workspace-dropdown" title="Select Active Learning Map"></select>
+        <button id="btn-new-workspace" class="icon-btn" title="Create New Workspace">+</button>
+      </div>
+
+      <div class="toolbar-divider"></div>
+
+      <!-- Mode & Tools -->
       <div class="toolbar-group tool-group">
-        <button id="tool-select" class="tool-btn active" data-tool="select" title="Select & Drag Cards / Pan Canvas (V)">
+        <button id="tool-select" class="tool-btn active" data-tool="select" title="Select & Drag Concepts (V)">
           <span class="btn-icon">👆</span>
           <span class="btn-label">Select</span>
         </button>
-        <button id="tool-pen" class="tool-btn" data-tool="pen" title="Pen / Apple Pencil (P)">
+        <button id="tool-connect" class="tool-btn" data-tool="connect" title="Connect Concepts with Edge (C)">
+          <span class="btn-icon">🔗</span>
+          <span class="btn-label">Connect</span>
+        </button>
+        <button id="tool-pen" class="tool-btn" data-tool="pen" title="Apple Pencil / Pen (P)">
           <span class="btn-icon">✍️</span>
           <span class="btn-label">Pen</span>
         </button>
@@ -43,25 +55,26 @@
 
       <div class="toolbar-divider"></div>
 
+      <!-- Ingestion & Creation -->
+      <div class="toolbar-group action-group">
+        <button id="btn-add-source" class="action-btn btn-highlight" title="Add Article, Notes or Text (+S)">
+          <span class="btn-icon">📥</span>
+          <span class="btn-label">+ Add Source</span>
+        </button>
+        <button id="btn-add-concept" class="action-btn" title="Manually Add Concept Node">
+          <span class="btn-icon">💡</span>
+          <span class="btn-label">+ Concept</span>
+        </button>
+      </div>
+
+      <div class="toolbar-divider"></div>
+
       <!-- Actions -->
       <div class="toolbar-group action-group">
         <button id="btn-undo" class="action-btn" title="Undo (Ctrl+Z)">
           <span class="btn-icon">↩</span>
           <span class="btn-label">Undo</span>
         </button>
-        <button id="btn-clear-ink" class="action-btn" title="Clear Ink Strokes">
-          <span class="btn-icon">🧹</span>
-          <span class="btn-label">Clear Ink</span>
-        </button>
-      </div>
-
-      <div class="toolbar-divider"></div>
-
-      <!-- Zoom Controls -->
-      <div class="toolbar-group zoom-group">
-        <button id="btn-zoom-out" class="icon-btn" title="Zoom Out (−)">−</button>
-        <span id="zoom-level" class="zoom-text" title="Click to reset 100%">100%</span>
-        <button id="btn-zoom-in" class="icon-btn" title="Zoom In (+)">+</button>
         <button id="btn-zoom-fit" class="icon-btn" title="Fit to Content (F)">🎯</button>
       </div>
 
@@ -69,19 +82,11 @@
 
       <!-- Cloud Sync & Backup -->
       <div class="toolbar-group backup-group">
-        <button id="btn-cloud-sync" class="action-btn" title="Click to Manage Cloud Sync / Device Pairing">
+        <button id="btn-cloud-sync" class="action-btn" title="Cloud Sync & Pairing">
           <span id="cloud-sync-icon" class="btn-icon">☁️</span>
           <span id="cloud-sync-label" class="btn-label">Sync: Connecting</span>
         </button>
-        <button id="btn-export-canvas" class="action-btn" title="Export Backup JSON">
-          <span class="btn-icon">💾</span>
-          <span class="btn-label">Export</span>
-        </button>
-        <label class="action-btn file-label" title="Import Backup JSON">
-          <span class="btn-icon">📂</span>
-          <span class="btn-label">Import</span>
-          <input type="file" id="file-import-canvas" accept=".json" style="display:none;">
-        </label>
+        <button id="btn-export-canvas" class="icon-btn" title="Export Backup JSON">💾</button>
       </div>
     </header>
 
@@ -90,14 +95,68 @@
       <!-- Infinite Dot Grid -->
       <div id="grid-background"></div>
 
-      <!-- World Cards Container (synchronized via transform) -->
-      <div id="world-cards-layer"></div>
+      <!-- World Concept Map Layer -->
+      <div id="world-map-layer">
+        <!-- SVG Edges Layer -->
+        <svg id="svg-edges-layer"></svg>
 
-      <!-- Full-Screen Ink Canvas (hardware accelerated) -->
+        <!-- Concepts Container -->
+        <div id="concepts-container"></div>
+      </div>
+
+      <!-- Full-Screen Ink Canvas (Committed Strokes) -->
       <canvas id="ink-canvas"></canvas>
+
+      <!-- Instant Scratch Canvas (120Hz Apple Pencil Sub-Frame Layer) -->
+      <canvas id="scratch-canvas"></canvas>
     </main>
 
-    <!-- Device Pairing Modal (for iPad & unauthenticated devices) -->
+    <!-- Proposal Review Toast / Modal -->
+    <div id="proposal-toast" class="proposal-banner" style="display:none;">
+      <div class="proposal-header">
+        <span class="proposal-icon">✨</span>
+        <span id="proposal-summary" class="proposal-title">AI proposed incremental updates</span>
+      </div>
+      <div id="proposal-stats" class="proposal-stats"></div>
+      <div class="proposal-actions">
+        <button id="btn-apply-proposal-all" class="btn-primary">Apply All</button>
+        <button id="btn-review-proposal" class="btn-secondary">Review</button>
+        <button id="btn-dismiss-proposal" class="btn-ghost">Dismiss</button>
+      </div>
+    </div>
+
+    <!-- Evidence Drawer (Supporting Sources for Concept) -->
+    <aside id="evidence-drawer" class="evidence-drawer" style="display:none;">
+      <div class="drawer-header">
+        <h3 id="drawer-concept-title">Supporting Evidence</h3>
+        <button id="btn-close-drawer" class="icon-btn">✕</button>
+      </div>
+      <div id="drawer-content" class="drawer-body"></div>
+    </aside>
+
+    <!-- Add Source Modal -->
+    <div id="add-source-modal" class="modal-backdrop" style="display:none;">
+      <div class="modal-card modal-wide">
+        <div class="modal-header">
+          <h2>📥 Add Learning Material</h2>
+          <button id="btn-close-source-modal" class="btn-card-close">✕</button>
+        </div>
+        <p class="modal-desc">Paste an article, paragraph, or ChatGPT conversation. AI will compare it with your existing map and propose incremental updates.</p>
+        
+        <form id="form-add-source" class="source-form">
+          <input type="text" id="input-source-title" class="text-input" placeholder="Title (e.g. Active Recall Study, Article Name)" />
+          <input type="url" id="input-source-url" class="text-input" placeholder="Source URL (Optional)" />
+          <textarea id="input-source-text" class="textarea-input" rows="8" placeholder="Paste your learning material here (up to ~10,000 words)..." required></textarea>
+          
+          <div class="modal-footer">
+            <span id="source-word-count" class="word-count">0 words</span>
+            <button type="submit" id="btn-submit-source" class="btn-primary">Analyze & Ingest</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Device Pairing Modal -->
     <div id="pairing-modal" class="modal-backdrop" style="display:none;">
       <div class="modal-card">
         <div class="modal-icon">🔐</div>
@@ -110,7 +169,6 @@
         </form>
 
         <div id="pairing-error-msg" class="pairing-error" style="display:none;"></div>
-        <div class="pairing-hint">💡 Default pairing code: <code>MAP-2026</code> (saved on device).</div>
       </div>
     </div>
 
@@ -121,7 +179,8 @@
         <span id="coords-tag" class="status-pill">World: (0, 0)</span>
       </div>
       <div class="status-right">
-        <span id="card-count-tag" class="status-pill">0 Cards</span>
+        <span id="concept-count-tag" class="status-pill">0 Concepts</span>
+        <span id="edge-count-tag" class="status-pill">0 Edges</span>
         <span id="stroke-count-tag" class="status-pill">0 Strokes</span>
         <span class="status-pill hint-pill">iPad ProMotion 120Hz Active</span>
       </div>

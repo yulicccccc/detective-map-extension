@@ -1,4 +1,4 @@
-// service-worker.js - Background Service Worker for Detective Map Extension
+// service-worker.js - Background Service Worker for Detective Map V2.0
 
 importScripts('shared/storage.js', 'shared/canvas-core.js');
 
@@ -9,7 +9,7 @@ const CLOUDFLARE_WORKER_URL = 'https://detectivemap.qchen9108.workers.dev';
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: CONTEXT_MENU_ID,
-    title: 'Add to Detective Map',
+    title: 'Add to Active Detective Map',
     contexts: ['selection'],
     documentUrlPatterns: ['https://chatgpt.com/*']
   });
@@ -19,26 +19,22 @@ chrome.runtime.onInstalled.addListener(() => {
   }
 
   // Pre-pair device token if not exists
-  chrome.storage.local.get(['detective_device_token', 'detective_pairing_code'], (res) => {
-    const code = res.detective_pairing_code || 'MAP-2026';
-    if (!res.detective_device_token) {
-      fetch(`${CLOUDFLARE_WORKER_URL}/api/pair`, {
+  chrome.storage.local.get(['dm_device_token_v2'], (res) => {
+    if (!res.dm_device_token_v2) {
+      fetch(`${CLOUDFLARE_WORKER_URL}/api/auth/pair`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pairingCode: code })
+        body: JSON.stringify({ pairingCode: 'MAP-2026', deviceName: 'Chrome Extension' })
       }).then(r => r.json()).then(data => {
         if (data.success && data.token) {
-          chrome.storage.local.set({
-            detective_device_token: data.token,
-            detective_pairing_code: code
-          });
-          console.log('[Detective Map] Chrome Extension paired with Cloudflare Worker successfully.');
+          chrome.storage.local.set({ dm_device_token_v2: data.token });
+          console.log('[Detective Map V2] Extension paired with Cloudflare successfully.');
         }
       }).catch(() => {});
     }
   });
 
-  console.log('[Detective Map] Service Worker Installed & ChatGPT Context Menu Registered.');
+  console.log('[Detective Map V2] Service Worker Installed.');
 });
 
 // Handle Context Menu Clicks
@@ -49,47 +45,20 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
     const sourceTitle = tab?.title || 'ChatGPT Conversation';
     const sourceUrl = tab?.url || info.pageUrl || '';
+    const activeWsId = await Storage.getActiveWorkspaceId();
 
-    // Calculate coordinate offset based on existing count
-    const existingQuotes = await Storage.getQuotes();
-    const index = existingQuotes.length;
-    const defaultX = 120 + (index % 6) * 45;
-    const defaultY = 120 + (index % 6) * 45;
-
-    const newQuote = {
-      id: `quote-${Date.now()}-${Math.random().toString(36).substr(2, 7)}`,
-      type: 'quote',
+    const newSource = {
+      id: `src_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+      workspaceId: activeWsId,
+      type: 'chatgpt_selection',
+      title: sourceTitle,
       text: selectedText,
-      sourceTitle: sourceTitle,
-      sourceUrl: sourceUrl,
-      capturedAt: new Date().toISOString(),
-      x: defaultX,
-      y: defaultY,
-      width: 320,
-      height: 'auto'
+      url: sourceUrl,
+      capturedAt: new Date().toISOString()
     };
 
-    // 1. Save locally in chrome.storage.local (Source of truth on PC)
-    await Storage.addQuote(newQuote);
-
-    // 2. Transmit to Cloudflare Worker (Instant WSS push to iPad Canvas)
-    try {
-      const res = await chrome.storage.local.get(['detective_device_token', 'detective_pairing_code']);
-      const token = res.detective_device_token || res.detective_pairing_code || 'MAP-2026';
-
-      fetch(`${CLOUDFLARE_WORKER_URL}/api/quote`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(newQuote)
-      }).catch(err => {
-        console.warn('[Cloud Sync] Worker upload failed, quote saved locally:', err);
-      });
-    } catch (e) {
-      console.warn('[Cloud Sync] Offline fallback used.');
-    }
+    // 1. Save locally in chrome.storage.local immediately (Source of truth on PC)
+    await Storage.addSource(newSource);
 
     // Badge notification
     chrome.action.setBadgeText({ text: '✓' });
@@ -98,11 +67,11 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       chrome.action.setBadgeText({ text: '' });
     }, 1800);
 
-    console.log('[Detective Map] Quote captured successfully from ChatGPT:', newQuote);
+    console.log('[Detective Map V2] Source captured to Workspace [' + activeWsId + ']:', newSource);
   }
 });
 
-// Handle incoming runtime messages
+// Handle runtime messages
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'OPEN_CANVAS_WINDOW') {
     openCanvasWindow();
@@ -111,9 +80,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-/**
- * Open or focus the standalone Detective Map Canvas Window
- */
 async function openCanvasWindow() {
   const canvasUrl = chrome.runtime.getURL('canvas.html');
 
@@ -131,8 +97,8 @@ async function openCanvasWindow() {
   await chrome.windows.create({
     url: canvasUrl,
     type: 'popup',
-    width: 1280,
-    height: 900,
+    width: 1360,
+    height: 920,
     focused: true
   });
 }

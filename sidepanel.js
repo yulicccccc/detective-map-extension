@@ -1,139 +1,105 @@
-// sidepanel.js - Controller for Detective Map Side Panel
+// sidepanel.js - Detective Map V2.0 Side Panel Controller
 
 document.addEventListener('DOMContentLoaded', async () => {
-  const quoteCountEl = document.getElementById('quote-count');
-  const quotesListEl = document.getElementById('quotes-list');
-  const emptyStateEl = document.getElementById('empty-state');
+  const selectWorkspace = document.getElementById('sp-select-workspace');
+  const btnNewWs = document.getElementById('sp-btn-new-ws');
   const btnOpenCanvas = document.getElementById('btn-open-canvas');
-  const btnExport = document.getElementById('btn-export');
-  const fileImport = document.getElementById('file-import');
+  const btnAddSource = document.getElementById('sp-btn-add-source');
+  const sourceFeed = document.getElementById('sp-source-feed');
+  const sourceCount = document.getElementById('sp-source-count');
+  const syncStatus = document.getElementById('sp-sync-status');
 
-  // Initial render
-  await renderQuotes();
+  let activeWsId = await Storage.getActiveWorkspaceId();
+  let workspaces = await Storage.getWorkspaces();
 
-  // Listen for storage changes in real-time
-  Storage.onChanged((changes) => {
-    if (changes[STORAGE_KEYS.QUOTES]) {
-      renderQuotes();
+  await refreshUI();
+
+  // Workspace change
+  selectWorkspace.addEventListener('change', async (e) => {
+    activeWsId = e.target.value;
+    await Storage.setActiveWorkspaceId(activeWsId);
+    await refreshUI();
+  });
+
+  // Create Workspace
+  btnNewWs.addEventListener('click', async () => {
+    const title = prompt('Enter new learning map name:', 'New Topic');
+    if (title) {
+      const ws = await Storage.createWorkspace(title);
+      activeWsId = ws.id;
+      await refreshUI();
     }
   });
 
   // Open Canvas Window
   btnOpenCanvas.addEventListener('click', () => {
-    if (typeof chrome !== 'undefined' && chrome.runtime) {
-      chrome.runtime.sendMessage({ type: 'OPEN_CANVAS_WINDOW' });
-    } else {
-      window.open('canvas.html', '_blank', 'width=1280,height=900');
+    chrome.runtime.sendMessage({ type: 'OPEN_CANVAS_WINDOW' });
+  });
+
+  // Add Source
+  btnAddSource.addEventListener('click', async () => {
+    const text = prompt('Paste notes, quote, or article text:');
+    if (text && text.trim()) {
+      await Storage.addSource({
+        workspaceId: activeWsId,
+        type: 'pasted_article',
+        title: 'Manual Ingestion',
+        text: text.trim()
+      });
+      await refreshUI();
     }
   });
 
-  // Export JSON
-  btnExport.addEventListener('click', async () => {
-    try {
-      const exportData = await Storage.exportAllData();
-      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `detective-map-backup-${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      alert('Export failed: ' + err.message);
-    }
+  // Listen for changes
+  Storage.onChanged(async () => {
+    await refreshUI();
   });
 
-  // Import JSON
-  fileImport.addEventListener('change', async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  async function refreshUI() {
+    workspaces = await Storage.getWorkspaces();
+    selectWorkspace.innerHTML = '';
+    workspaces.forEach(ws => {
+      const opt = document.createElement('option');
+      opt.value = ws.id;
+      opt.textContent = ws.title || 'Untitled Map';
+      opt.selected = ws.id === activeWsId;
+      selectWorkspace.appendChild(opt);
+    });
 
-    try {
-      const text = await file.text();
-      const json = JSON.parse(text);
-      const res = await Storage.importAllData(json);
-      alert(`Imported ${res.quoteCount} quotes and ${res.strokeCount} strokes successfully!`);
-      await renderQuotes();
-    } catch (err) {
-      alert('Failed to import backup file: ' + err.message);
-    } finally {
-      fileImport.value = '';
-    }
-  });
+    const sources = await Storage.getSources();
+    sourceCount.textContent = sources.length;
+    sourceFeed.innerHTML = '';
 
-  /**
-   * Render Quotes List
-   */
-  async function renderQuotes() {
-    const quotes = await Storage.getQuotes();
-    quoteCountEl.textContent = `${quotes.length} Quote${quotes.length === 1 ? '' : 's'}`;
-
-    if (quotes.length === 0) {
-      emptyStateEl.style.display = 'block';
-      quotesListEl.innerHTML = '';
+    if (sources.length === 0) {
+      sourceFeed.innerHTML = `
+        <div class="sp-empty">
+          <span class="sp-empty-icon">💡</span>
+          <p>No sources captured yet in this topic.</p>
+          <span class="sp-empty-hint">Select text on ChatGPT or paste an article above.</span>
+        </div>
+      `;
       return;
     }
 
-    emptyStateEl.style.display = 'none';
+    sources.forEach(s => {
+      const card = document.createElement('div');
+      card.className = 'sp-card';
+      const timeStr = CanvasCore.formatCaptureTime(s.capturedAt);
+      const domain = CanvasCore.extractDomain(s.url);
 
-    // Sort newest first in side panel list
-    const sortedQuotes = [...quotes].reverse();
-
-    quotesListEl.innerHTML = sortedQuotes.map(quote => {
-      const domain = CanvasCore.extractDomain(quote.sourceUrl);
-      const timeDisplay = CanvasCore.formatCaptureTime(quote.capturedAt);
-      const safeText = escapeHtml(quote.text);
-      const safeTitle = escapeHtml(quote.sourceTitle || domain);
-      const safeUrl = quote.sourceUrl ? escapeHtml(quote.sourceUrl) : '#';
-
-      return `
-        <div class="quote-card" data-id="${quote.id}">
-          <div class="quote-header">
-            <a href="${safeUrl}" target="_blank" class="quote-source" title="${safeTitle}">
-              <span>↗</span> ${domain}
-            </a>
-            <span class="quote-time">${timeDisplay}</span>
-          </div>
-          <div class="quote-content">${safeText}</div>
-          <div class="quote-actions">
-            <button class="btn-card-action btn-card-copy" title="Copy text">📋 Copy</button>
-            <button class="btn-card-action btn-card-delete" title="Delete quote">🗑️ Delete</button>
-          </div>
+      card.innerHTML = `
+        <div class="sp-card-header">
+          <span class="sp-card-source">${domain || s.type}</span>
+          <span class="sp-card-time">${timeStr}</span>
         </div>
+        <div class="sp-card-body">${escapeHtml(s.text)}</div>
       `;
-    }).join('');
-
-    // Attach card event listeners
-    quotesListEl.querySelectorAll('.quote-card').forEach(cardEl => {
-      const id = cardEl.getAttribute('data-id');
-
-      cardEl.querySelector('.btn-card-copy')?.addEventListener('click', () => {
-        const quote = quotes.find(q => q.id === id);
-        if (quote) {
-          navigator.clipboard.writeText(quote.text);
-          const copyBtn = cardEl.querySelector('.btn-card-copy');
-          const originalText = copyBtn.textContent;
-          copyBtn.textContent = '✓ Copied';
-          setTimeout(() => { copyBtn.textContent = originalText; }, 1500);
-        }
-      });
-
-      cardEl.querySelector('.btn-card-delete')?.addEventListener('click', async () => {
-        if (confirm('Delete this quote?')) {
-          await Storage.deleteQuote(id);
-          await renderQuotes();
-        }
-      });
+      sourceFeed.appendChild(card);
     });
   }
 
   function escapeHtml(str) {
     if (!str) return '';
-    return str
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
   }
 });
