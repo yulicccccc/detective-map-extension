@@ -1,0 +1,40 @@
+{
+  "manifest_version": 3,
+  "name": "Detective Map",
+  "version": "1.0.0",
+  "description": "Read on the left. Think on the right. Spatial knowledge canvas & Apple Pencil handwriting extension.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": [
+    "storage",
+    "contextMenus",
+    "sidePanel",
+    "activeTab"
+  ],
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "action": {
+    "default_title": "Detective Map",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content-script.js"],
+      "run_at": "document_end"
+    }
+  ]
+}

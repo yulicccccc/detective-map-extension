@@ -1,0 +1,9 @@
+# Node & system files
+node_modules/
+.DS_Store
+Thumbs.db
+*.log
+
+# Scratch / test artifacts
+scratch/
+.system_generated/
