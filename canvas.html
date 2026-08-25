@@ -67,8 +67,12 @@
 
       <div class="toolbar-divider"></div>
 
-      <!-- Backup & Sync -->
+      <!-- Cloud Sync & Backup -->
       <div class="toolbar-group backup-group">
+        <button id="btn-cloud-sync" class="action-btn" title="Click to Manage Cloud Sync / Device Pairing">
+          <span id="cloud-sync-icon" class="btn-icon">☁️</span>
+          <span id="cloud-sync-label" class="btn-label">Sync: Connecting</span>
+        </button>
         <button id="btn-export-canvas" class="action-btn" title="Export Backup JSON">
           <span class="btn-icon">💾</span>
           <span class="btn-label">Export</span>
@@ -92,6 +96,23 @@
       <!-- Full-Screen Ink Canvas (hardware accelerated) -->
       <canvas id="ink-canvas"></canvas>
     </main>
+
+    <!-- Device Pairing Modal (for iPad & unauthenticated devices) -->
+    <div id="pairing-modal" class="modal-backdrop" style="display:none;">
+      <div class="modal-card">
+        <div class="modal-icon">🔐</div>
+        <h2>Private Workspace Pairing</h2>
+        <p>Enter your <strong>Workspace Pairing Code</strong> to connect this iPad with your Windows PC in real time.</p>
+        
+        <form id="form-pair" class="pairing-form">
+          <input type="text" id="input-pairing-code" class="pairing-input" placeholder="e.g. MAP-2026" autofocus autocomplete="off" autocapitalize="characters" />
+          <button type="submit" id="btn-submit-pair" class="btn-pair-submit">Pair & Connect</button>
+        </form>
+
+        <div id="pairing-error-msg" class="pairing-error" style="display:none;"></div>
+        <div class="pairing-hint">💡 Default pairing code: <code>MAP-2026</code> (saved on device).</div>
+      </div>
+    </div>
 
     <!-- Bottom Status Bar -->
     <footer id="status-bar">

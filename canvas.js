@@ -19,6 +19,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnExport = document.getElementById('btn-export-canvas');
   const fileImport = document.getElementById('file-import-canvas');
 
+  const btnCloudSync = document.getElementById('btn-cloud-sync');
+  const cloudSyncIcon = document.getElementById('cloud-sync-icon');
+  const cloudSyncLabel = document.getElementById('cloud-sync-label');
+
+  // Pairing Modal Elements
+  const pairingModal = document.getElementById('pairing-modal');
+  const formPair = document.getElementById('form-pair');
+  const inputPairingCode = document.getElementById('input-pairing-code');
+  const pairingErrorMsg = document.getElementById('pairing-error-msg');
+
   const pointerDeviceTag = document.getElementById('pointer-device-tag');
   const coordsTag = document.getElementById('coords-tag');
   const cardCountTag = document.getElementById('card-count-tag');
@@ -81,6 +91,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupPointerListeners();
     setupKeyboardListeners();
     setupStorageSync();
+    setupCloudSyncUI();
 
     // Default to Select tool and set proper pointer-events routing
     setActiveTool('select');
@@ -249,13 +260,9 @@ document.addEventListener('DOMContentLoaded', async () => {
    * Pointer Event Routing for Mouse, Touch, and Apple Pencil
    */
   function setupPointerListeners() {
-    // 1. Viewport Container PointerDown: handles background click/pan when in Select mode, or Space+Drag / Middle Click
     viewportContainer.addEventListener('pointerdown', handleViewportPointerDown);
-
-    // 2. Ink Canvas PointerDown: handles Pen / Highlighter / Eraser drawing
     inkCanvas.addEventListener('pointerdown', handleInkPointerDown);
 
-    // 3. Global Window listeners for continuous move & release
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerUp);
     window.addEventListener('pointercancel', handlePointerUp);
@@ -265,7 +272,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function handleViewportPointerDown(e) {
-    // If click originated on a card component, do not trigger background pan
     if (e.target.closest('.canvas-card')) return;
 
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -298,7 +304,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     updatePointerDeviceTag(e);
 
-    // Multi-touch pinch-to-zoom detection
     if (activePointers.size === 2) {
       isDrawing = false;
       currentStroke = null;
@@ -313,7 +318,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    // Space held or Middle Mouse -> Pan canvas even while in pen mode
     if (isSpacePressed || e.button === 1) {
       isPanning = true;
       panStart = { x: e.clientX, y: e.clientY };
@@ -664,6 +668,66 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   /**
+   * Cloud Sync & Device Pairing UI
+   */
+  function setupCloudSyncUI() {
+    if (Storage.cloudSync) {
+      Storage.cloudSync.onStatusChange((status) => {
+        if (status === 'connected') {
+          cloudSyncIcon.textContent = '🟢';
+          cloudSyncLabel.textContent = 'Sync: Live (Cloud)';
+          pairingModal.style.display = 'none';
+        } else if (status === 'connecting') {
+          cloudSyncIcon.textContent = '🟡';
+          cloudSyncLabel.textContent = 'Sync: Connecting...';
+        } else if (status === 'unpaired') {
+          cloudSyncIcon.textContent = '🔒';
+          cloudSyncLabel.textContent = 'Pair Device';
+          pairingModal.style.display = 'flex';
+        } else {
+          cloudSyncIcon.textContent = '⚪';
+          cloudSyncLabel.textContent = 'Sync: Offline';
+        }
+      });
+    }
+
+    btnCloudSync?.addEventListener('click', () => {
+      pairingModal.style.display = 'flex';
+      inputPairingCode.focus();
+    });
+
+    // Close pairing modal on outside click if already paired
+    pairingModal?.addEventListener('click', (e) => {
+      if (e.target === pairingModal && Storage.cloudSync.status === 'connected') {
+        pairingModal.style.display = 'none';
+      }
+    });
+
+    formPair?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const code = inputPairingCode.value.trim();
+      if (!code) return;
+
+      pairingErrorMsg.style.display = 'none';
+      const submitBtn = document.getElementById('btn-submit-pair');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Verifying...';
+
+      const res = await Storage.cloudSync.pairDevice(code);
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Pair & Connect';
+
+      if (res.success) {
+        pairingModal.style.display = 'none';
+        inputPairingCode.value = '';
+      } else {
+        pairingErrorMsg.textContent = res.error || 'Invalid Pairing Code. Please try again.';
+        pairingErrorMsg.style.display = 'block';
+      }
+    });
+  }
+
+  /**
    * Switch Active Tool and Dynamically Route Pointer Events
    */
   function setActiveTool(tool) {
@@ -674,9 +738,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     viewportContainer.className = `cursor-${tool}`;
 
-    // Pointer-events routing:
-    // In Select mode, inkCanvas pointer-events is disabled so cards can be clicked/dragged freely.
-    // In Pen/Highlighter/Eraser mode, inkCanvas pointer-events is active so drawing can overlay cards.
     if (tool === 'select') {
       inkCanvas.style.pointerEvents = 'none';
     } else {
@@ -740,7 +801,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     if (minX === Infinity) {
-      // Empty canvas, reset to origin
       viewport = { panX: 100, panY: 100, zoom: 1.0 };
       updateViewportTransforms();
       Storage.saveViewport(viewport);
@@ -827,7 +887,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const type = e.pointerType || 'mouse';
     if (type === 'pen') {
       const pressureText = e.pressure ? ` (${Math.round(e.pressure * 100)}% pressure)` : '';
-      pointerDeviceTag.textContent = `✍️ Apple Pencil / Stylus Active${pressureText}`;
+      pointerDeviceTag.textContent = `✍️ Apple Pencil Active${pressureText}`;
       pointerDeviceTag.style.color = '#38bdf8';
     } else if (type === 'touch') {
       pointerDeviceTag.textContent = `📱 Touch Gesture Active`;

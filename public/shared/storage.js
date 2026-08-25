@@ -1,11 +1,12 @@
-// shared/storage.js - Unified chrome.storage.local & WebRTC Cloud Sync Layer
+// shared/storage.js - Unified chrome.storage.local & Cloudflare WebSocket Sync Layer
 
 const STORAGE_KEYS = {
   QUOTES: 'detective_quotes',
   STROKES: 'detective_strokes',
   VIEWPORT: 'detective_viewport',
   CONFIG: 'detective_config',
-  ROOM_ID: 'detective_room_id'
+  DEVICE_TOKEN: 'detective_device_token',
+  PAIRING_CODE: 'detective_pairing_code'
 };
 
 const DEFAULT_VIEWPORT = {
@@ -14,12 +15,12 @@ const DEFAULT_VIEWPORT = {
   zoom: 1.0
 };
 
-const DEFAULT_ROOM_ID = 'detective-map-room-v1';
+const CLOUDFLARE_BASE_URL = 'https://detectivemap.qchen9108.workers.dev';
+const CLOUDFLARE_WS_URL = 'wss://detectivemap.qchen9108.workers.dev/api/ws';
 
 // Runtime environment detection
 const isChromeStorage = typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local;
 const hasLocalStorage = typeof localStorage !== 'undefined';
-
 const memStore = {};
 const changeListeners = [];
 
@@ -29,141 +30,172 @@ function triggerChange(changes) {
   });
 }
 
-// --- WebRTC Peer-to-Peer Realtime Sync Engine ---
-class WebRTCSyncEngine {
+// --- Cloudflare Durable Object WebSocket Realtime Sync Engine ---
+class CloudflareSyncEngine {
   constructor() {
-    this.peer = null;
-    this.connections = new Set();
-    this.roomId = DEFAULT_ROOM_ID;
-    this.isHost = isChromeStorage; // Extension acts as host, Web/iPad acts as peer
+    this.ws = null;
     this.status = 'disconnected'; // 'disconnected' | 'connecting' | 'connected'
     this.statusListeners = [];
+    this.reconnectTimer = null;
+    this.pingTimer = null;
   }
 
-  init() {
-    if (typeof Peer === 'undefined') {
-      console.log('[Sync] PeerJS not available, running in local-only mode.');
+  async init() {
+    if (typeof window === 'undefined') return;
+
+    const token = await this.getToken();
+    if (!token) {
+      this.setStatus('unpaired');
       return;
     }
 
-    // Generate deterministic peer ID based on room
-    const hostPeerId = `dm-host-${this.roomId}`;
-    const clientPeerId = `dm-client-${Math.random().toString(36).substr(2, 6)}`;
+    this.connect(token);
+  }
 
+  async getToken() {
+    if (isChromeStorage) {
+      const res = await chrome.storage.local.get([STORAGE_KEYS.DEVICE_TOKEN, STORAGE_KEYS.PAIRING_CODE]);
+      return res[STORAGE_KEYS.DEVICE_TOKEN] || res[STORAGE_KEYS.PAIRING_CODE] || 'MAP-2026';
+    } else if (hasLocalStorage) {
+      return localStorage.getItem(STORAGE_KEYS.DEVICE_TOKEN) || localStorage.getItem(STORAGE_KEYS.PAIRING_CODE);
+    }
+    return memStore[STORAGE_KEYS.DEVICE_TOKEN] || null;
+  }
+
+  async pairDevice(pairingCode) {
+    const code = (pairingCode || '').trim().toUpperCase();
     try {
-      if (this.isHost) {
-        // Host connects with stable ID
-        this.peer = new Peer(hostPeerId, { debug: 1 });
-      } else {
-        // iPad client connects and targets host
-        this.peer = new Peer(clientPeerId, { debug: 1 });
+      const res = await fetch(`${CLOUDFLARE_BASE_URL}/api/pair`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pairingCode: code })
+      });
+      const data = await res.json();
+      if (data.success && data.token) {
+        if (isChromeStorage) {
+          await chrome.storage.local.set({
+            [STORAGE_KEYS.DEVICE_TOKEN]: data.token,
+            [STORAGE_KEYS.PAIRING_CODE]: code
+          });
+        }
+        if (hasLocalStorage) {
+          localStorage.setItem(STORAGE_KEYS.DEVICE_TOKEN, data.token);
+          localStorage.setItem(STORAGE_KEYS.PAIRING_CODE, code);
+        }
+        memStore[STORAGE_KEYS.DEVICE_TOKEN] = data.token;
+
+        this.connect(data.token);
+        return { success: true, token: data.token };
       }
-
-      this.peer.on('open', (id) => {
-        console.log('[Sync] Peer connected with ID:', id);
-        this.setStatus('connecting');
-
-        if (!this.isHost) {
-          // Connect to Host
-          this.connectToHost(hostPeerId);
-        }
-      });
-
-      this.peer.on('connection', (conn) => {
-        this.handleConnection(conn);
-      });
-
-      this.peer.on('error', (err) => {
-        console.warn('[Sync] Peer error:', err.type);
-        if (err.type === 'unavailable-id' && this.isHost) {
-          // Host ID already in use (e.g. reload), switch to secondary
-          this.peer = new Peer(`dm-peer-${Math.random().toString(36).substr(2, 6)}`);
-          this.peer.on('open', () => this.connectToHost(hostPeerId));
-        }
-      });
-    } catch (e) {
-      console.warn('[Sync] WebRTC init error:', e);
+      return { success: false, error: data.error || 'Pairing failed' };
+    } catch (err) {
+      return { success: false, error: err.message };
     }
   }
 
-  connectToHost(hostId) {
-    if (!this.peer) return;
-    const conn = this.peer.connect(hostId, { reliable: true });
-    this.handleConnection(conn);
+  connect(token) {
+    if (this.ws && (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN)) {
+      return;
+    }
+
+    this.setStatus('connecting');
+    try {
+      const wsUrl = `${CLOUDFLARE_WS_URL}?token=${encodeURIComponent(token)}`;
+      this.ws = new WebSocket(wsUrl);
+
+      this.ws.addEventListener('open', () => {
+        console.log('[Cloud Sync] WebSocket connected to Cloudflare Durable Object.');
+        this.setStatus('connected');
+
+        // Setup keepalive ping
+        clearInterval(this.pingTimer);
+        this.pingTimer = setInterval(() => {
+          if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({ type: 'PING' }));
+          }
+        }, 25000);
+      });
+
+      this.ws.addEventListener('message', (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          this.handleIncomingMessage(msg);
+        } catch (e) {
+          console.warn('[Cloud Sync] Message parse error:', e);
+        }
+      });
+
+      this.ws.addEventListener('close', () => {
+        this.setStatus('disconnected');
+        clearInterval(this.pingTimer);
+        this.scheduleReconnect();
+      });
+
+      this.ws.addEventListener('error', () => {
+        this.setStatus('disconnected');
+      });
+    } catch (err) {
+      this.setStatus('disconnected');
+      this.scheduleReconnect();
+    }
   }
 
-  handleConnection(conn) {
-    conn.on('open', () => {
-      console.log('[Sync] DataChannel opened with peer:', conn.peer);
-      this.connections.add(conn);
-      this.setStatus('connected');
-
-      // Request / Send full initial state sync
-      if (this.isHost) {
-        Storage.getQuotes().then(quotes => {
-          Storage.getStrokes().then(strokes => {
-            conn.send({ type: 'FULL_SYNC', quotes, strokes });
-          });
-        });
-      }
-    });
-
-    conn.on('data', (data) => {
-      this.handleIncomingMessage(data);
-    });
-
-    conn.on('close', () => {
-      this.connections.delete(conn);
-      if (this.connections.size === 0) {
-        this.setStatus('connecting');
-      }
-    });
-
-    conn.on('error', () => {
-      this.connections.delete(conn);
-    });
+  scheduleReconnect() {
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = setTimeout(async () => {
+      const token = await this.getToken();
+      if (token) this.connect(token);
+    }, 4000);
   }
 
   handleIncomingMessage(msg) {
     if (!msg || !msg.type) return;
 
-    if (msg.type === 'FULL_SYNC') {
+    if (msg.type === 'INIT_STATE') {
       if (Array.isArray(msg.quotes)) {
         if (hasLocalStorage) localStorage.setItem(STORAGE_KEYS.QUOTES, JSON.stringify(msg.quotes));
+        if (isChromeStorage) chrome.storage.local.set({ [STORAGE_KEYS.QUOTES]: msg.quotes });
         triggerChange({ [STORAGE_KEYS.QUOTES]: { newValue: msg.quotes } });
       }
       if (Array.isArray(msg.strokes)) {
         if (hasLocalStorage) localStorage.setItem(STORAGE_KEYS.STROKES, JSON.stringify(msg.strokes));
+        if (isChromeStorage) chrome.storage.local.set({ [STORAGE_KEYS.STROKES]: msg.strokes });
         triggerChange({ [STORAGE_KEYS.STROKES]: { newValue: msg.strokes } });
       }
-    } else if (msg.type === 'ADD_QUOTE') {
+      if (msg.viewport) {
+        if (hasLocalStorage) localStorage.setItem(STORAGE_KEYS.VIEWPORT, JSON.stringify(msg.viewport));
+        if (isChromeStorage) chrome.storage.local.set({ [STORAGE_KEYS.VIEWPORT]: msg.viewport });
+      }
+    } else if (msg.type === 'QUOTE_ADDED' && msg.quote) {
       Storage.getQuotes().then(existing => {
         const updated = [...existing.filter(q => q.id !== msg.quote.id), msg.quote];
         if (hasLocalStorage) localStorage.setItem(STORAGE_KEYS.QUOTES, JSON.stringify(updated));
+        if (isChromeStorage) chrome.storage.local.set({ [STORAGE_KEYS.QUOTES]: updated });
         triggerChange({ [STORAGE_KEYS.QUOTES]: { newValue: updated } });
       });
-    } else if (msg.type === 'UPDATE_QUOTES') {
+    } else if (msg.type === 'QUOTES_UPDATED' && Array.isArray(msg.quotes)) {
       if (hasLocalStorage) localStorage.setItem(STORAGE_KEYS.QUOTES, JSON.stringify(msg.quotes));
+      if (isChromeStorage) chrome.storage.local.set({ [STORAGE_KEYS.QUOTES]: msg.quotes });
       triggerChange({ [STORAGE_KEYS.QUOTES]: { newValue: msg.quotes } });
-    } else if (msg.type === 'ADD_STROKE') {
+    } else if (msg.type === 'STROKE_ADDED' && msg.stroke) {
       Storage.getStrokes().then(existing => {
         const updated = [...existing.filter(s => s.id !== msg.stroke.id), msg.stroke];
         if (hasLocalStorage) localStorage.setItem(STORAGE_KEYS.STROKES, JSON.stringify(updated));
+        if (isChromeStorage) chrome.storage.local.set({ [STORAGE_KEYS.STROKES]: updated });
         triggerChange({ [STORAGE_KEYS.STROKES]: { newValue: updated } });
       });
-    } else if (msg.type === 'UPDATE_STROKES') {
+    } else if (msg.type === 'STROKES_UPDATED' && Array.isArray(msg.strokes)) {
       if (hasLocalStorage) localStorage.setItem(STORAGE_KEYS.STROKES, JSON.stringify(msg.strokes));
+      if (isChromeStorage) chrome.storage.local.set({ [STORAGE_KEYS.STROKES]: msg.strokes });
       triggerChange({ [STORAGE_KEYS.STROKES]: { newValue: msg.strokes } });
     }
   }
 
-  broadcast(message) {
-    for (const conn of this.connections) {
+  send(msg) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       try {
-        if (conn.open) conn.send(message);
-      } catch (e) {
-        this.connections.delete(conn);
-      }
+        this.ws.send(JSON.stringify(msg));
+      } catch (e) {}
     }
   }
 
@@ -178,16 +210,16 @@ class WebRTCSyncEngine {
   }
 }
 
-const syncEngine = new WebRTCSyncEngine();
+const cloudSync = new CloudflareSyncEngine();
 
 if (typeof window !== 'undefined') {
   window.addEventListener('DOMContentLoaded', () => {
-    syncEngine.init();
+    cloudSync.init();
   });
 }
 
 const Storage = {
-  syncEngine,
+  cloudSync,
 
   async getQuotes() {
     if (isChromeStorage) {
@@ -210,8 +242,7 @@ const Storage = {
       memStore[STORAGE_KEYS.QUOTES] = quotes;
     }
 
-    // Broadcast across WebRTC tunnel
-    syncEngine.broadcast({ type: 'UPDATE_QUOTES', quotes });
+    cloudSync.send({ type: 'UPDATE_QUOTES', quotes });
     return quotes;
   },
 
@@ -241,8 +272,7 @@ const Storage = {
       memStore[STORAGE_KEYS.QUOTES] = quotes;
     }
 
-    // Instant live push to iPad over WebRTC
-    syncEngine.broadcast({ type: 'ADD_QUOTE', quote: newQuote });
+    cloudSync.send({ type: 'ADD_QUOTE', quote: newQuote });
     return newQuote;
   },
 
@@ -285,7 +315,7 @@ const Storage = {
       memStore[STORAGE_KEYS.STROKES] = strokes;
     }
 
-    syncEngine.broadcast({ type: 'UPDATE_STROKES', strokes });
+    cloudSync.send({ type: 'UPDATE_STROKES', strokes });
     return strokes;
   },
 
@@ -311,8 +341,8 @@ const Storage = {
       memStore[STORAGE_KEYS.STROKES] = strokes;
     }
 
-    // Live sync stroke to other devices
-    syncEngine.broadcast({ type: 'ADD_STROKE', stroke: newStroke });
+    // Instant push to Cloudflare DO -> iPad receives stroke
+    cloudSync.send({ type: 'ADD_STROKE', stroke: newStroke });
     return newStroke;
   },
 
@@ -358,6 +388,7 @@ const Storage = {
       memStore[STORAGE_KEYS.VIEWPORT] = vp;
     }
 
+    cloudSync.send({ type: 'UPDATE_VIEWPORT', viewport: vp });
     return vp;
   },
 

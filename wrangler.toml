@@ -1,0 +1,16 @@
+name = "detectivemap"
+main = "src/worker.js"
+compatibility_date = "2024-09-23"
+account_id = "c7507f82f5078e81f58c2fcc1e7bfbdb"
+
+[vars]
+DEFAULT_PAIRING_CODE = "MAP-2026"
+
+[durable_objects]
+bindings = [
+  { name = "DETECTIVE_WORKSPACE", class_name = "DetectiveMapWorkspace" }
+]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["DetectiveMapWorkspace"]

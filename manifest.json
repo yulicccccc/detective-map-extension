@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Detective Map",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Read on the left. Think on the right. Spatial knowledge canvas & Apple Pencil handwriting extension.",
   "icons": {
     "16": "icons/icon16.png",
@@ -14,6 +14,9 @@
     "contextMenus",
     "sidePanel",
     "activeTab"
+  ],
+  "host_permissions": [
+    "https://detectivemap.qchen9108.workers.dev/*"
   ],
   "background": {
     "service_worker": "service-worker.js"

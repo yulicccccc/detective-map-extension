@@ -290,7 +290,6 @@ html, body {
   left: 0;
   width: 100%;
   height: 100%;
-  pointer-events: auto;
   touch-action: none;
 }
 
@@ -334,3 +333,111 @@ html, body {
 .cursor-eraser { cursor: cell; }
 .cursor-panning { cursor: grab; }
 .cursor-panning-active { cursor: grabbing !important; }
+
+/* Pairing Modal */
+.modal-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(9, 13, 22, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modal-card {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.7);
+  padding: 28px 24px;
+  max-width: 400px;
+  width: 100%;
+  text-align: center;
+}
+
+.modal-icon {
+  font-size: 36px;
+  margin-bottom: 12px;
+}
+
+.modal-card h2 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 8px;
+}
+
+.modal-card p {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+.pairing-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pairing-input {
+  background: #0f172a;
+  border: 1px solid #475569;
+  border-radius: var(--radius-sm);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  padding: 10px 14px;
+  text-align: center;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.pairing-input:focus {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+}
+
+.btn-pair-submit {
+  background: linear-gradient(135deg, #0284c7, #2563eb);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 11px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-pair-submit:hover {
+  background: linear-gradient(135deg, #0369a1, #1d4ed8);
+}
+
+.pairing-error {
+  margin-top: 10px;
+  color: var(--accent-rose);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.pairing-hint {
+  margin-top: 14px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.pairing-hint code {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--accent-amber);
+}
