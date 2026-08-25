@@ -45,7 +45,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let cardDragOffset = { x: 0, y: 0 };
   let cardInitialPos = { x: 0, y: 0 };
 
-  // Multi-touch gestures (Pinch-to-zoom on iPad)
+  // Multi-touch gestures (Pinch-to-zoom on iPad / touchscreens)
   const activePointers = new Map();
   let initialPinchDistance = null;
   let initialPinchZoom = 1.0;
@@ -81,6 +81,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupPointerListeners();
     setupKeyboardListeners();
     setupStorageSync();
+
+    // Default to Select tool and set proper pointer-events routing
+    setActiveTool('select');
   }
 
   /**
@@ -154,7 +157,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         <div class="canvas-card-body">${safeText}</div>
       `;
 
-      // Header drag handler
+      // Header drag handler for Card movement in Select mode
       const headerEl = cardEl.querySelector('.canvas-card-header');
       headerEl.addEventListener('pointerdown', (e) => handleCardPointerDown(e, quote));
 
@@ -210,7 +213,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       ctx.lineWidth = stroke.width || 20;
       ctx.globalAlpha = stroke.opacity || 0.35;
     } else {
-      ctx.strokeStyle = stroke.color || '#0f172a';
+      ctx.strokeStyle = stroke.color || '#38bdf8';
       ctx.lineWidth = stroke.width || 3;
       ctx.globalAlpha = stroke.opacity || 1.0;
     }
@@ -246,7 +249,13 @@ document.addEventListener('DOMContentLoaded', async () => {
    * Pointer Event Routing for Mouse, Touch, and Apple Pencil
    */
   function setupPointerListeners() {
-    inkCanvas.addEventListener('pointerdown', handlePointerDown);
+    // 1. Viewport Container PointerDown: handles background click/pan when in Select mode, or Space+Drag / Middle Click
+    viewportContainer.addEventListener('pointerdown', handleViewportPointerDown);
+
+    // 2. Ink Canvas PointerDown: handles Pen / Highlighter / Eraser drawing
+    inkCanvas.addEventListener('pointerdown', handleInkPointerDown);
+
+    // 3. Global Window listeners for continuous move & release
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerUp);
     window.addEventListener('pointercancel', handlePointerUp);
@@ -255,11 +264,41 @@ document.addEventListener('DOMContentLoaded', async () => {
     viewportContainer.addEventListener('wheel', handleWheel, { passive: false });
   }
 
-  function handlePointerDown(e) {
+  function handleViewportPointerDown(e) {
+    // If click originated on a card component, do not trigger background pan
+    if (e.target.closest('.canvas-card')) return;
+
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     updatePointerDeviceTag(e);
 
-    // Multi-touch pinch-to-zoom detection (iPad / touch screens)
+    // Multi-touch pinch-to-zoom detection
+    if (activePointers.size === 2) {
+      isDrawing = false;
+      isPanning = false;
+      const pts = Array.from(activePointers.values());
+      initialPinchDistance = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      initialPinchZoom = viewport.zoom;
+      pinchCenterScreen = {
+        x: (pts[0].x + pts[1].x) / 2,
+        y: (pts[0].y + pts[1].y) / 2
+      };
+      return;
+    }
+
+    // Left click on background in select mode, or Middle click / Space held in any mode
+    if (isSpacePressed || e.button === 1 || (activeTool === 'select' && e.button === 0)) {
+      isPanning = true;
+      panStart = { x: e.clientX, y: e.clientY };
+      panOrigin = { x: viewport.panX, y: viewport.panY };
+      viewportContainer.classList.add('cursor-panning-active');
+    }
+  }
+
+  function handleInkPointerDown(e) {
+    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    updatePointerDeviceTag(e);
+
+    // Multi-touch pinch-to-zoom detection
     if (activePointers.size === 2) {
       isDrawing = false;
       currentStroke = null;
@@ -274,8 +313,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    // Space held or Middle Mouse -> Pan canvas
-    if (isSpacePressed || e.button === 1 || (activeTool === 'select' && e.button === 0)) {
+    // Space held or Middle Mouse -> Pan canvas even while in pen mode
+    if (isSpacePressed || e.button === 1) {
       isPanning = true;
       panStart = { x: e.clientX, y: e.clientY };
       panOrigin = { x: viewport.panX, y: viewport.panY };
@@ -343,7 +382,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    // Handle Card Dragging
+    // Handle Card Dragging (Select mode)
     if (isDraggingCard && draggedCardId) {
       const worldPoint = CanvasCore.screenToWorld(e.clientX, e.clientY, viewport.panX, viewport.panY, viewport.zoom);
       const newX = Math.round(worldPoint.x - cardDragOffset.x);
@@ -360,12 +399,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const worldPoint = CanvasCore.screenToWorld(e.clientX, e.clientY, viewport.panX, viewport.panY, viewport.zoom);
     updateCoordsTag(worldPoint);
 
-    // Handle Active Drawing
+    // Handle Active Drawing (Pen / Highlighter)
     if (isDrawing && currentStroke) {
       const lastPt = currentStroke.points[currentStroke.points.length - 1];
       const dist = Math.hypot(worldPoint.x - lastPt.x, worldPoint.y - lastPt.y);
 
-      // Distance threshold for smooth point sampling
       if (dist >= 1.5) {
         currentStroke.points.push({
           x: worldPoint.x,
@@ -441,7 +479,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   /**
-   * Card Dragging via Header
+   * Card Dragging via Header (Select Mode)
    */
   function handleCardPointerDown(e, quote) {
     if (e.target.closest('.btn-card-close') || e.target.closest('.card-source-link')) return;
@@ -625,6 +663,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  /**
+   * Switch Active Tool and Dynamically Route Pointer Events
+   */
   function setActiveTool(tool) {
     activeTool = tool;
     toolBtns.forEach(b => {
@@ -632,6 +673,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     viewportContainer.className = `cursor-${tool}`;
+
+    // Pointer-events routing:
+    // In Select mode, inkCanvas pointer-events is disabled so cards can be clicked/dragged freely.
+    // In Pen/Highlighter/Eraser mode, inkCanvas pointer-events is active so drawing can overlay cards.
+    if (tool === 'select') {
+      inkCanvas.style.pointerEvents = 'none';
+    } else {
+      inkCanvas.style.pointerEvents = 'auto';
+    }
   }
 
   /**

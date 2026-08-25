@@ -16,8 +16,8 @@ function test(name, fn) {
   tests.push({ name, fn });
 }
 
-// 1. Manifest V3 Integrity
-test('Manifest V3 structure and file references', () => {
+// 1. Manifest V3 Integrity & Minimal Permissions (Fix 1)
+test('Manifest V3 structure, minimal permissions, and file references', () => {
   const manifestPath = path.join(__dirname, '..', 'manifest.json');
   assert(fs.existsSync(manifestPath), 'manifest.json must exist');
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
@@ -28,11 +28,14 @@ test('Manifest V3 structure and file references', () => {
   assert(manifest.permissions.includes('storage'), 'Must have storage permission');
   assert(manifest.permissions.includes('contextMenus'), 'Must have contextMenus permission');
   assert(manifest.permissions.includes('sidePanel'), 'Must have sidePanel permission');
+  assert(manifest.permissions.includes('activeTab'), 'Must have activeTab permission');
+
+  // Fix 1 Verification: No broad content_scripts in manifest
+  assert.strictEqual(manifest.content_scripts, undefined, 'content_scripts must be removed');
 
   // Check referenced files
   assert(fs.existsSync(path.join(__dirname, '..', manifest.background.service_worker)), 'service worker exists');
   assert(fs.existsSync(path.join(__dirname, '..', manifest.side_panel.default_path)), 'sidepanel html exists');
-  assert(fs.existsSync(path.join(__dirname, '..', manifest.content_scripts[0].js[0])), 'content script exists');
 
   // Check icons
   [16, 32, 48, 128].forEach(size => {
@@ -41,7 +44,24 @@ test('Manifest V3 structure and file references', () => {
   });
 });
 
-// 2. Canvas Core Math Tests
+// 2. Service Worker ChatGPT Context Menu Scope (Fix 1)
+test('Service Worker scopes context menu to https://chatgpt.com/*', () => {
+  const swPath = path.join(__dirname, '..', 'service-worker.js');
+  const swCode = fs.readFileSync(swPath, 'utf8');
+  assert(swCode.includes("documentUrlPatterns: ['https://chatgpt.com/*']"), 'Context menu must be scoped to ChatGPT');
+  assert(!swCode.includes("CAPTURE_MANUAL_QUOTE"), 'Old content-script message handler must be removed');
+});
+
+// 3. Pointer Routing in canvas.js (Fix 2)
+test('Canvas pointer-events routing between Select and Drawing tools', () => {
+  const canvasJsPath = path.join(__dirname, '..', 'canvas.js');
+  const canvasCode = fs.readFileSync(canvasJsPath, 'utf8');
+  assert(canvasCode.includes("inkCanvas.style.pointerEvents = 'none'"), 'Select mode disables canvas pointer-events');
+  assert(canvasCode.includes("inkCanvas.style.pointerEvents = 'auto'"), 'Drawing mode enables canvas pointer-events');
+  assert(canvasCode.includes("viewportContainer.addEventListener('pointerdown'"), 'Viewport container listens for background panning');
+});
+
+// 4. Canvas Core Math Tests
 const { CanvasCore } = require('../shared/canvas-core.js');
 
 test('World to Screen and Screen to World Coordinate Conversion', () => {
@@ -68,21 +88,16 @@ test('Zoom Toward Anchor Point Invariance', () => {
   const anchorX = 400;
   const anchorY = 300;
 
-  // The world point under the cursor before zoom
   const worldPtBefore = CanvasCore.screenToWorld(anchorX, anchorY, panX, panY, zoom);
-
-  // Zoom to 2.0
   const newVp = CanvasCore.zoomTowardPoint(2.0, zoom, panX, panY, anchorX, anchorY);
   assert.strictEqual(newVp.zoom, 2.0);
 
-  // The world point under the cursor after zoom must remain identical
   const worldPtAfter = CanvasCore.screenToWorld(anchorX, anchorY, newVp.panX, newVp.panY, newVp.zoom);
   assert(Math.abs(worldPtBefore.x - worldPtAfter.x) < 1e-6, 'Anchor X invariant');
   assert(Math.abs(worldPtBefore.y - worldPtAfter.y) < 1e-6, 'Anchor Y invariant');
 });
 
 test('Point to Segment Distance Math', () => {
-  // Segment from (0, 0) to (10, 0)
   const d1 = CanvasCore.pointToSegmentDistance(5, 5, 0, 0, 10, 0);
   assert.strictEqual(d1, 5, 'Perpendicular distance to middle of segment');
 
@@ -105,11 +120,8 @@ test('Stroke Eraser Hit Detection (Pen & Highlighter)', () => {
     ]
   };
 
-  // Test point on the stroke line
   assert(CanvasCore.isStrokeHit({ x: 150, y: 102 }, stroke, 10), 'Hit near horizontal segment');
   assert(CanvasCore.isStrokeHit({ x: 202, y: 150 }, stroke, 10), 'Hit near vertical segment');
-
-  // Test point far away from stroke
   assert(!CanvasCore.isStrokeHit({ x: 500, y: 500 }, stroke, 10), 'Miss far away');
   assert(!CanvasCore.isStrokeHit({ x: 150, y: 200 }, stroke, 10), 'Miss in interior gap');
 });
@@ -125,7 +137,7 @@ test('Domain and Timestamp Formatting', () => {
   assert(timeFormatted.includes('Just now') || timeFormatted.includes('m ago'), 'Time format generated');
 });
 
-// 3. Storage Mock & Backup Validation
+// 5. Storage Mock & Backup Validation
 const { Storage } = require('../shared/storage.js');
 
 test('Storage Export and Import Schema Integrity', async () => {

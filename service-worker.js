@@ -6,11 +6,12 @@ const CONTEXT_MENU_ID = 'add-to-detective-map';
 
 // Initialize extension lifecycle
 chrome.runtime.onInstalled.addListener(() => {
-  // Create right-click context menu
+  // Create right-click context menu scoped specifically to ChatGPT in V1
   chrome.contextMenus.create({
     id: CONTEXT_MENU_ID,
     title: 'Add to Detective Map',
-    contexts: ['selection']
+    contexts: ['selection'],
+    documentUrlPatterns: ['https://chatgpt.com/*']
   });
 
   // Configure Side Panel behavior to open on action click if supported
@@ -18,7 +19,7 @@ chrome.runtime.onInstalled.addListener(() => {
     chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
   }
 
-  console.log('[Detective Map] Service Worker Installed & Context Menu Registered.');
+  console.log('[Detective Map] Service Worker Installed & ChatGPT Context Menu Registered.');
 });
 
 // Handle Context Menu Clicks
@@ -27,7 +28,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     const selectedText = (info.selectionText || '').trim();
     if (!selectedText) return;
 
-    const sourceTitle = tab?.title || 'Web / ChatGPT';
+    const sourceTitle = tab?.title || 'ChatGPT Conversation';
     const sourceUrl = tab?.url || info.pageUrl || '';
 
     // Calculate smart coordinate offset based on existing count
@@ -51,14 +52,14 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
     await Storage.addQuote(newQuote);
 
-    // Optional badge notification
+    // Badge notification
     chrome.action.setBadgeText({ text: '✓' });
     chrome.action.setBadgeBackgroundColor({ color: '#10b981' });
     setTimeout(() => {
       chrome.action.setBadgeText({ text: '' });
     }, 1800);
 
-    console.log('[Detective Map] Quote captured successfully:', newQuote);
+    console.log('[Detective Map] Quote captured successfully from ChatGPT:', newQuote);
   }
 });
 
@@ -67,13 +68,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'OPEN_CANVAS_WINDOW') {
     openCanvasWindow();
     sendResponse({ success: true });
-    return true;
-  }
-
-  if (message.type === 'CAPTURE_MANUAL_QUOTE') {
-    Storage.addQuote(message.payload).then(res => {
-      sendResponse({ success: true, quote: res });
-    });
     return true;
   }
 });
