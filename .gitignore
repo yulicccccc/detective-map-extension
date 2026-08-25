@@ -1,4 +1,5 @@
 # Node & system files
+node/
 node_modules/
 .DS_Store
 Thumbs.db
@@ -7,3 +8,4 @@ Thumbs.db
 # Scratch / test artifacts
 scratch/
 .system_generated/
+.detective-map-data.json

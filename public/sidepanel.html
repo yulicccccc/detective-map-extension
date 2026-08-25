@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Detective Map - Side Panel</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <header class="panel-header">
+    <div class="brand">
+      <div class="logo-icon">🔍</div>
+      <div class="brand-text">
+        <h1>Detective Map</h1>
+        <span class="motto">Read Left • Think Right</span>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button id="btn-open-canvas" class="btn-primary" title="Open Standalone Canvas Window for iPad">
+        <span class="icon">🖼️</span> Open Canvas
+      </button>
+    </div>
+  </header>
+
+  <div class="panel-stats">
+    <span id="quote-count" class="badge">0 Quotes</span>
+    <div class="quick-tools">
+      <button id="btn-export" class="btn-ghost" title="Export Backup JSON">💾 Export</button>
+      <label class="btn-ghost file-input-label" title="Import Backup JSON">
+        📂 Import
+        <input type="file" id="file-import" accept=".json" style="display:none;">
+      </label>
+    </div>
+  </div>
+
+  <main class="panel-body">
+    <div id="empty-state" class="empty-state">
+      <div class="empty-icon">📝</div>
+      <h3>No quotes captured yet</h3>
+      <p>Highlight text on <strong>ChatGPT</strong> or any webpage, right-click, and select <strong>"Add to Detective Map"</strong>.</p>
+    </div>
+
+    <div id="quotes-list" class="quotes-list"></div>
+  </main>
+
+  <footer class="panel-footer">
+    <div class="hint">💡 Tip: Drag the Canvas Window to iPad via spacedesk for handwritten Apple Pencil notes.</div>
+  </footer>
+
+  <script src="shared/storage.js"></script>
+  <script src="shared/canvas-core.js"></script>
+  <script src="sidepanel.js"></script>
+</body>
+</html>
