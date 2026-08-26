@@ -606,6 +606,17 @@ export class DetectiveMapWorkspace {
   getFullWorkspaceState(workspaceId) {
     const workspaces = this.sql.exec(`SELECT * FROM workspaces WHERE archived = 0 ORDER BY updatedAt DESC`).toArray();
     const wsRow = workspaces.find(w => w.id === workspaceId) || { id: workspaceId, title: 'My Learning Map', revision: 1 };
+
+    // Auto-heal stale processing sources older than 3 minutes
+    const threeMinAgo = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+    try {
+      this.sql.exec(`
+        UPDATE sources 
+        SET processingStatus = 'failed' 
+        WHERE processingStatus = 'processing' AND capturedAt < ?
+      `, threeMinAgo);
+    } catch {}
+
     const sources = this.sql.exec(`SELECT * FROM sources WHERE workspaceId = ? ORDER BY capturedAt DESC`, workspaceId).toArray();
     const rawConcepts = this.sql.exec(`SELECT * FROM concepts WHERE workspaceId = ?`, workspaceId).toArray();
     const rawEdges = this.sql.exec(`SELECT * FROM edges WHERE workspaceId = ?`, workspaceId).toArray();
