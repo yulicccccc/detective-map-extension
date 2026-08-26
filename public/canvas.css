@@ -387,6 +387,16 @@ html, body {
   color: #f59e0b;
 }
 
+.banner-stale {
+  border-color: rgba(245, 158, 11, 0.8);
+  background: #18181b;
+  box-shadow: 0 10px 30px rgba(245, 158, 11, 0.15);
+}
+
+.banner-stale .proposal-header {
+  color: #f59e0b;
+}
+
 .btn-primary {
   background: linear-gradient(135deg, #0284c7, #2563eb);
   color: #fff;

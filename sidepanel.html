@@ -73,6 +73,20 @@
           </div>
         </div>
 
+        <!-- Stale Proposal Recovery Banner in Side Panel -->
+        <div id="sp-stale-toast" class="sp-proposal-banner sp-banner-stale" style="display:none;">
+          <div class="sp-toast-header">
+            <span class="sp-toast-icon">🔄</span>
+            <span id="sp-stale-title" class="sp-toast-title">This proposal is outdated because the map changed.</span>
+            <button id="sp-btn-dismiss-stale" class="sp-btn-sm-ghost" title="Dismiss">✕</button>
+          </div>
+          <div id="sp-stale-desc" class="sp-toast-stats">Click Re-analyze to generate fresh suggestions against current map.</div>
+          <div class="sp-toast-actions">
+            <button id="sp-btn-reanalyze-stale" class="sp-btn-sm-primary" style="background: linear-gradient(135deg, #f59e0b, #d97706);">Re-analyze Source</button>
+            <button id="sp-btn-dismiss-stale-btn" class="sp-btn-sm-secondary">Dismiss</button>
+          </div>
+        </div>
+
         <!-- Failure Banner in Side Panel -->
         <div id="sp-failed-toast" class="sp-proposal-banner sp-banner-failed" style="display:none;">
           <div class="sp-toast-header">

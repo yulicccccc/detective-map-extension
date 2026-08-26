@@ -960,7 +960,13 @@ const Storage = {
             if (res.status === 409) {
               const all = await this.getAllProposalsLocal();
               const prop = all.find(p => p.id === proposalId);
-              if (prop) prop.status = 'stale';
+              if (prop) {
+                prop.status = 'stale';
+                err.sourceId = prop.sourceId;
+              }
+              if (data.sourceId) {
+                err.sourceId = data.sourceId;
+              }
               await this.saveProposalsLocal(all);
             }
             throw err;

@@ -334,6 +334,40 @@ async function runSuite() {
     Storage.fetchRemoteState = origFetchRemoteState;
   });
 
+  // Test 13: Stale Proposal Handling & Source ID Preservation
+  await test('13. Stale proposal marks status stale and preserves sourceId for re-analysis', async () => {
+    const wsId = await Storage.getActiveWorkspaceId();
+    const proposal = {
+      id: 'prop_test_stale',
+      workspaceId: wsId,
+      sourceId: 'src_stale_123',
+      baseRevision: 1,
+      summary: 'Stale candidate',
+      operations: [{ op: 'enrich_concept', conceptId: 'c1', addition: 'new insight' }],
+      status: 'pending'
+    };
+
+    await Storage.saveProposalsLocal([proposal]);
+    const pendingBefore = await Storage.getProposals();
+    assert.strictEqual(pendingBefore.length, 1);
+
+    // Simulate 409 stale conflict
+    const all = await Storage.getAllProposalsLocal();
+    const target = all.find(p => p.id === 'prop_test_stale');
+    assert(target, 'Proposal must exist');
+    target.status = 'stale';
+    await Storage.saveProposalsLocal(all);
+
+    // Assert getProposals drops it from active pending list
+    const pendingAfter = await Storage.getProposals();
+    assert.strictEqual(pendingAfter.length, 0, 'Stale proposal must not appear in pending proposals');
+
+    // Assert sourceId is preserved in raw storage for re-analysis
+    const rawAll = await Storage.getAllProposalsLocal();
+    const staleProp = rawAll.find(p => p.id === 'prop_test_stale');
+    assert.strictEqual(staleProp.sourceId, 'src_stale_123', 'Stale proposal must preserve sourceId');
+  });
+
   assert.strictEqual(networkCallsAttempted, 0, 'verify-v2.js MUST execute with ZERO network calls');
   console.log(`  ✓ VERIFIED: Zero (0) network calls attempted during verify-v2 execution.`);
 

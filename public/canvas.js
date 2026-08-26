@@ -48,6 +48,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnRetrySource = document.getElementById('btn-retry-source');
   const btnDismissFailedSource = document.getElementById('btn-dismiss-failed-source');
   let currentFailedSourceId = null;
+  let staleRecoverySourceId = null;
+  let dismissedStale = false;
+  const dismissedFailedSourceIds = new Set();
+
+  const staleProposalToast = document.getElementById('stale-proposal-toast');
+  const staleProposalTitle = document.getElementById('stale-proposal-title');
+  const staleProposalDesc = document.getElementById('stale-proposal-desc');
+  const btnReanalyzeStale = document.getElementById('btn-reanalyze-stale');
+  const btnDismissStale = document.getElementById('btn-dismiss-stale');
+  const btnDismissStaleX = document.getElementById('btn-dismiss-stale-x');
 
   const proposalReviewModal = document.getElementById('proposal-review-modal');
   const reviewProposalSummary = document.getElementById('review-proposal-summary');
@@ -664,29 +674,57 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // --- Proposal Review & Ingestion UI ---
-  function checkPendingProposals() {
-    if (pendingProposals.length > 0) {
-      const p = pendingProposals[0];
-      const ops = p.operations || [];
-      const addCount = ops.filter(o => o.op === 'add_concept').length;
-      const enrichCount = ops.filter(o => o.op === 'enrich_concept').length;
-      const edgeCount = ops.filter(o => o.op === 'add_edge').length;
+  // --- Proposal Stats Formatter ---
+  function formatProposalStats(p) {
+    const ops = p.operations || [];
+    const enrichCount = ops.filter(o => o.op === 'enrich_concept').length;
+    const addCount = ops.filter(o => o.op === 'add_concept').length;
+    const edgeCount = ops.filter(o => o.op === 'add_edge').length;
 
-      proposalSummary.textContent = p.summary || 'New learning material processed';
-      proposalStats.textContent = `+ ${addCount} Concepts  |  + ${edgeCount} Relationships  |  ~ ${enrichCount} Enriched`;
-      proposalToast.style.display = 'block';
-      if (sourceFailedToast) sourceFailedToast.style.display = 'none';
-    } else {
-      proposalToast.style.display = 'none';
-      checkFailedSources();
+    const parts = [];
+    if (enrichCount > 0) {
+      parts.push(`~ ${enrichCount} Enrichment${enrichCount === 1 ? '' : 's'}`);
     }
+    parts.push(`+ ${addCount} Concept${addCount === 1 ? '' : 's'}`);
+    parts.push(`+ ${edgeCount} Relationship${edgeCount === 1 ? '' : 's'}`);
+
+    return parts.join(' | ');
+  }
+
+  // --- Proposal Review & Ingestion UI (Hierarchical Priority) ---
+  // Priority: Pending Proposal > Stale Proposal Recovery > Current/Historical Failure
+  function checkPendingProposals() {
+    const validPendingProposals = pendingProposals.filter(p => p.status !== 'stale');
+
+    // Priority 1: Pending Proposal
+    if (validPendingProposals.length > 0) {
+      const p = validPendingProposals[0];
+      proposalSummary.textContent = p.summary || 'AI proposed incremental updates';
+      proposalStats.textContent = formatProposalStats(p);
+      proposalToast.style.display = 'block';
+      if (staleProposalToast) staleProposalToast.style.display = 'none';
+      if (sourceFailedToast) sourceFailedToast.style.display = 'none';
+      return;
+    }
+    proposalToast.style.display = 'none';
+
+    // Priority 2: Stale Proposal Recovery
+    if (staleRecoverySourceId && !dismissedStale) {
+      if (staleProposalToast) staleProposalToast.style.display = 'block';
+      if (sourceFailedToast) sourceFailedToast.style.display = 'none';
+      return;
+    }
+    if (staleProposalToast) staleProposalToast.style.display = 'none';
+
+    // Priority 3 & 4: Active / Historical Failure
+    checkFailedSources();
   }
 
   function checkFailedSources() {
     if (!sourceFailedToast) return;
-    const failedSource = sources.find(s => s.processingStatus === 'failed');
-    if (failedSource && pendingProposals.length === 0) {
+    const activeFailed = sources.filter(s => s.processingStatus === 'failed' && !dismissedFailedSourceIds.has(s.id));
+    if (activeFailed.length > 0) {
+      const failedSource = activeFailed[activeFailed.length - 1];
       currentFailedSourceId = failedSource.id;
       sourceFailedTitle.textContent = `AI analysis failed for "${failedSource.title || 'Source'}".`;
       sourceFailedDesc.textContent = failedSource.processingError || 'Your source text is safely saved. Click below to retry AI analysis.';
@@ -695,6 +733,37 @@ document.addEventListener('DOMContentLoaded', async () => {
       sourceFailedToast.style.display = 'none';
     }
   }
+
+  btnReanalyzeStale?.addEventListener('click', async () => {
+    if (!staleRecoverySourceId) return;
+    btnReanalyzeStale.disabled = true;
+    btnReanalyzeStale.textContent = 'Re-analyzing...';
+
+    const sId = staleRecoverySourceId;
+    try {
+      await Storage.retrySource(sId);
+      staleRecoverySourceId = null;
+      dismissedStale = false;
+      if (staleProposalToast) staleProposalToast.style.display = 'none';
+      await loadWorkspaceData();
+    } catch (err) {
+      alert('Re-analyze error: ' + err.message);
+      btnReanalyzeStale.disabled = false;
+      btnReanalyzeStale.textContent = 'Re-analyze Source';
+    }
+  });
+
+  btnDismissStale?.addEventListener('click', () => {
+    dismissedStale = true;
+    if (staleProposalToast) staleProposalToast.style.display = 'none';
+    checkPendingProposals();
+  });
+
+  btnDismissStaleX?.addEventListener('click', () => {
+    dismissedStale = true;
+    if (staleProposalToast) staleProposalToast.style.display = 'none';
+    checkPendingProposals();
+  });
 
   btnRetrySource?.addEventListener('click', async () => {
     if (!currentFailedSourceId) return;
@@ -711,22 +780,33 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   btnDismissFailedSource?.addEventListener('click', () => {
+    if (currentFailedSourceId) {
+      dismissedFailedSourceIds.add(currentFailedSourceId);
+    }
     if (sourceFailedToast) sourceFailedToast.style.display = 'none';
+    checkPendingProposals();
   });
 
   async function executeApplyProposal(proposalId, operations) {
+    const currentProp = pendingProposals.find(p => p.id === proposalId);
     try {
       await Storage.applyProposal(proposalId, operations);
       pendingProposals = pendingProposals.filter(p => p.id !== proposalId);
       await Storage.saveProposalsLocal(pendingProposals);
+      staleRecoverySourceId = null;
+      dismissedStale = false;
       await loadWorkspaceData();
       proposalToast.style.display = 'none';
       proposalReviewModal.style.display = 'none';
     } catch (err) {
-      if (err.status === 409 || err.code === 'PROPOSAL_STALE') {
-        alert('⚠️ Map changed since this proposal was created. Re-analyze.');
+      if (err.status === 409 || err.code === 'PROPOSAL_STALE' || (err.message && err.message.includes('Map changed'))) {
+        staleRecoverySourceId = err.sourceId || (currentProp ? currentProp.sourceId : null);
+        dismissedStale = false;
+
+        // Mark local proposal stale and remove from pending UI
         pendingProposals = pendingProposals.filter(p => p.id !== proposalId);
         await Storage.saveProposalsLocal(pendingProposals);
+
         proposalToast.style.display = 'none';
         proposalReviewModal.style.display = 'none';
         checkPendingProposals();
@@ -1162,6 +1242,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       if (changes[STORAGE_KEYS.SOURCES]) {
         sources = await Storage.getSources();
+        checkPendingProposals();
       }
       if (changes[STORAGE_KEYS.INK_STROKES]) {
         strokes = await Storage.getStrokes();
@@ -1169,6 +1250,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       if (changes[STORAGE_KEYS.PROPOSALS]) {
         pendingProposals = await Storage.getProposals();
+        if (pendingProposals.length > 0) {
+          staleRecoverySourceId = null;
+          dismissedStale = false;
+        }
         checkPendingProposals();
       }
       if (changes[STORAGE_KEYS.ACTIVE_WS]) {

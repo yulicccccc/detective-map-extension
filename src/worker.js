@@ -430,6 +430,8 @@ export class DetectiveMapWorkspace {
         this.sql.exec(`UPDATE proposals SET status = 'stale' WHERE id = ?`, proposalId);
         return jsonResponse({
           error: 'PROPOSAL_STALE',
+          proposalId,
+          sourceId: proposal.sourceId,
           baseRevision: proposal.baseRevision,
           currentRevision: currentRevision,
           message: 'Map changed since this proposal was created. Re-analyze.'

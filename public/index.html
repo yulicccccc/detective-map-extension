@@ -126,6 +126,20 @@
       </div>
     </div>
 
+    <!-- Stale Proposal Recovery Toast -->
+    <div id="stale-proposal-toast" class="proposal-banner banner-stale" style="display:none;">
+      <div class="proposal-header">
+        <span class="proposal-icon">🔄</span>
+        <span id="stale-proposal-title" class="proposal-title">This proposal is outdated because the map changed.</span>
+        <button id="btn-dismiss-stale-x" class="btn-ghost" style="margin-left:auto;">✕</button>
+      </div>
+      <div id="stale-proposal-desc" class="proposal-stats">Click Re-analyze to generate fresh suggestions against current map.</div>
+      <div class="proposal-actions">
+        <button id="btn-reanalyze-stale" class="btn-primary" style="background: linear-gradient(135deg, #f59e0b, #d97706);">Re-analyze Source</button>
+        <button id="btn-dismiss-stale" class="btn-ghost">Dismiss</button>
+      </div>
+    </div>
+
     <!-- Source Ingestion Failure Toast with Retry -->
     <div id="source-failed-toast" class="proposal-banner banner-failed" style="display:none;">
       <div class="proposal-header">

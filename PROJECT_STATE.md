@@ -43,6 +43,7 @@ Side Panel / Canvas UI (Interactive Map + Apply All / Review)
   - Workspace-scoped local storage: saving proposals, sources, concepts, edges, and ink isolates data per workspace.
   - `POST /api/sources/retry`: Authenticated retry endpoint for failed sources.
   - Stale `processing` sources timeout auto-heal in backend SQLite query.
+  - **Stale Proposal Recovery & Banner Hierarchy**: When 409 `PROPOSAL_STALE` occurs (baseRevision conflict), `sourceId` is preserved, local proposal marked stale, and dedicated `[Re-analyze Source]` banner is shown. Hierarchical priority: `Pending Proposal` > `Stale Proposal Recovery` > `Active Failure`. Enrich stats formatted as `~ N Enrichment(s)`.
 - **Durable Auth & Pairing**:
   - Master PIN: `KIRA-2026` (permanent, case-insensitive, repeatable).
   - Auto-pairing fallback: Extension automatically pairs with `KIRA-2026` if token is missing.
@@ -58,8 +59,8 @@ Side Panel / Canvas UI (Interactive Map + Apply All / Review)
 | Test Suite | Result | Details |
 |---|---|---|
 | `tests/verify-all.js` | **9/9 Passed** | MV3 structure, coordinate math, zoom invariance, eraser hit detection, export/import schema |
-| `tests/verify-v2.js` | **12/12 Passed** | **Pure In-Memory Test Isolation**: Strict 0-network guard (`DETECTIVE_TEST_MODE`), Workspace CRUD, Safari localStorage, palm rejection, cascading delete, tail chunking, proposal sanitization, subset validation, ink isolation, failure UI, scoped storage |
-| `tests/verify-cloud.js` | **10/10 Passed** | Live Cloudflare security, legacy token rejection, KIRA-2026 auth, atomic PIN, real Workers AI execution, retry endpoint, 401 stale token auto-healing, **Automatic `finally` Cleanup (0 pollution left behind)** |
+| `tests/verify-v2.js` | **13/13 Passed** | **Pure In-Memory Test Isolation**: Strict 0-network guard (`DETECTIVE_TEST_MODE`), Workspace CRUD, Safari localStorage, palm rejection, cascading delete, tail chunking, proposal sanitization, subset validation, ink isolation, failure UI, scoped storage, **stale proposal recovery & sourceId preservation** |
+| `tests/verify-cloud.js` | **11/11 Passed** | Live Cloudflare security, legacy token rejection, KIRA-2026 auth, atomic PIN, real Workers AI execution, retry endpoint, 401 stale token auto-healing, strict `__TEST__` deletion policy regression, **Automatic `finally` Array Cleanup (0 pollution left behind)** |
 
 ---
 

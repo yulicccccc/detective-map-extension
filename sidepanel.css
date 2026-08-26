@@ -420,6 +420,16 @@ body {
   color: #f59e0b;
 }
 
+.sp-banner-stale {
+  border-color: rgba(245, 158, 11, 0.8);
+  background: #18181b;
+  box-shadow: 0 10px 24px rgba(245, 158, 11, 0.15);
+}
+
+.sp-banner-stale .sp-toast-header {
+  color: #f59e0b;
+}
+
 @keyframes spSlideUp {
   from { transform: translateY(12px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
