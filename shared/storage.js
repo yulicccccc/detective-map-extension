@@ -48,6 +48,9 @@ class V2CloudSyncEngine {
       return;
     }
 
+    const activeWsId = await Storage.getActiveWorkspaceId();
+    this.activeWorkspaceId = activeWsId;
+
     this.connect(token);
   }
 
@@ -103,6 +106,9 @@ class V2CloudSyncEngine {
           localStorage.setItem(STORAGE_KEYS.DEVICE_TOKEN, data.token);
         }
         memStore[STORAGE_KEYS.DEVICE_TOKEN] = data.token;
+
+        const activeWsId = await Storage.getActiveWorkspaceId();
+        this.activeWorkspaceId = activeWsId;
 
         this.connect(data.token);
         await Storage.fetchRemoteWorkspaces();
@@ -166,7 +172,11 @@ class V2CloudSyncEngine {
     clearTimeout(this.reconnectTimer);
     this.reconnectTimer = setTimeout(async () => {
       const token = await this.getToken();
-      if (token) this.connect(token);
+      if (token) {
+        const activeWsId = await Storage.getActiveWorkspaceId();
+        this.activeWorkspaceId = activeWsId;
+        this.connect(token);
+      }
     }, 4000);
   }
 
@@ -175,6 +185,9 @@ class V2CloudSyncEngine {
 
     if (msg.type === 'AUTH_SUCCESS') {
       this.setStatus('connected');
+      if (msg.workspaceId && msg.workspaceId !== this.activeWorkspaceId) {
+        this.send({ type: 'SWITCH_WORKSPACE', workspaceId: this.activeWorkspaceId });
+      }
       Storage.fetchRemoteWorkspaces();
     } else if (msg.type === 'AUTH_ERROR') {
       this.setStatus('unpaired');

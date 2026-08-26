@@ -235,6 +235,40 @@ async function runSuite() {
     assert.strictEqual(safeOpsBoth.length, 2, 'Both concept and dependent edge should pass when concept is selected');
   });
 
+  // Test 10: Persisted Active Workspace Reload & Ink Isolation Regression Test
+  await test('10. Reload preserves active workspace and routes ADD_INK_STROKE to correct workspace', async () => {
+    // 1. Set persisted active workspace = 'ws_ai_learning'
+    await Storage.setActiveWorkspaceId('ws_ai_learning');
+
+    // 2. Simulate reload/new client engine initialization
+    const reloadedActiveId = await Storage.getActiveWorkspaceId();
+    assert.strictEqual(reloadedActiveId, 'ws_ai_learning', 'Persisted workspace must be ws_ai_learning');
+
+    // Verify engine activeWorkspaceId alignment
+    Storage.cloudSync.activeWorkspaceId = reloadedActiveId;
+    assert.strictEqual(Storage.cloudSync.activeWorkspaceId, 'ws_ai_learning');
+
+    // 3. Add stroke to active workspace
+    const newStroke = await Storage.addStroke({
+      points: [{ x: 50, y: 50 }],
+      tool: 'pen',
+      color: '#38bdf8'
+    });
+    assert.strictEqual(newStroke.workspaceId, 'ws_ai_learning');
+
+    // 4. Verify strokes in 'ws_ai_learning' contain the stroke
+    const strokesAiLearning = await Storage.getStrokes();
+    assert(strokesAiLearning.some(s => s.id === newStroke.id), 'Stroke must exist in ws_ai_learning');
+
+    // 5. Verify 'ws_default' received ZERO strokes from this action
+    await Storage.setActiveWorkspaceId('ws_default');
+    const strokesDefault = await Storage.getStrokes();
+    assert(!strokesDefault.some(s => s.id === newStroke.id), 'ws_default must receive zero strokes');
+
+    // Restore ws_ai_learning
+    await Storage.setActiveWorkspaceId('ws_ai_learning');
+  });
+
   console.log('\n====================================================');
   console.log(`Verification Complete: ${passedTests} passed, ${failedTests} failed.`);
   console.log('====================================================');

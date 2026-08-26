@@ -117,6 +117,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Load initial data & sync workspaces
     activeWorkspaceId = await Storage.getActiveWorkspaceId();
+    if (Storage.cloudSync) {
+      Storage.cloudSync.activeWorkspaceId = activeWorkspaceId;
+    }
     await loadWorkspaceData();
 
     setupToolListeners();
