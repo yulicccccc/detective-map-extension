@@ -284,6 +284,63 @@ export class DetectiveMapWorkspace {
       return jsonResponse({ success: true, workspace: wsObj });
     }
 
+    // POST /api/workspaces/delete
+    if (url.pathname === '/api/workspaces/delete' && request.method === 'POST') {
+      const body = await request.json();
+      const workspaceId = body.workspaceId;
+      if (!workspaceId) return jsonResponse({ error: 'workspaceId required' }, 400);
+
+      // Strictly protect default and user-created workspaces
+      if (workspaceId === 'ws_default' || workspaceId === 'ws_8fd9bcca89') {
+        return jsonResponse({ error: 'Cannot delete protected workspace' }, 400);
+      }
+
+      this.sql.exec(`DELETE FROM workspaces WHERE id = ?`, workspaceId);
+      this.sql.exec(`DELETE FROM concepts WHERE workspaceId = ?`, workspaceId);
+      this.sql.exec(`DELETE FROM edges WHERE workspaceId = ?`, workspaceId);
+      this.sql.exec(`DELETE FROM sources WHERE workspaceId = ?`, workspaceId);
+      this.sql.exec(`DELETE FROM ink_strokes WHERE workspaceId = ?`, workspaceId);
+      this.sql.exec(`DELETE FROM proposals WHERE workspaceId = ?`, workspaceId);
+
+      this.broadcast({ type: 'WORKSPACE_DELETED', workspaceId });
+      return jsonResponse({ success: true, workspaceId });
+    }
+
+    // POST /api/workspaces/cleanup-tests (Authenticated Test Cleanup)
+    if (url.pathname === '/api/workspaces/cleanup-tests' && request.method === 'POST') {
+      const body = await request.json().catch(() => ({}));
+      const testTitles = body.titles || [
+        'Quantum Computing',
+        'Neuroscience',
+        'AI Active Recall Test WS',
+        'AI Learning',
+        'Retry Test Workspace',
+        'Live AI Active Recall Test'
+      ];
+
+      const placeholders = testTitles.map(() => '?').join(',');
+      const rows = this.sql.exec(
+        `SELECT id, title FROM workspaces WHERE title IN (${placeholders}) OR title LIKE '__TEST__%'`,
+        ...testTitles
+      ).toArray();
+
+      const deletedList = [];
+      for (const row of rows) {
+        if (row.id === 'ws_default' || row.id === 'ws_8fd9bcca89' || row.title === 'Test - Living Map' || row.title === 'My Learning Map') {
+          continue;
+        }
+        this.sql.exec(`DELETE FROM workspaces WHERE id = ?`, row.id);
+        this.sql.exec(`DELETE FROM concepts WHERE workspaceId = ?`, row.id);
+        this.sql.exec(`DELETE FROM edges WHERE workspaceId = ?`, row.id);
+        this.sql.exec(`DELETE FROM sources WHERE workspaceId = ?`, row.id);
+        this.sql.exec(`DELETE FROM ink_strokes WHERE workspaceId = ?`, row.id);
+        this.sql.exec(`DELETE FROM proposals WHERE workspaceId = ?`, row.id);
+        deletedList.push({ id: row.id, title: row.title });
+      }
+
+      return jsonResponse({ success: true, count: deletedList.length, deleted: deletedList });
+    }
+
     // POST /api/sources & /api/quote
     if ((url.pathname === '/api/sources' || url.pathname === '/api/quote') && request.method === 'POST') {
       try {

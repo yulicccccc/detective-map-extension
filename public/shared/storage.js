@@ -22,10 +22,29 @@ const hasLocalStorage = typeof localStorage !== 'undefined';
 const memStore = {};
 const changeListeners = [];
 
+const isTestMode = () => {
+  if (typeof Storage !== 'undefined' && Storage._isTestMode) return true;
+  if (typeof process !== 'undefined' && process.env && (process.env.DETECTIVE_TEST_MODE === 'true' || process.env.NODE_ENV === 'test')) return true;
+  return false;
+};
+
 function triggerChange(changes) {
   changeListeners.forEach(cb => {
     try { cb(changes); } catch {}
   });
+}
+
+function mergeScopedItems(currentAll, incomingList, activeWsId) {
+  const incomingMap = new Map((incomingList || []).map(item => [item.id, { ...item, workspaceId: item.workspaceId || activeWsId }]));
+  const merged = [...incomingMap.values()];
+  for (const item of (currentAll || [])) {
+    if (item && item.id && !incomingMap.has(item.id)) {
+      if (item.workspaceId && item.workspaceId !== activeWsId) {
+        merged.push(item);
+      }
+    }
+  }
+  return merged;
 }
 
 class V2CloudSyncEngine {
@@ -39,7 +58,7 @@ class V2CloudSyncEngine {
   }
 
   async init() {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || isTestMode()) return;
 
     await Storage.migrateLegacyDataIfNeeded();
     const token = await this.getToken();
@@ -55,6 +74,8 @@ class V2CloudSyncEngine {
   }
 
   async getToken() {
+    if (isTestMode()) return null;
+
     let token = null;
     if (isChromeStorage) {
       const res = await chrome.storage.local.get([STORAGE_KEYS.DEVICE_TOKEN]);
@@ -90,6 +111,10 @@ class V2CloudSyncEngine {
   }
 
   async authenticatedFetch(urlOrPath, options = {}, allowRetry = true) {
+    if (isTestMode()) {
+      throw new Error(`[TEST ISOLATION GUARD] Network call to ${urlOrPath} is strictly forbidden in test mode.`);
+    }
+
     const fullUrl = urlOrPath.startsWith('http') ? urlOrPath : `${CLOUDFLARE_BASE_URL}${urlOrPath.startsWith('/') ? '' : '/'}${urlOrPath}`;
     let token = await this.getToken();
 
@@ -124,6 +149,9 @@ class V2CloudSyncEngine {
   }
 
   async pairDevice(pairingCodeOrSecret, deviceName = 'Web Client') {
+    if (isTestMode()) {
+      throw new Error('[TEST ISOLATION GUARD] pairDevice is strictly forbidden in test mode.');
+    }
     const input = (pairingCodeOrSecret || '').trim();
     if (!input) return { success: false, error: 'Pairing PIN or Bootstrap Secret required' };
 
@@ -406,8 +434,20 @@ if (typeof window !== 'undefined') {
 
 const Storage = {
   cloudSync,
+  _isTestMode: false,
+  enableTestMode() {
+    this._isTestMode = true;
+    this.resetMemStore();
+    if (this.cloudSync) {
+      this.cloudSync.status = 'disconnected';
+    }
+  },
+  resetMemStore() {
+    for (const k of Object.keys(memStore)) {
+      delete memStore[k];
+    }
+  },
 
-  // --- Workspaces ---
   async getActiveWorkspaceId() {
     if (isChromeStorage) {
       const res = await chrome.storage.local.get([STORAGE_KEYS.ACTIVE_WS]);
@@ -425,8 +465,10 @@ const Storage = {
       localStorage.setItem(STORAGE_KEYS.ACTIVE_WS, id);
     }
     memStore[STORAGE_KEYS.ACTIVE_WS] = id;
-    cloudSync.activeWorkspaceId = id;
-    cloudSync.send({ type: 'SWITCH_WORKSPACE', workspaceId: id });
+    if (cloudSync) {
+      cloudSync.activeWorkspaceId = id;
+      cloudSync.send({ type: 'SWITCH_WORKSPACE', workspaceId: id });
+    }
     await this.fetchRemoteState();
     triggerChange({ [STORAGE_KEYS.ACTIVE_WS]: { newValue: id } });
     return id;
@@ -445,6 +487,9 @@ const Storage = {
 
   // CRITICAL 2: Cross-Device Workspace Sync
   async fetchRemoteWorkspaces() {
+    if (isTestMode()) {
+      return await this.getWorkspaces();
+    }
     try {
       const res = await cloudSync.authenticatedFetch('/api/workspaces');
       if (res && res.status === 200) {
@@ -467,24 +512,26 @@ const Storage = {
   async createWorkspace(title) {
     const cleanTitle = (title || 'New Learning Map').trim();
 
-    try {
-      const res = await cloudSync.authenticatedFetch('/api/workspaces', {
-        method: 'POST',
-        body: JSON.stringify({ title: cleanTitle })
-      });
-      if (res && res.status === 200) {
-        const data = await res.json();
-        if (data.success && data.workspace) {
-          const wsList = await this.getWorkspaces();
-          const updated = [data.workspace, ...wsList.filter(w => w.id !== data.workspace.id)];
-          await this.saveWorkspacesLocal(updated);
-          await this.setActiveWorkspaceId(data.workspace.id);
-          triggerChange({ [STORAGE_KEYS.WORKSPACES]: { newValue: updated } });
-          return data.workspace;
+    if (!isTestMode()) {
+      try {
+        const res = await cloudSync.authenticatedFetch('/api/workspaces', {
+          method: 'POST',
+          body: JSON.stringify({ title: cleanTitle })
+        });
+        if (res && res.status === 200) {
+          const data = await res.json();
+          if (data.success && data.workspace) {
+            const wsList = await this.getWorkspaces();
+            const updated = [data.workspace, ...wsList.filter(w => w.id !== data.workspace.id)];
+            await this.saveWorkspacesLocal(updated);
+            await this.setActiveWorkspaceId(data.workspace.id);
+            triggerChange({ [STORAGE_KEYS.WORKSPACES]: { newValue: updated } });
+            return data.workspace;
+          }
         }
+      } catch (e) {
+        console.warn('[Create WS Offline]', e);
       }
-    } catch (e) {
-      console.warn('[Create WS Offline]', e);
     }
 
     const localWs = {
@@ -529,9 +576,7 @@ const Storage = {
   async saveSourcesLocal(sources) {
     const wsId = await this.getActiveWorkspaceId();
     const all = await this.getAllSourcesLocal();
-    const otherWs = all.filter(s => s.workspaceId && s.workspaceId !== wsId);
-    const formatted = (sources || []).map(s => ({ ...s, workspaceId: s.workspaceId || wsId }));
-    const merged = [...formatted, ...otherWs];
+    const merged = mergeScopedItems(all, sources, wsId);
     if (isChromeStorage) await chrome.storage.local.set({ [STORAGE_KEYS.SOURCES]: merged });
     if (hasLocalStorage) localStorage.setItem(STORAGE_KEYS.SOURCES, JSON.stringify(merged));
     memStore[STORAGE_KEYS.SOURCES] = merged;
@@ -555,54 +600,59 @@ const Storage = {
     await this.saveSourcesLocal(existing);
     triggerChange({ [STORAGE_KEYS.SOURCES]: { newValue: existing } });
 
-    try {
-      const res = await cloudSync.authenticatedFetch('/api/sources', {
-        method: 'POST',
-        body: JSON.stringify(newSource)
-      });
-      if (res && res.ok) {
-        const data = await res.json();
-        if (data.source) {
-          const currentSources = await this.getAllSourcesLocal();
-          const idx = currentSources.findIndex(s => s.id === newSource.id);
-          if (idx !== -1) {
-            currentSources[idx] = { ...currentSources[idx], ...data.source };
-            await this.saveSourcesLocal(currentSources);
-            triggerChange({ [STORAGE_KEYS.SOURCES]: { newValue: currentSources } });
+    if (!isTestMode()) {
+      try {
+        const res = await cloudSync.authenticatedFetch('/api/sources', {
+          method: 'POST',
+          body: JSON.stringify(newSource)
+        });
+        if (res && res.ok) {
+          const data = await res.json();
+          if (data.source) {
+            const currentSources = await this.getAllSourcesLocal();
+            const idx = currentSources.findIndex(s => s.id === newSource.id);
+            if (idx !== -1) {
+              currentSources[idx] = { ...currentSources[idx], ...data.source };
+              await this.saveSourcesLocal(currentSources);
+              triggerChange({ [STORAGE_KEYS.SOURCES]: { newValue: currentSources } });
+            }
           }
         }
+      } catch (err) {
+        console.warn('[Add Source Cloud Error]', err);
       }
-    } catch (err) {
-      console.warn('[Add Source Cloud Error]', err);
     }
 
     return newSource;
   },
 
   async retrySource(sourceId) {
-    try {
-      const res = await cloudSync.authenticatedFetch('/api/sources/retry', {
-        method: 'POST',
-        body: JSON.stringify({ sourceId })
-      });
-      if (res && res.ok) {
-        const data = await res.json();
-        if (data.source) {
-          const existing = await this.getAllSourcesLocal();
-          const idx = existing.findIndex(s => s.id === sourceId);
-          if (idx !== -1) {
-            existing[idx] = { ...existing[idx], ...data.source };
-            await this.saveSourcesLocal(existing);
-            triggerChange({ [STORAGE_KEYS.SOURCES]: { newValue: existing } });
+    if (!isTestMode()) {
+      try {
+        const res = await cloudSync.authenticatedFetch('/api/sources/retry', {
+          method: 'POST',
+          body: JSON.stringify({ sourceId })
+        });
+        if (res && res.ok) {
+          const data = await res.json();
+          if (data.source) {
+            const existing = await this.getAllSourcesLocal();
+            const idx = existing.findIndex(s => s.id === sourceId);
+            if (idx !== -1) {
+              existing[idx] = { ...existing[idx], ...data.source };
+              await this.saveSourcesLocal(existing);
+              triggerChange({ [STORAGE_KEYS.SOURCES]: { newValue: existing } });
+            }
           }
+          return data;
         }
-        return data;
+        return { success: false, error: `HTTP ${res?.status}` };
+      } catch (err) {
+        console.warn('[Retry Source Error]', err);
+        return { success: false, error: err.message };
       }
-      return { success: false, error: `HTTP ${res?.status}` };
-    } catch (err) {
-      console.warn('[Retry Source Error]', err);
-      return { success: false, error: err.message };
     }
+    return { success: true, local: true };
   },
 
   // --- Concepts ---
@@ -626,9 +676,7 @@ const Storage = {
   async saveConceptsLocal(concepts) {
     const wsId = await this.getActiveWorkspaceId();
     const all = await this.getAllConceptsLocal();
-    const otherWs = all.filter(c => c.workspaceId && c.workspaceId !== wsId);
-    const formatted = (concepts || []).map(c => ({ ...c, workspaceId: c.workspaceId || wsId }));
-    const merged = [...formatted, ...otherWs];
+    const merged = mergeScopedItems(all, concepts, wsId);
     if (isChromeStorage) await chrome.storage.local.set({ [STORAGE_KEYS.CONCEPTS]: merged });
     if (hasLocalStorage) localStorage.setItem(STORAGE_KEYS.CONCEPTS, JSON.stringify(merged));
     memStore[STORAGE_KEYS.CONCEPTS] = merged;
@@ -657,17 +705,19 @@ const Storage = {
     triggerChange({ [STORAGE_KEYS.CONCEPTS]: { newValue: all } });
 
     // Single Authoritative Mutation via REST
-    try {
-      const res = await cloudSync.authenticatedFetch('/api/concepts', {
-        method: 'POST',
-        body: JSON.stringify(newConcept)
-      });
-      if (res && res.ok) {
-        const data = await res.json();
-        return data.concept || newConcept;
+    if (!isTestMode()) {
+      try {
+        const res = await cloudSync.authenticatedFetch('/api/concepts', {
+          method: 'POST',
+          body: JSON.stringify(newConcept)
+        });
+        if (res && res.ok) {
+          const data = await res.json();
+          return data.concept || newConcept;
+        }
+      } catch (err) {
+        console.warn('[Add Concept Cloud Error]', err);
       }
-    } catch (err) {
-      console.warn('[Add Concept Cloud Error]', err);
     }
 
     return newConcept;
@@ -683,17 +733,19 @@ const Storage = {
       triggerChange({ [STORAGE_KEYS.CONCEPTS]: { newValue: all } });
 
       // Single Authoritative Mutation via REST
-      try {
-        const res = await cloudSync.authenticatedFetch('/api/concepts', {
-          method: 'POST',
-          body: JSON.stringify({ ...all[idx], workspaceId: wsId })
-        });
-        if (res && res.ok) {
-          const data = await res.json();
-          return data.concept || all[idx];
+      if (!isTestMode()) {
+        try {
+          const res = await cloudSync.authenticatedFetch('/api/concepts', {
+            method: 'POST',
+            body: JSON.stringify({ ...all[idx], workspaceId: wsId })
+          });
+          if (res && res.ok) {
+            const data = await res.json();
+            return data.concept || all[idx];
+          }
+        } catch (err) {
+          console.warn('[Update Concept Cloud Error]', err);
         }
-      } catch (err) {
-        console.warn('[Update Concept Cloud Error]', err);
       }
       return all[idx];
     }
@@ -716,10 +768,12 @@ const Storage = {
     });
 
     // Single Authoritative Mutation via REST
-    cloudSync.authenticatedFetch('/api/concepts/delete', {
-      method: 'POST',
-      body: JSON.stringify({ conceptId: id, workspaceId: wsId })
-    }).catch(() => {});
+    if (!isTestMode()) {
+      cloudSync.authenticatedFetch('/api/concepts/delete', {
+        method: 'POST',
+        body: JSON.stringify({ conceptId: id, workspaceId: wsId })
+      }).catch(() => {});
+    }
   },
 
   // --- Edges ---
@@ -744,9 +798,7 @@ const Storage = {
   async saveEdgesLocal(edges) {
     const wsId = await this.getActiveWorkspaceId();
     const all = await this.getAllEdgesLocal();
-    const otherWs = all.filter(e => e.workspaceId && e.workspaceId !== wsId);
-    const formatted = (edges || []).map(e => ({ ...e, workspaceId: e.workspaceId || wsId }));
-    const merged = [...formatted, ...otherWs];
+    const merged = mergeScopedItems(all, edges, wsId);
     if (isChromeStorage) await chrome.storage.local.set({ [STORAGE_KEYS.EDGES]: merged });
     if (hasLocalStorage) localStorage.setItem(STORAGE_KEYS.EDGES, JSON.stringify(merged));
     memStore[STORAGE_KEYS.EDGES] = merged;
@@ -771,17 +823,19 @@ const Storage = {
     triggerChange({ [STORAGE_KEYS.EDGES]: { newValue: all } });
 
     // Single Authoritative Mutation via REST
-    try {
-      const res = await cloudSync.authenticatedFetch('/api/edges', {
-        method: 'POST',
-        body: JSON.stringify(newEdge)
-      });
-      if (res && res.ok) {
-        const data = await res.json();
-        return data.edge || newEdge;
+    if (!isTestMode()) {
+      try {
+        const res = await cloudSync.authenticatedFetch('/api/edges', {
+          method: 'POST',
+          body: JSON.stringify(newEdge)
+        });
+        if (res && res.ok) {
+          const data = await res.json();
+          return data.edge || newEdge;
+        }
+      } catch (err) {
+        console.warn('[Add Edge Cloud Error]', err);
       }
-    } catch (err) {
-      console.warn('[Add Edge Cloud Error]', err);
     }
 
     return newEdge;
@@ -795,10 +849,12 @@ const Storage = {
     triggerChange({ [STORAGE_KEYS.EDGES]: { newValue: all } });
 
     // Single Authoritative Mutation via REST
-    cloudSync.authenticatedFetch('/api/edges/delete', {
-      method: 'POST',
-      body: JSON.stringify({ edgeId: id, workspaceId: wsId })
-    }).catch(() => {});
+    if (!isTestMode()) {
+      cloudSync.authenticatedFetch('/api/edges/delete', {
+        method: 'POST',
+        body: JSON.stringify({ edgeId: id, workspaceId: wsId })
+      }).catch(() => {});
+    }
   },
 
   // --- Ink Strokes ---
@@ -822,9 +878,7 @@ const Storage = {
   async saveStrokesLocal(strokes) {
     const wsId = await this.getActiveWorkspaceId();
     const all = await this.getAllStrokesLocal();
-    const otherWs = all.filter(s => s.workspaceId && s.workspaceId !== wsId);
-    const formatted = (strokes || []).map(s => ({ ...s, workspaceId: s.workspaceId || wsId }));
-    const merged = [...formatted, ...otherWs];
+    const merged = mergeScopedItems(all, strokes, wsId);
     if (isChromeStorage) await chrome.storage.local.set({ [STORAGE_KEYS.INK_STROKES]: merged });
     if (hasLocalStorage) localStorage.setItem(STORAGE_KEYS.INK_STROKES, JSON.stringify(merged));
     memStore[STORAGE_KEYS.INK_STROKES] = merged;
@@ -845,7 +899,9 @@ const Storage = {
     const all = await this.getAllStrokesLocal();
     all.push(newStroke);
     await this.saveStrokesLocal(all);
-    cloudSync.send({ type: 'ADD_INK_STROKE', stroke: newStroke });
+    if (!isTestMode() && cloudSync) {
+      cloudSync.send({ type: 'ADD_INK_STROKE', stroke: newStroke });
+    }
     return newStroke;
   },
 
@@ -854,7 +910,9 @@ const Storage = {
     const all = await this.getAllStrokesLocal();
     const filtered = all.filter(s => !set.has(s.id));
     await this.saveStrokesLocal(filtered);
-    cloudSync.send({ type: 'DELETE_INK_STROKES', strokeIds: ids });
+    if (!isTestMode() && cloudSync) {
+      cloudSync.send({ type: 'DELETE_INK_STROKES', strokeIds: ids });
+    }
     return filtered;
   },
 
@@ -879,41 +937,41 @@ const Storage = {
   async saveProposalsLocal(proposals) {
     const wsId = await this.getActiveWorkspaceId();
     const all = await this.getAllProposalsLocal();
-    const otherWs = all.filter(p => p.workspaceId && p.workspaceId !== wsId);
-    const formatted = (proposals || []).map(p => ({ ...p, workspaceId: p.workspaceId || wsId }));
-    const merged = [...formatted, ...otherWs];
+    const merged = mergeScopedItems(all, proposals, wsId);
     if (isChromeStorage) await chrome.storage.local.set({ [STORAGE_KEYS.PROPOSALS]: merged });
     if (hasLocalStorage) localStorage.setItem(STORAGE_KEYS.PROPOSALS, JSON.stringify(merged));
     memStore[STORAGE_KEYS.PROPOSALS] = merged;
   },
 
   async applyProposal(proposalId, operations) {
-    try {
-      const res = await cloudSync.authenticatedFetch('/api/proposals/apply', {
-        method: 'POST',
-        body: JSON.stringify({ proposalId, operations })
-      });
-      if (res && res.status !== 404) {
-        const data = await res.json();
-        if (!res.ok) {
-          const errorMsg = data.message || data.error || 'Failed to apply proposal';
-          const err = new Error(errorMsg);
-          err.status = res.status;
-          err.code = data.error;
-          if (res.status === 409) {
-            const all = await this.getAllProposalsLocal();
-            const prop = all.find(p => p.id === proposalId);
-            if (prop) prop.status = 'stale';
-            await this.saveProposalsLocal(all);
+    if (!isTestMode()) {
+      try {
+        const res = await cloudSync.authenticatedFetch('/api/proposals/apply', {
+          method: 'POST',
+          body: JSON.stringify({ proposalId, operations })
+        });
+        if (res && res.status !== 404) {
+          const data = await res.json();
+          if (!res.ok) {
+            const errorMsg = data.message || data.error || 'Failed to apply proposal';
+            const err = new Error(errorMsg);
+            err.status = res.status;
+            err.code = data.error;
+            if (res.status === 409) {
+              const all = await this.getAllProposalsLocal();
+              const prop = all.find(p => p.id === proposalId);
+              if (prop) prop.status = 'stale';
+              await this.saveProposalsLocal(all);
+            }
+            throw err;
           }
-          throw err;
+          await this.fetchRemoteState();
+          return data;
         }
-        await this.fetchRemoteState();
-        return data;
+      } catch (err) {
+        if (err.status || err.code) throw err;
+        console.warn('[Apply Proposal Cloud Error]', err);
       }
-    } catch (err) {
-      if (err.status || err.code) throw err;
-      console.warn('[Apply Proposal Cloud Error]', err);
     }
 
     // Local Fallback
@@ -988,10 +1046,12 @@ const Storage = {
   },
 
   async rejectProposal(proposalId) {
-    cloudSync.authenticatedFetch('/api/proposals/reject', {
-      method: 'POST',
-      body: JSON.stringify({ proposalId })
-    }).catch(() => {});
+    if (!isTestMode()) {
+      cloudSync.authenticatedFetch('/api/proposals/reject', {
+        method: 'POST',
+        body: JSON.stringify({ proposalId })
+      }).catch(() => {});
+    }
 
     const all = await this.getAllProposalsLocal();
     const filtered = all.filter(p => p.id !== proposalId);
@@ -1000,6 +1060,16 @@ const Storage = {
   },
 
   async fetchRemoteState() {
+    if (isTestMode()) {
+      return {
+        workspaces: await this.getWorkspaces(),
+        concepts: await this.getConcepts(),
+        edges: await this.getEdges(),
+        sources: await this.getSources(),
+        inkStrokes: await this.getStrokes(),
+        proposals: await this.getProposals()
+      };
+    }
     const wsId = await this.getActiveWorkspaceId();
 
     try {

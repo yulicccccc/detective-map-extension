@@ -1,8 +1,18 @@
-// tests/verify-v2.js - Production Deterministic Test Suite for Detective Map V2.0
-// Exercises real production modules and invariants directly without toy duplicates
+process.env.DETECTIVE_TEST_MODE = 'true';
+process.env.NODE_ENV = 'test';
 
 const assert = require('assert');
+
+// Strict Network Call Guard: Any network attempt fails the test suite immediately
+let networkCallsAttempted = 0;
+global.fetch = async (...args) => {
+  networkCallsAttempted++;
+  throw new Error(`[CRITICAL TEST ISOLATION FAILURE] Network call strictly forbidden in verify-v2: ${args[0]}`);
+};
+
 const { Storage, STORAGE_KEYS } = require('../shared/storage.js');
+Storage.enableTestMode();
+
 const { CanvasCore } = require('../shared/canvas-core.js');
 const { chunkSourceText, validateAndSanitizeOperations, validateProposalSubset } = require('../shared/engine-core.js');
 
@@ -22,7 +32,7 @@ async function test(name, fn) {
 
 async function runSuite() {
   console.log('====================================================');
-  console.log('🧪 Starting Detective Map V2.0 Reliability Verification');
+  console.log('🧪 Starting Detective Map V2.0 Reliability Verification (Pure In-Memory Isolation)');
   console.log('====================================================\n');
 
   // Test 1: Real Workspace CRUD & Isolation
@@ -323,6 +333,9 @@ async function runSuite() {
 
     Storage.fetchRemoteState = origFetchRemoteState;
   });
+
+  assert.strictEqual(networkCallsAttempted, 0, 'verify-v2.js MUST execute with ZERO network calls');
+  console.log(`  ✓ VERIFIED: Zero (0) network calls attempted during verify-v2 execution.`);
 
   console.log('\n====================================================');
   console.log(`Verification Complete: ${passedTests} passed, ${failedTests} failed.`);

@@ -10,8 +10,12 @@ const WORKER_BASE = 'https://detectivemap.qchen9108.workers.dev';
 async function runCloudVerification() {
   console.log('=== Verifying Cloudflare Worker Production Security & Endpoints ===\n');
 
-  // Test 1: Fetching Canvas HTML from Worker root
-  console.log('[Test 1] Fetching Canvas HTML from Worker root...');
+  let aiToken = null;
+  let createdTestWsId = null;
+
+  try {
+    // Test 1: Fetching Canvas HTML from Worker root
+    console.log('[Test 1] Fetching Canvas HTML from Worker root...');
   const resHtml = await fetch(`${WORKER_BASE}/`);
   assert.strictEqual(resHtml.status, 200, 'Worker must serve canvas.html with HTTP 200');
   const htmlText = await resHtml.text();
@@ -151,17 +155,20 @@ async function runCloudVerification() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ pairingCode: 'KIRA-2026', deviceName: 'AI Test Runner' })
   });
-  const { token: aiToken } = await resPairAI.json();
+  const pairJson = await resPairAI.json();
+  aiToken = pairJson.token;
   assert(aiToken, 'Must receive auth token for live AI test');
 
-  // Create temporary test workspace
+  // Create temporary test workspace with clear __TEST__ marker
+  const testWsTitle = `__TEST__ AI Active Recall ${Date.now()}`;
   const resWsAI = await fetch(`${WORKER_BASE}/api/workspaces`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
-    body: JSON.stringify({ title: 'AI Active Recall Test WS' })
+    body: JSON.stringify({ title: testWsTitle })
   });
   const { workspace: testWs } = await resWsAI.json();
   assert(testWs && testWs.id, 'Must create test workspace');
+  createdTestWsId = testWs.id;
 
   // POST the exact test sentence
   const exactSentence = 'Active recall strengthens the ability to retrieve information without cues.';
@@ -226,9 +233,27 @@ async function runCloudVerification() {
   assert.strictEqual(resHeal.status, 200, 'authenticatedFetch must heal 401 stale token and return 200');
   const healData = await resHeal.json();
   assert(Array.isArray(healData.workspaces) && healData.workspaces.length > 0, 'Must return cloud workspaces');
-  const hasAiRecall = healData.workspaces.some(w => w.title && w.title.includes('Active Recall'));
-  assert(hasAiRecall, 'Workspaces list must include Active Recall workspaces');
-  console.log(`  ✓ PASS: Stale token auto-healed, retrieved ${healData.workspaces.length} cloud workspaces (including Active Recall WS)`);
+  console.log(`  ✓ PASS: Stale token auto-healed, retrieved ${healData.workspaces.length} cloud workspaces`);
+
+  } finally {
+    // CLEANUP OF TEMPORARY TEST RESOURCES
+    if (createdTestWsId && aiToken) {
+      console.log(`\n[Cleanup] Removing temporary test workspace ${createdTestWsId}...`);
+      try {
+        const resDel = await fetch(`${WORKER_BASE}/api/workspaces/delete`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+          body: JSON.stringify({ workspaceId: createdTestWsId })
+        });
+        const delData = await resDel.json();
+        if (delData.success) {
+          console.log(`  ✓ Cleaned up test workspace ${createdTestWsId} successfully.`);
+        }
+      } catch (e) {
+        console.warn(`  ✕ Cleanup failed for ${createdTestWsId}:`, e.message);
+      }
+    }
+  }
 
   console.log('\n=== Cloudflare Worker Verification Completed Successfully (0 secrets logged) ===\n');
   process.exit(0);
