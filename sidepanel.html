@@ -3,59 +3,154 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Detective Map — Side Panel</title>
+  <title>Detective Map — Living Concept Map</title>
   <link rel="stylesheet" href="sidepanel.css">
 </head>
 <body>
-  <div id="sidepanel-container">
+  <div id="sidepanel-root">
     <!-- Header -->
     <header class="sp-header">
-      <div class="sp-brand">
-        <span class="sp-logo">🔍</span>
-        <span class="sp-title">Detective Map</span>
+      <div class="sp-brand-row">
+        <div class="sp-brand">
+          <span class="sp-logo">🔍</span>
+          <span class="sp-title">Detective Map</span>
+        </div>
+        <div class="sp-actions">
+          <button id="btn-open-canvas" class="sp-btn-expand" title="Open Full Canvas in Separate Window">
+            <span>↗</span> Expand
+          </button>
+        </div>
       </div>
-      <div class="sp-actions">
-        <button id="btn-open-canvas" class="btn-icon-text" title="Open Full Screen Canvas Window">
-          <span>↗</span> Canvas
+
+      <!-- Workspace Selector -->
+      <div class="sp-workspace-row">
+        <select id="sp-select-workspace" class="sp-select" title="Active Learning Map"></select>
+        <button id="sp-btn-new-ws" class="sp-btn-icon" title="Create New Topic Map">+</button>
+        <button id="sp-btn-add-source-quick" class="sp-btn-icon" title="Add Learning Material">📥</button>
+      </div>
+
+      <!-- Tab Navigation -->
+      <div class="sp-tabs">
+        <button id="tab-btn-map" class="sp-tab active" data-tab="map">
+          <span>🗺️ Map</span>
+          <span id="sp-concept-badge" class="sp-pill">0</span>
+        </button>
+        <button id="tab-btn-sources" class="sp-tab" data-tab="sources">
+          <span>📚 Sources</span>
+          <span id="sp-source-badge" class="sp-pill">0</span>
         </button>
       </div>
     </header>
 
-    <!-- Active Workspace Selector -->
-    <section class="sp-workspace-section">
-      <label class="sp-section-label">Active Learning Map</label>
-      <div class="sp-workspace-row">
-        <select id="sp-select-workspace" class="sp-dropdown"></select>
-        <button id="sp-btn-new-ws" class="sp-btn-sm" title="New Learning Topic">+</button>
+    <!-- TAB 1: Live Interactive Concept Map -->
+    <section id="tab-content-map" class="sp-tab-content active">
+      <div id="sp-viewport-container" class="sp-viewport">
+        <div id="sp-grid-bg" class="sp-grid-background"></div>
+        <div id="sp-world-layer" class="sp-world-layer">
+          <svg id="sp-svg-edges" class="sp-svg-edges"></svg>
+          <div id="sp-concepts-container" class="sp-concepts-container"></div>
+        </div>
+
+        <!-- Floating Map Mini Controls -->
+        <div class="sp-map-controls">
+          <button id="sp-btn-zoom-in" class="sp-ctrl-btn" title="Zoom In">+</button>
+          <button id="sp-btn-zoom-out" class="sp-ctrl-btn" title="Zoom Out">−</button>
+          <button id="sp-btn-zoom-fit" class="sp-ctrl-btn" title="Fit to View">⊡</button>
+          <button id="sp-btn-add-concept" class="sp-ctrl-btn" title="Add Concept Node">💡</button>
+        </div>
+
+        <!-- Proposal Banner in Side Panel -->
+        <div id="sp-proposal-toast" class="sp-proposal-banner" style="display:none;">
+          <div class="sp-toast-header">
+            <span class="sp-toast-icon">✨</span>
+            <span id="sp-proposal-summary" class="sp-toast-title">AI proposed updates</span>
+          </div>
+          <div id="sp-proposal-stats" class="sp-toast-stats"></div>
+          <div class="sp-toast-actions">
+            <button id="sp-btn-apply-proposal" class="sp-btn-sm-primary">Apply All</button>
+            <button id="sp-btn-review-proposal" class="sp-btn-sm-secondary">Review</button>
+            <button id="sp-btn-dismiss-proposal" class="sp-btn-sm-ghost">✕</button>
+          </div>
+        </div>
+
+        <!-- Failure Banner in Side Panel -->
+        <div id="sp-failed-toast" class="sp-proposal-banner sp-banner-failed" style="display:none;">
+          <div class="sp-toast-header">
+            <span class="sp-toast-icon">⚠️</span>
+            <span id="sp-failed-title" class="sp-toast-title">AI analysis failed</span>
+          </div>
+          <div id="sp-failed-desc" class="sp-toast-stats"></div>
+          <div class="sp-toast-actions">
+            <button id="sp-btn-retry" class="sp-btn-sm-primary">Retry</button>
+            <button id="sp-btn-dismiss-failed" class="sp-btn-sm-ghost">✕</button>
+          </div>
+        </div>
       </div>
     </section>
 
-    <!-- Ingestion Banner -->
-    <section class="sp-ingest-bar">
-      <button id="sp-btn-add-source" class="btn-primary-block">
-        <span>📥</span> + Add Notes / Article
-      </button>
+    <!-- TAB 2: Sources Feed -->
+    <section id="tab-content-sources" class="sp-tab-content" style="display:none;">
+      <div class="sp-sources-toolbar">
+        <button id="sp-btn-add-source-tab" class="sp-btn-primary-full">
+          <span>📥</span> Add Learning Notes / Text
+        </button>
+      </div>
+      <div id="sp-source-feed" class="sp-source-feed"></div>
     </section>
 
-    <!-- Sources & Capture Feed -->
-    <main class="sp-content">
-      <div class="sp-section-header">
-        <span class="sp-section-label">Captured Sources & Evidence</span>
-        <span id="sp-source-count" class="sp-badge">0</span>
+    <!-- Proposal Review Modal (Overlay) -->
+    <div id="sp-proposal-modal" class="sp-modal-backdrop" style="display:none;">
+      <div class="sp-modal-card">
+        <div class="sp-modal-header">
+          <h3>🔍 Review AI Updates</h3>
+          <button id="sp-btn-close-modal" class="sp-btn-close">✕</button>
+        </div>
+        <p id="sp-review-summary" class="sp-modal-desc"></p>
+        <div id="sp-review-ops-list" class="sp-ops-list"></div>
+        <div class="sp-modal-footer">
+          <button id="sp-btn-reject-all" class="sp-btn-sm-secondary">Reject</button>
+          <button id="sp-btn-apply-selected" class="sp-btn-sm-primary">Apply Selected</button>
+        </div>
       </div>
-      <div id="sp-source-feed" class="sp-feed"></div>
-    </main>
+    </div>
+
+    <!-- Evidence Modal (Overlay) -->
+    <div id="sp-evidence-modal" class="sp-modal-backdrop" style="display:none;">
+      <div class="sp-modal-card">
+        <div class="sp-modal-header">
+          <h3 id="sp-evidence-title">📚 Concept Evidence</h3>
+          <button id="sp-btn-close-evidence" class="sp-btn-close">✕</button>
+        </div>
+        <div id="sp-evidence-body" class="sp-modal-body"></div>
+      </div>
+    </div>
+
+    <!-- Add Source Modal -->
+    <div id="sp-add-source-modal" class="sp-modal-backdrop" style="display:none;">
+      <div class="sp-modal-card">
+        <div class="sp-modal-header">
+          <h3>📥 Ingest Learning Material</h3>
+          <button id="sp-btn-close-add-source" class="sp-btn-close">✕</button>
+        </div>
+        <form id="sp-form-add-source" class="sp-form">
+          <input type="text" id="sp-input-title" placeholder="Source Title (optional)" class="sp-input" />
+          <textarea id="sp-input-text" placeholder="Paste dialogue, notes, or article excerpt..." class="sp-textarea" required></textarea>
+          <button type="submit" id="sp-btn-submit-source" class="sp-btn-primary-full">Analyze & Ingest into Map</button>
+        </form>
+      </div>
+    </div>
 
     <!-- Footer -->
     <footer class="sp-footer">
-      <div class="sp-status">
-        <span class="sp-dot"></span>
-        <span id="sp-sync-status">Sync Active</span>
+      <div class="sp-footer-status">
+        <span class="sp-dot-live"></span>
+        <span id="sp-status-text">Live Sync</span>
       </div>
-      <span class="sp-hint">Select text in ChatGPT → Right-click to capture</span>
+      <span class="sp-footer-hint">Right-click in ChatGPT to add</span>
     </footer>
   </div>
 
+  <script src="shared/engine-core.js"></script>
   <script src="shared/storage.js"></script>
   <script src="shared/canvas-core.js"></script>
   <script src="sidepanel.js"></script>
