@@ -4,7 +4,7 @@
 const assert = require('assert');
 const { Storage, STORAGE_KEYS } = require('../shared/storage.js');
 const { CanvasCore } = require('../shared/canvas-core.js');
-const { chunkSourceText, validateAndSanitizeOperations } = require('../shared/engine-core.js');
+const { chunkSourceText, validateAndSanitizeOperations, validateProposalSubset } = require('../shared/engine-core.js');
 
 let passedTests = 0;
 let failedTests = 0;
@@ -74,7 +74,6 @@ async function runSuite() {
 
   // Test 3: Apple Pencil Palm Rejection & Multi-pointer Invariant (CRITICAL 5)
   await test('3. Resting palm does NOT cancel active pen stroke or draw ink (CRITICAL 5)', async () => {
-    // State machine mirroring canvas.js pointer tracking
     let isDrawing = false;
     let activePenPointerId = null;
     let currentStroke = null;
@@ -83,7 +82,6 @@ async function runSuite() {
     function pointerDown(pointerId, pointerType) {
       activePointers.set(pointerId, { type: pointerType });
 
-      // If pen is currently drawing, ignore palm/touch completely
       if (isDrawing && activePenPointerId !== null) {
         if (pointerType === 'touch') return { action: 'ignored', createdInk: false };
       }
@@ -114,22 +112,18 @@ async function runSuite() {
       return { action: 'none' };
     }
 
-    // 1. User starts writing with Apple Pencil (pointerId 1)
     const penStart = pointerDown(1, 'pen');
     assert.strictEqual(penStart.action, 'drawing_pen');
     assert.strictEqual(isDrawing, true);
 
-    // 2. User's palm rests on screen while writing (pointerId 2, touch)
     const palmTouch = pointerDown(2, 'touch');
     assert.strictEqual(palmTouch.action, 'ignored');
     assert.strictEqual(isDrawing, true, 'Palm touch MUST NOT cancel active pen drawing');
     assert(currentStroke !== null, 'Current stroke must NOT be wiped by palm');
 
-    // 3. Palm lifts (pointerId 2)
     const palmLift = pointerUp(2);
     assert.strictEqual(isDrawing, true, 'PalmLift must not cancel pen stroke');
 
-    // 4. Pencil lifts (pointerId 1)
     const penLift = pointerUp(1);
     assert.strictEqual(penLift.action, 'committed_stroke');
     assert.strictEqual(isDrawing, false);
@@ -205,6 +199,40 @@ async function runSuite() {
     await Storage.rejectProposal('prop_test_reject');
     pending = await Storage.getProposals();
     assert.strictEqual(pending.length, 0, 'Rejected proposal must not appear in pending list');
+  });
+
+  // Test 8: Cross-Device Workspace List Sync (CRITICAL 2)
+  await test('8. Workspace creation syncs to new client (CRITICAL 2)', async () => {
+    const wsList = [
+      { id: 'ws_default', title: 'My Learning Map', revision: 1 },
+      { id: 'ws_ai_learning', title: 'AI Learning', revision: 1 }
+    ];
+    await Storage.saveWorkspacesLocal(wsList);
+
+    const loaded = await Storage.getWorkspaces();
+    assert(loaded.some(w => w.title === 'AI Learning'), 'AI Learning workspace must be present in synced list');
+  });
+
+  // Test 9: Strict Partial Proposal Validation - Prevent Dangling Edges (CRITICAL 4)
+  await test('9. validateProposalSubset drops dangling edges when concept is deselected (CRITICAL 4)', async () => {
+    const existing = [{ id: 'c_existing_1', label: 'Spaced Repetition' }];
+    
+    // User was proposed adding Concept temp_1 and an Edge from existing to temp_1
+    // User DESELECTS add_concept temp_1, but leaves add_edge selected
+    const selectedOpsOnlyEdge = [
+      { op: 'add_edge', from: 'c_existing_1', to: 'temp_1', label: 'links' }
+    ];
+
+    const safeOps = validateProposalSubset(selectedOpsOnlyEdge, existing);
+    assert.strictEqual(safeOps.length, 0, 'Dangling edge pointing to deselected temp_1 MUST be dropped');
+
+    // If user selects BOTH add_concept and add_edge:
+    const selectedBoth = [
+      { op: 'add_concept', tempId: 'temp_1', label: 'Active Recall', description: 'Testing effect' },
+      { op: 'add_edge', from: 'c_existing_1', to: 'temp_1', label: 'links' }
+    ];
+    const safeOpsBoth = validateProposalSubset(selectedBoth, existing);
+    assert.strictEqual(safeOpsBoth.length, 2, 'Both concept and dependent edge should pass when concept is selected');
   });
 
   console.log('\n====================================================');

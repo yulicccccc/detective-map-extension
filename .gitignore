@@ -5,6 +5,12 @@ node_modules/
 Thumbs.db
 *.log
 
+# Secrets & Environment variables (NEVER COMMIT)
+.dev.vars
+.bootstrap.secret
+*.secret
+*.env
+
 # Scratch / test artifacts
 scratch/
 .system_generated/

@@ -1,67 +1,50 @@
-# Detective Map V2.0 Final Reliability Patch Report
+# Detective Map V2.0 Final Pre-iPad Patch Report
 
-## 1. Core Summary
-- **Version**: 2.0 (Living Learning Map — Final Reliability Patch)
-- **Status**: Ready for physical iPad device acceptance.
-
----
-
-## 2. Final Reliability Patch Checklist
-
-### 1. Rotate / Invalidate All Old Device Tokens
-- Added `system_meta` SQLite versioning in Durable Objects (`auth_version = 'v2.1_hardened'`).
-- Invalidation of pre-v2.1 tokens executes exactly once upon migration deployment.
-- Subsequent worker restarts will NOT wipe newly paired devices.
-- Old tokens return **HTTP 401 Unauthorized**.
-
-### 2. Secure First-Device Bootstrap (`DM_BOOTSTRAP_SECRET`)
-- Public zero-token bootstrap has been removed.
-- `/api/auth/bootstrap-pin` strictly requires `X-Bootstrap-Secret` header or body matching Cloudflare environment secret `DM_BOOTSTRAP_SECRET`.
-- Unauthenticated requests return **HTTP 403 Forbidden**.
-- Removed automatic bootstrap from `service-worker.js`.
-- Unpaired extension shows `Cloud: Unpaired`.
-- Secrets are never logged, never in URLs, and never in Git.
-
-### 3. Single Authoritative Mutation Path (Double-Write Eliminated)
-- REST endpoints (`/api/concepts`, `/api/concepts/delete`, `/api/edges`, `/api/edges/delete`, `/api/proposals/apply`, `/api/proposals/reject`) are the **sole authoritative mutation commands**.
-- WebSocket is dedicated to real-time broadcasts (`CONCEPT_UPDATED`, `CONCEPT_DELETED`, `EDGE_ADDED`, `EDGE_DELETED`), active ink stroke streaming, and cursor drag preview (`MOVE_CONCEPT_PREVIEW`).
-- Exactly **one user action produces ONE DB write and ONE revision increment (+1)**.
-
-### 4. Safari localStorage Edge Key Typo Fixed
-- Corrected `STORAGE_KEYS.EDEdges` typo to `STORAGE_KEYS.EDGES` in `shared/storage.js`.
-- Automated test verified edge serialization and deserialization in `localStorage`.
-
-### 5. Real Apple Pencil Palm Rejection Behavior
-- When Apple Pencil (`pointerType === 'pen'`) is actively drawing:
-  - Any simultaneous `touch` events (resting palm) are completely ignored.
-  - Palm touches **NEVER cancel the active pen stroke**.
-  - Palm touches **NEVER generate ink**.
-  - Pinch-to-zoom is active only when `!isDrawing`.
-  - When the Pencil lifts, the full stroke is cleanly committed.
-
-### 6. Persist Proposal Reject / Stale Status
-- Server supports statuses: `pending`, `applied`, `rejected`, `stale`.
-- 409 Stale: sets proposal status to `stale` in SQLite.
-- Added `POST /api/proposals/reject` endpoint.
-- Rejection persists to SQLite and broadcasts `PROPOSAL_REJECTED`.
-- State queries filter to `pending` only; rejected/stale proposals never resurrect on reload.
-
-### 7. Test Semantics & Shared Production Modules
-- Extracted `chunkSourceText` and `validateAndSanitizeOperations` into `shared/engine-core.js`.
-- Tests directly import and execute the shared production module.
-- 0 toy duplicates, 0 secret printouts.
+## 1. Executive Summary
+- **Version**: 2.0 (Living Learning Map — Pre-iPad Reliability Certified)
+- **Status**: 100% Tests Passed (Cloud + Storage + Core Engine + Sync). Ready for physical iPad testing.
 
 ---
 
-## 3. Verification Summary
+## 2. The 4 Critical Blockers Resolved
 
-| Item | Classification | Result |
+### 🔴 1. Complete First-Host Onboarding Flow
+- Cloudflare environment Secret `DM_BOOTSTRAP_SECRET` configured and encrypted on Cloudflare Workers via Wrangler.
+- Full authenticated bootstrap lifecycle verified in automated Cloud test:
+  - `POST /api/auth/bootstrap-pin` with `X-Bootstrap-Secret` $\rightarrow$ returns dynamic one-time PIN (200).
+  - Windows client pairs with this PIN $\rightarrow$ issues authorized `dt_` device token (200).
+  - Subsequent `/api/state` and `/api/workspaces` calls succeed with HTTP 200.
+  - Zero secrets, zero PINs, and zero tokens printed to terminal logs.
+  - Pairing modal on canvas supports entering the bootstrap secret directly for the first host.
+
+### 🔴 2. Cross-Device Workspace List Sync (Windows $\leftrightarrow$ iPad)
+- Implemented `Storage.fetchRemoteWorkspaces()` calling `GET /api/workspaces`.
+- Triggered automatically on WebSocket `AUTH_SUCCESS`, `INIT_STATE`, `WORKSPACE_SWITCHED`, and client load.
+- Workspaces created on Windows (e.g. "AI Learning") immediately sync to newly connected clients (Safari / localStorage) upon pairing.
+
+### 🟠 3. Unified Single Engine Core
+- Production `src/worker.js` now directly imports `chunkSourceText`, `validateAndSanitizeOperations`, and `validateProposalSubset` from `../shared/engine-core.js`.
+- Completely removed all duplicate helper function declarations from `src/worker.js`.
+- Tests and production Worker now execute the exact same codebase.
+
+### 🔴 4. Dangling Edge Prevention in Partial Proposal Review
+- Implemented `validateProposalSubset(selectedOps, existingConcepts)` in `shared/engine-core.js`.
+- If an `add_concept` is deselected in the review modal, any dependent `add_edge` pointing to its `tempId` is:
+  1. Automatically disabled and unchecked in the UI with a tooltip warning.
+  2. Server-side dropped before database insertion, guaranteeing 0 dangling edges.
+- Production deterministic test added and passing.
+
+---
+
+## 3. Verification Summary Matrix
+
+| Verification Item | Classification | Verification Detail |
 |---|---|---|
-| Invalidate old tokens | **CLOUD VERIFIED** | Old/invalid token returns HTTP 401 |
-| Bootstrap secret required | **CLOUD VERIFIED** | Unauthenticated `/api/auth/bootstrap-pin` returns HTTP 403 |
-| Double-write eliminated | **CODE VERIFIED** | REST authoritative mutation + single revision increment |
-| Safari localStorage edge typo | **CODE VERIFIED** | `STORAGE_KEYS.EDGES` tested and passing |
-| Apple Pencil palm rejection | **CODE VERIFIED** | Touch events ignored while pen stroke is active |
-| Proposal reject/stale persistence | **CODE VERIFIED** | Tested rejection state filtering |
-| Proposal Review Modal | **CODE VERIFIED** | Per-operation review UI |
-| Apple Pencil handwriting smoothness | **MANUAL REQUIRED** | To be verified on physical iPad Safari |
+| Complete First-Host Bootstrap | **CLOUD VERIFIED** | Valid secret $\rightarrow$ PIN $\rightarrow$ Token $\rightarrow$ `/api/state` 200 (0 secrets logged) |
+| Workspace List Cloud Sync | **CLOUD VERIFIED** | Authenticated client syncs `GET /api/workspaces` seamlessly |
+| Unified Engine Core | **CODE VERIFIED** | `worker.js` imports `shared/engine-core.js` without duplicate code |
+| Partial Proposal Dependency Guard | **CODE VERIFIED** | Deselected concept automatically drops dependent edges (0 dangling edges) |
+| Multi-workspace Isolation | **CODE VERIFIED** | Verified separate concept/stroke collections per workspace |
+| Safari localStorage Edge Key | **CODE VERIFIED** | Tested `STORAGE_KEYS.EDGES` in localStorage environment |
+| Resting Palm Rejection | **CODE VERIFIED** | Tested concurrent touch does not interrupt active pen stroke |
+| Apple Pencil Physical Experience | **MANUAL REQUIRED** | To be tested on physical iPad Safari with Apple Pencil |

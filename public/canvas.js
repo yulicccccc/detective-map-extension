@@ -115,7 +115,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupCanvasResolution();
     window.addEventListener('resize', handleResize);
 
-    // Load initial data
+    // Load initial data & sync workspaces
     activeWorkspaceId = await Storage.getActiveWorkspaceId();
     await loadWorkspaceData();
 
@@ -147,7 +147,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function loadWorkspaceData() {
-    workspaces = await Storage.getWorkspaces();
+    // CRITICAL 2: Refresh workspaces from cloud on load
+    workspaces = await Storage.fetchRemoteWorkspaces();
     updateWorkspaceDropdown();
 
     [concepts, edges, sources, strokes, pendingProposals] = await Promise.all([
@@ -219,7 +220,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const headerEl = node.querySelector('.concept-header');
       headerEl.addEventListener('pointerdown', (e) => handleConceptPointerDown(e, c));
 
-      // Inline text editing (CRITICAL 3: Authoritative single-write REST)
+      // Inline text editing (Authoritative single-write REST)
       const titleEl = node.querySelector('.concept-title');
       titleEl.addEventListener('blur', async () => {
         const newLabel = titleEl.textContent.trim();
@@ -270,7 +271,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       });
 
-      // Delete concept (CRITICAL 3: Cascading delete via REST)
+      // Delete concept
       const closeBtn = node.querySelector('.btn-card-close');
       closeBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -303,7 +304,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       const toX = parseFloat(toEl.style.left) + (parseFloat(toEl.style.width) || 240) / 2;
       const toY = parseFloat(toEl.style.top) + toEl.offsetHeight / 2;
 
-      // Draw SVG smooth curve
       const dx = (toX - fromX) / 2;
       const pathD = `M ${fromX} ${fromY} C ${fromX + dx} ${fromY}, ${toX - dx} ${toY}, ${toX} ${toY}`;
 
@@ -398,7 +398,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
     updatePointerDeviceTag(e);
 
-    // CRITICAL 5: If pen is currently drawing, ignore palm/touch completely!
+    // If pen is currently drawing, ignore palm/touch completely
     if (isDrawing && activePenPointerId !== null) {
       if (e.pointerType === 'touch') return;
     }
@@ -426,7 +426,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
     updatePointerDeviceTag(e);
 
-    // CRITICAL 5: Resting palm while pencil is down MUST NOT interrupt or cancel pencil stroke!
+    // Resting palm while pencil is down MUST NOT interrupt pencil stroke
     if (isDrawing && activePenPointerId !== null) {
       if (e.pointerType === 'touch') {
         return;
@@ -544,7 +544,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const worldPoint = screenToWorld(e.clientX, e.clientY);
     updateCoordsTag(worldPoint);
 
-    // CRITICAL 5: Only active pen pointer ID appends ink points; ignore palm movements!
+    // Only active pen pointer ID appends ink points; ignore palm movements!
     if (isDrawing && currentStroke && e.pointerId === activePenPointerId) {
       const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
       for (const ev of events) {
@@ -651,7 +651,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // --- Proposal Review & Ingestion UI (CRITICAL 6) ---
+  // --- Proposal Review & Ingestion UI (CRITICAL 4 & 6) ---
   function checkPendingProposals() {
     if (pendingProposals.length > 0) {
       const p = pendingProposals[0];
@@ -748,7 +748,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
 
       card.innerHTML = `
-        <input type="checkbox" class="review-op-checkbox" data-index="${index}" ${isMerge ? '' : 'checked'} />
+        <input type="checkbox" class="review-op-checkbox" data-index="${index}" data-op="${op.op}" data-tempid="${op.tempId || ''}" data-from="${op.from || ''}" data-to="${op.to || ''}" ${isMerge ? '' : 'checked'} />
         <div class="review-op-body">
           <div class="review-op-header">
             <span class="review-op-tag ${tagClass}">${tagText}</span>
@@ -758,10 +758,49 @@ document.addEventListener('DOMContentLoaded', async () => {
           ${isMerge ? '<div class="review-merge-warning">⚠️ Merging concepts is structural. Check box to confirm.</div>' : ''}
         </div>
       `;
+
+      const cb = card.querySelector('.review-op-checkbox');
+      cb.addEventListener('change', () => syncReviewDependencies());
+
       reviewOperationsList.appendChild(card);
     });
 
+    syncReviewDependencies();
     proposalReviewModal.style.display = 'flex';
+  }
+
+  // CRITICAL 4: Dependency sync preventing dangling edges in UI
+  function syncReviewDependencies() {
+    const selectedTempIds = new Set();
+    const existingConceptIds = new Set(concepts.map(c => c.id));
+    const checkboxes = reviewOperationsList.querySelectorAll('.review-op-checkbox');
+
+    checkboxes.forEach(cb => {
+      if (cb.checked && cb.dataset.op === 'add_concept' && cb.dataset.tempid) {
+        selectedTempIds.add(cb.dataset.tempid);
+      }
+    });
+
+    checkboxes.forEach(cb => {
+      if (cb.dataset.op === 'add_edge') {
+        const from = cb.dataset.from;
+        const to = cb.dataset.to;
+        const fromOk = existingConceptIds.has(from) || selectedTempIds.has(from);
+        const toOk = existingConceptIds.has(to) || selectedTempIds.has(to);
+
+        const card = cb.closest('.review-op-card');
+        if (!fromOk || !toOk) {
+          cb.checked = false;
+          cb.disabled = true;
+          card.style.opacity = '0.5';
+          card.title = 'Requires target concept to be selected';
+        } else {
+          cb.disabled = false;
+          card.style.opacity = '1.0';
+          card.removeAttribute('title');
+        }
+      }
+    });
   }
 
   btnApplySelectedOps.addEventListener('click', async () => {
@@ -771,14 +810,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const selectedOps = [];
 
     checkboxes.forEach(cb => {
-      if (cb.checked) {
+      if (cb.checked && !cb.disabled) {
         const idx = parseInt(cb.getAttribute('data-index'), 10);
         if (p.operations[idx]) selectedOps.push(p.operations[idx]);
       }
     });
 
     if (selectedOps.length === 0) {
-      alert('No operations selected to apply.');
+      alert('No valid operations selected to apply.');
       return;
     }
 
@@ -791,7 +830,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     btnApplySelectedOps.disabled = false;
   });
 
-  // CRITICAL 6: Reject proposal persists to server
+  // Reject proposal persists to server
   btnRejectProposalAll.addEventListener('click', async () => {
     if (pendingProposals.length === 0) return;
     const p = pendingProposals[0];
@@ -852,7 +891,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     });
 
-    // Workspace Switching (CRITICAL E: triggers WS switch)
+    // Workspace Switching
     selectWorkspace.addEventListener('change', async (e) => {
       activeWorkspaceId = e.target.value;
       await Storage.setActiveWorkspaceId(activeWorkspaceId);
@@ -868,7 +907,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
 
-    // Manual Add Concept (CRITICAL 3: Authoritative REST)
+    // Manual Add Concept
     btnAddConcept.addEventListener('click', async () => {
       const label = prompt('Enter Concept Name:');
       if (label) {
@@ -894,6 +933,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const exportData = {
         version: '2.0.0',
         workspace: workspaces.find(w => w.id === activeWorkspaceId),
+        workspaces,
         concepts,
         edges,
         sources,
@@ -1051,8 +1091,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       if (res.success) {
         pairingModal.style.display = 'none';
+        await loadWorkspaceData();
       } else {
-        pairingErrorMsg.textContent = res.error || 'Invalid or expired Pairing PIN';
+        pairingErrorMsg.textContent = res.error || 'Invalid or expired Pairing PIN / Secret';
         pairingErrorMsg.style.display = 'block';
       }
     });
@@ -1060,6 +1101,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function setupStorageSync() {
     Storage.onChanged(async (changes) => {
+      if (changes[STORAGE_KEYS.WORKSPACES]) {
+        workspaces = changes[STORAGE_KEYS.WORKSPACES].newValue || await Storage.getWorkspaces();
+        updateWorkspaceDropdown();
+      }
       if (changes[STORAGE_KEYS.CONCEPTS]) {
         concepts = await Storage.getConcepts();
         renderConcepts();

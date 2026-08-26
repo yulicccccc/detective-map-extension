@@ -61,17 +61,40 @@ class V2CloudSyncEngine {
     return memStore[STORAGE_KEYS.DEVICE_TOKEN] || null;
   }
 
-  async pairDevice(pairingCode, deviceName = 'Web Client') {
-    const code = (pairingCode || '').trim().toUpperCase();
-    if (!code) return { success: false, error: 'Pairing PIN required' };
+  async pairDevice(pairingCodeOrSecret, deviceName = 'Web Client') {
+    const input = (pairingCodeOrSecret || '').trim();
+    if (!input) return { success: false, error: 'Pairing PIN or Bootstrap Secret required' };
 
     try {
-      const res = await fetch(`${CLOUDFLARE_BASE_URL}/api/auth/pair`, {
+      // 1. Try standard PIN pair first
+      let res = await fetch(`${CLOUDFLARE_BASE_URL}/api/auth/pair`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pairingCode: code, deviceName })
+        body: JSON.stringify({ pairingCode: input.toUpperCase(), deviceName })
       });
-      const data = await res.json();
+      let data = await res.json();
+
+      // 2. If standard PIN failed, try secure bootstrap endpoint with input as X-Bootstrap-Secret
+      if (!data.success && res.status !== 200) {
+        const bootRes = await fetch(`${CLOUDFLARE_BASE_URL}/api/auth/bootstrap-pin`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Bootstrap-Secret': input },
+          body: JSON.stringify({ bootstrapSecret: input })
+        });
+        if (bootRes.status === 200) {
+          const bootData = await bootRes.json();
+          if (bootData.success && bootData.pin) {
+            // Pair immediately with the dynamically generated bootstrap PIN
+            res = await fetch(`${CLOUDFLARE_BASE_URL}/api/auth/pair`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ pairingCode: bootData.pin, deviceName })
+            });
+            data = await res.json();
+          }
+        }
+      }
+
       if (data.success && data.token) {
         if (isChromeStorage) {
           await chrome.storage.local.set({ [STORAGE_KEYS.DEVICE_TOKEN]: data.token });
@@ -82,9 +105,10 @@ class V2CloudSyncEngine {
         memStore[STORAGE_KEYS.DEVICE_TOKEN] = data.token;
 
         this.connect(data.token);
+        await Storage.fetchRemoteWorkspaces();
         return { success: true, token: data.token };
       }
-      return { success: false, error: data.error || 'Invalid or expired Pairing PIN' };
+      return { success: false, error: data.error || 'Invalid or expired Pairing Code / Secret' };
     } catch (err) {
       return { success: false, error: err.message };
     }
@@ -151,9 +175,14 @@ class V2CloudSyncEngine {
 
     if (msg.type === 'AUTH_SUCCESS') {
       this.setStatus('connected');
+      Storage.fetchRemoteWorkspaces();
     } else if (msg.type === 'AUTH_ERROR') {
       this.setStatus('unpaired');
     } else if (msg.type === 'INIT_STATE' || msg.type === 'WORKSPACE_SWITCHED') {
+      if (Array.isArray(msg.workspaces) && msg.workspaces.length > 0) {
+        Storage.saveWorkspacesLocal(msg.workspaces);
+        triggerChange({ [STORAGE_KEYS.WORKSPACES]: { newValue: msg.workspaces } });
+      }
       if (msg.concepts) Storage.saveConceptsLocal(msg.concepts);
       if (msg.edges) Storage.saveEdgesLocal(msg.edges);
       if (msg.sources) Storage.saveSourcesLocal(msg.sources);
@@ -164,6 +193,12 @@ class V2CloudSyncEngine {
         [STORAGE_KEYS.EDGES]: { newValue: msg.edges },
         [STORAGE_KEYS.INK_STROKES]: { newValue: msg.inkStrokes },
         [STORAGE_KEYS.PROPOSALS]: { newValue: msg.proposals }
+      });
+    } else if (msg.type === 'WORKSPACE_CREATED' && msg.workspace) {
+      Storage.getWorkspaces().then(existing => {
+        const updated = [msg.workspace, ...existing.filter(w => w.id !== msg.workspace.id)];
+        Storage.saveWorkspacesLocal(updated);
+        triggerChange({ [STORAGE_KEYS.WORKSPACES]: { newValue: updated } });
       });
     } else if (msg.type === 'SOURCE_ADDED' && msg.source) {
       Storage.getAllSourcesLocal().then(existing => {
@@ -312,6 +347,29 @@ const Storage = {
     return memStore[STORAGE_KEYS.WORKSPACES] || [{ id: 'ws_default', title: 'My Learning Map', revision: 1 }];
   },
 
+  // CRITICAL 2: Cross-Device Workspace Sync
+  async fetchRemoteWorkspaces() {
+    const token = await cloudSync.getToken();
+    if (!token) return await this.getWorkspaces();
+
+    try {
+      const res = await fetch(`${CLOUDFLARE_BASE_URL}/api/workspaces`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.status === 200) {
+        const data = await res.json();
+        if (Array.isArray(data.workspaces) && data.workspaces.length > 0) {
+          await this.saveWorkspacesLocal(data.workspaces);
+          triggerChange({ [STORAGE_KEYS.WORKSPACES]: { newValue: data.workspaces } });
+          return data.workspaces;
+        }
+      }
+    } catch (e) {
+      console.warn('[Fetch Remote Workspaces Error]', e);
+    }
+    return await this.getWorkspaces();
+  },
+
   async createWorkspace(title) {
     const token = await cloudSync.getToken();
     const cleanTitle = (title || 'New Learning Map').trim();
@@ -326,9 +384,10 @@ const Storage = {
         const data = await res.json();
         if (data.success && data.workspace) {
           const wsList = await this.getWorkspaces();
-          wsList.unshift(data.workspace);
-          await this.saveWorkspacesLocal(wsList);
+          const updated = [data.workspace, ...wsList.filter(w => w.id !== data.workspace.id)];
+          await this.saveWorkspacesLocal(updated);
           await this.setActiveWorkspaceId(data.workspace.id);
+          triggerChange({ [STORAGE_KEYS.WORKSPACES]: { newValue: updated } });
           return data.workspace;
         }
       }
@@ -347,6 +406,7 @@ const Storage = {
     list.unshift(localWs);
     await this.saveWorkspacesLocal(list);
     await this.setActiveWorkspaceId(localWs.id);
+    triggerChange({ [STORAGE_KEYS.WORKSPACES]: { newValue: list } });
     return localWs;
   },
 
@@ -688,7 +748,6 @@ const Storage = {
         const err = new Error(errorMsg);
         err.status = res.status;
         err.code = data.error;
-        // On 409 stale, mark local status as stale
         if (res.status === 409) {
           const all = await this.getAllProposalsLocal();
           const prop = all.find(p => p.id === proposalId);
@@ -709,13 +768,16 @@ const Storage = {
       const allConcepts = await this.getAllConceptsLocal();
       const allEdges = await this.getAllEdgesLocal();
       const tempIdMap = new Map();
+      const existingIds = new Set(allConcepts.map(c => c.id));
       let nextX = 150 + (allConcepts.length % 5) * 260;
       let nextY = 150 + Math.floor(allConcepts.length / 5) * 200;
 
+      // Pass 1: Concepts
       for (const op of ops) {
         if (op.op === 'add_concept') {
           const realId = 'c_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
           if (op.tempId) tempIdMap.set(op.tempId, realId);
+          existingIds.add(realId);
           allConcepts.push({
             id: realId,
             workspaceId: wsId,
@@ -735,10 +797,15 @@ const Storage = {
             if (!target.sourceRefs) target.sourceRefs = [];
             if (prop.sourceId && !target.sourceRefs.includes(prop.sourceId)) target.sourceRefs.push(prop.sourceId);
           }
-        } else if (op.op === 'add_edge') {
+        }
+      }
+
+      // Pass 2: Edges (Safe check)
+      for (const op of ops) {
+        if (op.op === 'add_edge') {
           const fromId = tempIdMap.get(op.from) || op.from;
           const toId = tempIdMap.get(op.to) || op.to;
-          if (fromId && toId && fromId !== toId) {
+          if (existingIds.has(fromId) && existingIds.has(toId) && fromId !== toId) {
             allEdges.push({
               id: 'e_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
               workspaceId: wsId,
@@ -751,6 +818,7 @@ const Storage = {
           }
         }
       }
+
       await this.saveConceptsLocal(allConcepts);
       await this.saveEdgesLocal(allEdges);
       await this.saveProposalsLocal(proposalList.filter(p => p.id !== proposalId));
@@ -788,6 +856,10 @@ const Storage = {
       });
       if (res.status === 200) {
         const data = await res.json();
+        if (Array.isArray(data.workspaces) && data.workspaces.length > 0) {
+          await this.saveWorkspacesLocal(data.workspaces);
+          triggerChange({ [STORAGE_KEYS.WORKSPACES]: { newValue: data.workspaces } });
+        }
         if (data.concepts) await this.saveConceptsLocal(data.concepts);
         if (data.edges) await this.saveEdgesLocal(data.edges);
         if (data.sources) await this.saveSourcesLocal(data.sources);
@@ -856,17 +928,19 @@ const Storage = {
   },
 
   async exportAllData() {
-    const [concepts, edges, sources, strokes] = await Promise.all([
+    const [concepts, edges, sources, strokes, workspaces] = await Promise.all([
       this.getAllConceptsLocal(),
       this.getAllEdgesLocal(),
       this.getAllSourcesLocal(),
-      this.getAllStrokesLocal()
+      this.getAllStrokesLocal(),
+      this.getWorkspaces()
     ]);
     return {
       version: '2.0.0',
       exportedAt: new Date().toISOString(),
       generator: 'Detective Map V2',
       data: {
+        workspaces,
         concepts,
         edges,
         sources,
@@ -880,7 +954,8 @@ const Storage = {
     if (!payload || !payload.data) {
       throw new Error('Invalid Detective Map backup format.');
     }
-    const { concepts, edges, sources, strokes, quotes } = payload.data;
+    const { workspaces, concepts, edges, sources, strokes, quotes } = payload.data;
+    if (Array.isArray(workspaces)) await this.saveWorkspacesLocal(workspaces);
     if (Array.isArray(concepts)) await this.saveConceptsLocal(concepts);
     if (Array.isArray(edges)) await this.saveEdgesLocal(edges);
     if (Array.isArray(sources)) await this.saveSourcesLocal(sources);

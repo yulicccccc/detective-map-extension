@@ -2,6 +2,7 @@
 // Cloudflare Worker + SQLite Durable Objects + Workers AI + Realtime WebSockets
 
 import { ASSETS_MANIFEST } from "./assets-bundle.js";
+import { chunkSourceText, validateAndSanitizeOperations, validateProposalSubset } from "../shared/engine-core.js";
 
 export class DetectiveMapWorkspace {
   constructor(ctx, env) {
@@ -143,7 +144,13 @@ export class DetectiveMapWorkspace {
     // CRITICAL 2: Requires Cloudflare Secret (DM_BOOTSTRAP_SECRET)
     if (url.pathname === '/api/auth/bootstrap-pin' && request.method === 'POST') {
       const expectedSecret = this.env.DM_BOOTSTRAP_SECRET || this.env.BOOTSTRAP_SECRET;
-      const clientSecret = request.headers.get('X-Bootstrap-Secret') || (await request.json().catch(() => ({}))).bootstrapSecret;
+      let clientSecret = request.headers.get('X-Bootstrap-Secret');
+      if (!clientSecret) {
+        try {
+          const body = await request.clone().json();
+          clientSecret = body.bootstrapSecret;
+        } catch {}
+      }
 
       if (!expectedSecret || !clientSecret || clientSecret !== expectedSecret) {
         return jsonResponse({ error: 'Forbidden. Valid bootstrap secret required.' }, 403);
@@ -243,7 +250,7 @@ export class DetectiveMapWorkspace {
       return jsonResponse(state);
     }
 
-    // GET /api/workspaces
+    // GET /api/workspaces (CRITICAL 2: Cross-Device Workspace Sync)
     if (url.pathname === '/api/workspaces' && request.method === 'GET') {
       const workspaces = this.sql.exec(`SELECT * FROM workspaces WHERE archived = 0 ORDER BY updatedAt DESC`).toArray();
       return jsonResponse({ workspaces });
@@ -261,8 +268,9 @@ export class DetectiveMapWorkspace {
         VALUES (?, ?, ?, ?, 1, 0)
       `, id, title, now, now);
 
-      this.broadcast({ type: 'WORKSPACE_CREATED', workspace: { id, title, createdAt: now, updatedAt: now, revision: 1 } });
-      return jsonResponse({ success: true, workspace: { id, title, revision: 1 } });
+      const wsObj = { id, title, createdAt: now, updatedAt: now, revision: 1 };
+      this.broadcast({ type: 'WORKSPACE_CREATED', workspace: wsObj });
+      return jsonResponse({ success: true, workspace: wsObj });
     }
 
     // POST /api/sources & /api/quote
@@ -300,7 +308,7 @@ export class DetectiveMapWorkspace {
       }
     }
 
-    // POST /api/proposals/apply (CRITICAL 3 & 6: Stale check & status update)
+    // POST /api/proposals/apply (CRITICAL 3 & 4 & 6: Stale check & safe subset validation)
     if (url.pathname === '/api/proposals/apply' && request.method === 'POST') {
       const body = await request.json();
       const { proposalId, operations } = body;
@@ -547,15 +555,16 @@ export class DetectiveMapWorkspace {
   }
 
   getFullWorkspaceState(workspaceId) {
-    const wsRow = this.sql.exec(`SELECT * FROM workspaces WHERE id = ?`, workspaceId).toArray()[0] || { id: workspaceId, title: 'My Learning Map', revision: 1 };
+    const workspaces = this.sql.exec(`SELECT * FROM workspaces WHERE archived = 0 ORDER BY updatedAt DESC`).toArray();
+    const wsRow = workspaces.find(w => w.id === workspaceId) || { id: workspaceId, title: 'My Learning Map', revision: 1 };
     const sources = this.sql.exec(`SELECT * FROM sources WHERE workspaceId = ? ORDER BY capturedAt DESC`, workspaceId).toArray();
     const rawConcepts = this.sql.exec(`SELECT * FROM concepts WHERE workspaceId = ?`, workspaceId).toArray();
     const rawEdges = this.sql.exec(`SELECT * FROM edges WHERE workspaceId = ?`, workspaceId).toArray();
     const rawStrokes = this.sql.exec(`SELECT * FROM ink_strokes WHERE workspaceId = ?`, workspaceId).toArray();
-    // Only load PENDING proposals into active UI
     const rawProposals = this.sql.exec(`SELECT * FROM proposals WHERE workspaceId = ? AND status = 'pending' ORDER BY createdAt DESC`, workspaceId).toArray();
 
     return {
+      workspaces,
       workspace: wsRow,
       sources,
       concepts: rawConcepts.map(c => ({
@@ -596,7 +605,7 @@ export class DetectiveMapWorkspace {
         return;
       }
 
-      // Chunk long text deterministically (up to ~10,000 words)
+      // Chunk long text deterministically (up to ~10,000 words) using shared engine core
       const textChunks = chunkSourceText(source.text, 2800, 250);
       let rawExtractedOperations = [];
       let finalSummary = `Analyzed ${source.title || 'source evidence'} (${textChunks.length} chunk${textChunks.length > 1 ? 's' : ''}).`;
@@ -666,7 +675,7 @@ ${chunk}
         }
       }
 
-      // CRITICAL C: Strict Schema Validation & Sanitization (NO fake fallbacks)
+      // CRITICAL C: Strict Schema Validation via shared engine core
       const validatedOperations = validateAndSanitizeOperations(
         rawExtractedOperations,
         currentConcepts,
@@ -711,19 +720,24 @@ ${chunk}
   }
 
   applyProposalOperations(workspaceId, operations, sourceId) {
+    const existingConcepts = this.sql.exec(`SELECT * FROM concepts WHERE workspaceId = ?`, workspaceId).toArray();
+    // CRITICAL 4: Strict validation of selected subset to eliminate dangling edges
+    const safeOps = validateProposalSubset(operations, existingConcepts);
+
     const tempIdMap = new Map();
     const createdConcepts = [];
     const createdEdges = [];
     const now = new Date().toISOString();
-
-    const existingConcepts = this.sql.exec(`SELECT * FROM concepts WHERE workspaceId = ?`, workspaceId).toArray();
+    const existingConceptIdSet = new Set(existingConcepts.map(c => c.id));
     let nextX = 150 + (existingConcepts.length % 5) * 260;
     let nextY = 150 + Math.floor(existingConcepts.length / 5) * 200;
 
-    for (const op of operations) {
+    // Pass 1: Apply Concepts
+    for (const op of safeOps) {
       if (op.op === 'add_concept') {
         const realId = 'c_' + crypto.randomUUID().replace(/-/g, '').slice(0, 10);
         if (op.tempId) tempIdMap.set(op.tempId, realId);
+        existingConceptIdSet.add(realId);
 
         const label = (op.label || 'New Concept').trim();
         const description = (op.description || '').trim();
@@ -737,20 +751,28 @@ ${chunk}
         createdConcepts.push({ id: realId, workspaceId, label, description, x: nextX, y: nextY, sourceRefs: [sourceId] });
         nextX += 260;
       } else if (op.op === 'enrich_concept' && op.conceptId) {
-        const current = this.sql.exec(`SELECT * FROM concepts WHERE id = ?`, op.conceptId).toArray()[0];
-        if (current) {
-          const newDesc = current.description ? `${current.description}\n• ${op.addition}` : op.addition;
-          const refs = safeParseJSON(current.sourceRefs, []);
-          if (sourceId && !refs.includes(sourceId)) refs.push(sourceId);
+        if (existingConceptIdSet.has(op.conceptId)) {
+          const current = this.sql.exec(`SELECT * FROM concepts WHERE id = ?`, op.conceptId).toArray()[0];
+          if (current) {
+            const newDesc = current.description ? `${current.description}\n• ${op.addition}` : op.addition;
+            const refs = safeParseJSON(current.sourceRefs, []);
+            if (sourceId && !refs.includes(sourceId)) refs.push(sourceId);
 
-          this.sql.exec(`
-            UPDATE concepts SET description = ?, sourceRefs = ?, updatedAt = ? WHERE id = ?
-          `, newDesc, JSON.stringify(refs), now, op.conceptId);
+            this.sql.exec(`
+              UPDATE concepts SET description = ?, sourceRefs = ?, updatedAt = ? WHERE id = ?
+            `, newDesc, JSON.stringify(refs), now, op.conceptId);
+          }
         }
-      } else if (op.op === 'add_edge') {
+      }
+    }
+
+    // Pass 2: Apply Edges with guaranteed real endpoints
+    for (const op of safeOps) {
+      if (op.op === 'add_edge') {
         const fromId = tempIdMap.get(op.from) || op.from;
         const toId = tempIdMap.get(op.to) || op.to;
-        if (fromId && toId && fromId !== toId) {
+
+        if (existingConceptIdSet.has(fromId) && existingConceptIdSet.has(toId) && fromId !== toId) {
           const edgeId = 'e_' + crypto.randomUUID().replace(/-/g, '').slice(0, 10);
           this.sql.exec(`
             INSERT OR REPLACE INTO edges (id, workspaceId, fromId, toId, relation, label, sourceRefs, createdBy)
@@ -789,113 +811,6 @@ ${chunk}
       }
     }
   }
-}
-
-// Chunking & Validation Helper Functions
-function chunkSourceText(text, maxChunkSize = 2800, overlap = 250) {
-  if (!text || text.length <= maxChunkSize) return [text || ''];
-  const chunks = [];
-  let start = 0;
-  while (start < text.length) {
-    let end = start + maxChunkSize;
-    if (end < text.length) {
-      const lastBreak = text.lastIndexOf('\n', end);
-      const lastPeriod = text.lastIndexOf('. ', end);
-      if (lastBreak > start + maxChunkSize * 0.7) {
-        end = lastBreak + 1;
-      } else if (lastPeriod > start + maxChunkSize * 0.7) {
-        end = lastPeriod + 2;
-      }
-    } else {
-      end = text.length;
-    }
-    chunks.push(text.slice(start, end));
-    start = end > start ? end - overlap : end;
-    if (end >= text.length) break;
-  }
-  return chunks;
-}
-
-function validateAndSanitizeOperations(rawOps, existingConcepts, existingEdges, sourceId) {
-  if (!Array.isArray(rawOps)) return [];
-  const conceptIds = new Set((existingConcepts || []).map(c => c.id));
-  const seenLabels = new Set((existingConcepts || []).map(c => (c.label || '').toLowerCase()));
-  const tempIds = new Set();
-  const validOps = [];
-
-  for (const op of rawOps) {
-    if (!op || typeof op !== 'object') continue;
-
-    if (op.op === 'add_concept') {
-      const label = typeof op.label === 'string' ? op.label.trim() : '';
-      if (label.length >= 2 && label.length <= 120) {
-        if (seenLabels.has(label.toLowerCase())) {
-          const match = existingConcepts.find(c => (c.label || '').toLowerCase() === label.toLowerCase());
-          if (match && op.description) {
-            validOps.push({
-              op: 'enrich_concept',
-              conceptId: match.id,
-              addition: op.description.trim(),
-              sourceRefs: [sourceId]
-            });
-          }
-        } else {
-          const tempId = op.tempId || 'tmp_' + Math.random().toString(36).slice(2, 8);
-          tempIds.add(tempId);
-          seenLabels.add(label.toLowerCase());
-          validOps.push({
-            op: 'add_concept',
-            tempId,
-            label,
-            description: typeof op.description === 'string' ? op.description.trim() : '',
-            sourceRefs: [sourceId]
-          });
-        }
-      }
-    } else if (op.op === 'enrich_concept') {
-      if (op.conceptId && conceptIds.has(op.conceptId) && typeof op.addition === 'string' && op.addition.trim().length > 0) {
-        validOps.push({
-          op: 'enrich_concept',
-          conceptId: op.conceptId,
-          addition: op.addition.trim(),
-          sourceRefs: [sourceId]
-        });
-      }
-    } else if (op.op === 'add_edge') {
-      const fromValid = conceptIds.has(op.from) || tempIds.has(op.from);
-      const toValid = conceptIds.has(op.to) || tempIds.has(op.to);
-      if (fromValid && toValid && op.from !== op.to) {
-        validOps.push({
-          op: 'add_edge',
-          from: op.from,
-          to: op.to,
-          relation: typeof op.relation === 'string' ? op.relation : 'relates',
-          label: typeof op.label === 'string' ? op.label.trim() : '',
-          sourceRefs: [sourceId]
-        });
-      }
-    } else if (op.op === 'flag_conflict') {
-      if (op.conceptId && conceptIds.has(op.conceptId)) {
-        validOps.push({
-          op: 'flag_conflict',
-          conceptId: op.conceptId,
-          note: typeof op.note === 'string' ? op.note.trim() : 'Contradiction noted'
-        });
-      }
-    } else if (op.op === 'suggest_merge') {
-      if (op.conceptA && op.conceptB && conceptIds.has(op.conceptA) && conceptIds.has(op.conceptB) && op.conceptA !== op.conceptB) {
-        validOps.push({
-          op: 'suggest_merge',
-          conceptA: op.conceptA,
-          conceptB: op.conceptB,
-          mergedLabel: typeof op.mergedLabel === 'string' ? op.mergedLabel.trim() : '',
-          reason: typeof op.reason === 'string' ? op.reason.trim() : ''
-        });
-      }
-    }
-  }
-
-  return validOps;
 }
 
 function jsonResponse(data, status = 200) {

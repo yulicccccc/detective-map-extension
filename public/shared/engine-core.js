@@ -1,5 +1,5 @@
 // shared/engine-core.js - Deterministic AI Chunking and Schema Validation Core
-// Shared between Cloudflare Worker and Verification Test Suite
+// Shared between Cloudflare Worker, Browser Client, and Verification Test Suite
 
 function chunkSourceText(text, maxChunkSize = 2800, overlap = 250) {
   if (!text || text.length <= maxChunkSize) return [text || ''];
@@ -107,6 +107,34 @@ function validateAndSanitizeOperations(rawOps, existingConcepts, existingEdges, 
   return validOps;
 }
 
+// CRITICAL 4: Validates a selected subset of operations to prevent dangling edges
+function validateProposalSubset(selectedOps, existingConcepts) {
+  if (!Array.isArray(selectedOps)) return [];
+  const conceptIds = new Set((existingConcepts || []).map(c => c.id));
+  const selectedTempIds = new Set();
+
+  for (const op of selectedOps) {
+    if (op && op.op === 'add_concept' && op.tempId) {
+      selectedTempIds.add(op.tempId);
+    }
+  }
+
+  const validOps = [];
+  for (const op of selectedOps) {
+    if (!op || typeof op !== 'object') continue;
+    if (op.op === 'add_edge') {
+      const fromValid = conceptIds.has(op.from) || selectedTempIds.has(op.from);
+      const toValid = conceptIds.has(op.to) || selectedTempIds.has(op.to);
+      if (fromValid && toValid && op.from !== op.to) {
+        validOps.push(op);
+      }
+    } else {
+      validOps.push(op);
+    }
+  }
+  return validOps;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { chunkSourceText, validateAndSanitizeOperations };
+  module.exports = { chunkSourceText, validateAndSanitizeOperations, validateProposalSubset };
 }
