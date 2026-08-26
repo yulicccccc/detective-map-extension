@@ -29,6 +29,18 @@ async function runCloudVerification() {
   assert.strictEqual(resLegacyPin.status, 401, 'MAP-2026 must be rejected with HTTP 401');
   console.log('  ✓ PASS: MAP-2026 permanently rejected with HTTP 401');
 
+  // Test 2B: Permanent Master PIN KIRA-2026 works repeatable & never expires
+  console.log('[Test 2B] Testing Permanent Master PIN KIRA-2026...');
+  const resMasterPin = await fetch(`${WORKER_BASE}/api/auth/pair`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pairingCode: 'KIRA-2026', deviceName: 'Master Test Device' })
+  });
+  assert.strictEqual(resMasterPin.status, 200, 'Master PIN KIRA-2026 must succeed with HTTP 200');
+  const masterData = await resMasterPin.json();
+  assert(masterData.token && masterData.token.startsWith('dt_'), 'Master PIN must issue valid token');
+  console.log('  ✓ PASS: Permanent Master PIN KIRA-2026 verified successfully (HTTP 200)');
+
   // Test 3: Unauthenticated /api/state must return 401
   console.log('[Test 3] Testing unauthenticated /api/state access...');
   const resUnauth = await fetch(`${WORKER_BASE}/api/state`);
