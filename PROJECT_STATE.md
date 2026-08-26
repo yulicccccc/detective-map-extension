@@ -58,8 +58,8 @@ Side Panel / Canvas UI (Interactive Map + Apply All / Review)
 | Test Suite | Result | Details |
 |---|---|---|
 | `tests/verify-all.js` | **9/9 Passed** | MV3 structure, coordinate math, zoom invariance, eraser hit detection, export/import schema |
-| `tests/verify-v2.js` | **12/12 Passed** | Workspace CRUD, Safari localStorage, palm rejection, cascading delete, tail chunking, proposal sanitization, subset validation, ink isolation, failure UI, proposal scoped storage |
-| `tests/verify-cloud.js` | **10/10 Passed** | Live Cloudflare security, legacy token rejection, KIRA-2026 auth, atomic PIN, real Workers AI execution, retry endpoint, 401 stale token auto-healing |
+| `tests/verify-v2.js` | **12/12 Passed** | **Pure In-Memory Test Isolation**: Strict 0-network guard (`DETECTIVE_TEST_MODE`), Workspace CRUD, Safari localStorage, palm rejection, cascading delete, tail chunking, proposal sanitization, subset validation, ink isolation, failure UI, scoped storage |
+| `tests/verify-cloud.js` | **10/10 Passed** | Live Cloudflare security, legacy token rejection, KIRA-2026 auth, atomic PIN, real Workers AI execution, retry endpoint, 401 stale token auto-healing, **Automatic `finally` Cleanup (0 pollution left behind)** |
 
 ---
 
