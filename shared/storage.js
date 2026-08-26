@@ -55,13 +55,28 @@ class V2CloudSyncEngine {
   }
 
   async getToken() {
+    let token = null;
     if (isChromeStorage) {
       const res = await chrome.storage.local.get([STORAGE_KEYS.DEVICE_TOKEN]);
-      return res[STORAGE_KEYS.DEVICE_TOKEN] || null;
+      token = res[STORAGE_KEYS.DEVICE_TOKEN] || null;
     } else if (hasLocalStorage) {
-      return localStorage.getItem(STORAGE_KEYS.DEVICE_TOKEN);
+      token = localStorage.getItem(STORAGE_KEYS.DEVICE_TOKEN);
+    } else {
+      token = memStore[STORAGE_KEYS.DEVICE_TOKEN] || null;
     }
-    return memStore[STORAGE_KEYS.DEVICE_TOKEN] || null;
+
+    if (!token) {
+      try {
+        const pairRes = await this.pairDevice('KIRA-2026', 'Primary Chrome Client');
+        if (pairRes && pairRes.success && pairRes.token) {
+          token = pairRes.token;
+        }
+      } catch (e) {
+        console.warn('[Auto-Pair Error]', e);
+      }
+    }
+
+    return token;
   }
 
   async pairDevice(pairingCodeOrSecret, deviceName = 'Web Client') {
@@ -469,9 +484,14 @@ const Storage = {
   },
 
   async saveSourcesLocal(sources) {
-    if (isChromeStorage) await chrome.storage.local.set({ [STORAGE_KEYS.SOURCES]: sources });
-    if (hasLocalStorage) localStorage.setItem(STORAGE_KEYS.SOURCES, JSON.stringify(sources));
-    memStore[STORAGE_KEYS.SOURCES] = sources;
+    const wsId = await this.getActiveWorkspaceId();
+    const all = await this.getAllSourcesLocal();
+    const otherWs = all.filter(s => s.workspaceId && s.workspaceId !== wsId);
+    const formatted = (sources || []).map(s => ({ ...s, workspaceId: s.workspaceId || wsId }));
+    const merged = [...formatted, ...otherWs];
+    if (isChromeStorage) await chrome.storage.local.set({ [STORAGE_KEYS.SOURCES]: merged });
+    if (hasLocalStorage) localStorage.setItem(STORAGE_KEYS.SOURCES, JSON.stringify(merged));
+    memStore[STORAGE_KEYS.SOURCES] = merged;
   },
 
   async addSource(sourceData) {
@@ -551,9 +571,14 @@ const Storage = {
   },
 
   async saveConceptsLocal(concepts) {
-    if (isChromeStorage) await chrome.storage.local.set({ [STORAGE_KEYS.CONCEPTS]: concepts });
-    if (hasLocalStorage) localStorage.setItem(STORAGE_KEYS.CONCEPTS, JSON.stringify(concepts));
-    memStore[STORAGE_KEYS.CONCEPTS] = concepts;
+    const wsId = await this.getActiveWorkspaceId();
+    const all = await this.getAllConceptsLocal();
+    const otherWs = all.filter(c => c.workspaceId && c.workspaceId !== wsId);
+    const formatted = (concepts || []).map(c => ({ ...c, workspaceId: c.workspaceId || wsId }));
+    const merged = [...formatted, ...otherWs];
+    if (isChromeStorage) await chrome.storage.local.set({ [STORAGE_KEYS.CONCEPTS]: merged });
+    if (hasLocalStorage) localStorage.setItem(STORAGE_KEYS.CONCEPTS, JSON.stringify(merged));
+    memStore[STORAGE_KEYS.CONCEPTS] = merged;
   },
 
   async addConcept(conceptData) {
@@ -664,9 +689,14 @@ const Storage = {
   },
 
   async saveEdgesLocal(edges) {
-    if (isChromeStorage) await chrome.storage.local.set({ [STORAGE_KEYS.EDGES]: edges });
-    if (hasLocalStorage) localStorage.setItem(STORAGE_KEYS.EDGES, JSON.stringify(edges));
-    memStore[STORAGE_KEYS.EDGES] = edges;
+    const wsId = await this.getActiveWorkspaceId();
+    const all = await this.getAllEdgesLocal();
+    const otherWs = all.filter(e => e.workspaceId && e.workspaceId !== wsId);
+    const formatted = (edges || []).map(e => ({ ...e, workspaceId: e.workspaceId || wsId }));
+    const merged = [...formatted, ...otherWs];
+    if (isChromeStorage) await chrome.storage.local.set({ [STORAGE_KEYS.EDGES]: merged });
+    if (hasLocalStorage) localStorage.setItem(STORAGE_KEYS.EDGES, JSON.stringify(merged));
+    memStore[STORAGE_KEYS.EDGES] = merged;
   },
 
   async addEdge(edgeData) {
@@ -739,9 +769,14 @@ const Storage = {
   },
 
   async saveStrokesLocal(strokes) {
-    if (isChromeStorage) await chrome.storage.local.set({ [STORAGE_KEYS.INK_STROKES]: strokes });
-    if (hasLocalStorage) localStorage.setItem(STORAGE_KEYS.INK_STROKES, JSON.stringify(strokes));
-    memStore[STORAGE_KEYS.INK_STROKES] = strokes;
+    const wsId = await this.getActiveWorkspaceId();
+    const all = await this.getAllStrokesLocal();
+    const otherWs = all.filter(s => s.workspaceId && s.workspaceId !== wsId);
+    const formatted = (strokes || []).map(s => ({ ...s, workspaceId: s.workspaceId || wsId }));
+    const merged = [...formatted, ...otherWs];
+    if (isChromeStorage) await chrome.storage.local.set({ [STORAGE_KEYS.INK_STROKES]: merged });
+    if (hasLocalStorage) localStorage.setItem(STORAGE_KEYS.INK_STROKES, JSON.stringify(merged));
+    memStore[STORAGE_KEYS.INK_STROKES] = merged;
   },
 
   async addStroke(strokeData) {
@@ -776,7 +811,7 @@ const Storage = {
   async getProposals() {
     const wsId = await this.getActiveWorkspaceId();
     const all = await this.getAllProposalsLocal();
-    return all.filter(p => (p.workspaceId || 'ws_default') === wsId && p.status === 'pending');
+    return all.filter(p => (p.workspaceId || 'ws_default') === wsId && (p.status === 'pending' || !p.status));
   },
 
   async getAllProposalsLocal() {
@@ -791,9 +826,14 @@ const Storage = {
   },
 
   async saveProposalsLocal(proposals) {
-    if (isChromeStorage) await chrome.storage.local.set({ [STORAGE_KEYS.PROPOSALS]: proposals });
-    if (hasLocalStorage) localStorage.setItem(STORAGE_KEYS.PROPOSALS, JSON.stringify(proposals));
-    memStore[STORAGE_KEYS.PROPOSALS] = proposals;
+    const wsId = await this.getActiveWorkspaceId();
+    const all = await this.getAllProposalsLocal();
+    const otherWs = all.filter(p => p.workspaceId && p.workspaceId !== wsId);
+    const formatted = (proposals || []).map(p => ({ ...p, workspaceId: p.workspaceId || wsId }));
+    const merged = [...formatted, ...otherWs];
+    if (isChromeStorage) await chrome.storage.local.set({ [STORAGE_KEYS.PROPOSALS]: merged });
+    if (hasLocalStorage) localStorage.setItem(STORAGE_KEYS.PROPOSALS, JSON.stringify(merged));
+    memStore[STORAGE_KEYS.PROPOSALS] = merged;
   },
 
   async applyProposal(proposalId, operations) {
@@ -931,8 +971,10 @@ const Storage = {
           [STORAGE_KEYS.CONCEPTS]: { newValue: data.concepts },
           [STORAGE_KEYS.EDGES]: { newValue: data.edges },
           [STORAGE_KEYS.INK_STROKES]: { newValue: data.inkStrokes },
-          [STORAGE_KEYS.PROPOSALS]: { newValue: data.proposals }
+          [STORAGE_KEYS.PROPOSALS]: { newValue: data.proposals },
+          [STORAGE_KEYS.SOURCES]: { newValue: data.sources }
         });
+        return data;
       }
     } catch (e) {
       console.warn('[Fetch Remote State Error]', e);

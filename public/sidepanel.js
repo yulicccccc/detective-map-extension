@@ -112,6 +112,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     workspaces = await Storage.fetchRemoteWorkspaces();
     updateWorkspaceDropdown();
 
+    // Hydrate full remote state for active workspace
+    await Storage.fetchRemoteState();
+
     [concepts, edges, sources, pendingProposals] = await Promise.all([
       Storage.getConcepts(),
       Storage.getEdges(),

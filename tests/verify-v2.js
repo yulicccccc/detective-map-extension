@@ -295,6 +295,35 @@ async function runSuite() {
     assert.strictEqual(updated.processingError, 'AI could not extract structured insights');
   });
 
+  // Test 12: Workspace Proposal Scoped Isolation & Hydration
+  await test('12. Proposal scoped saving preserves proposals across multiple workspaces', async () => {
+    const origGetToken = Storage.cloudSync.getToken;
+    Storage.cloudSync.getToken = async () => null; // Test offline local isolation
+
+    await Storage.setActiveWorkspaceId('ws_unit_1');
+    await Storage.saveProposalsLocal([
+      { id: 'prop_1', workspaceId: 'ws_unit_1', status: 'pending', summary: 'WS1 Proposal' }
+    ]);
+
+    await Storage.setActiveWorkspaceId('ws_unit_2');
+    await Storage.saveProposalsLocal([
+      { id: 'prop_2', workspaceId: 'ws_unit_2', status: 'pending', summary: 'WS2 Proposal' }
+    ]);
+
+    // Query ws_unit_2
+    const p2 = await Storage.getProposals();
+    assert.strictEqual(p2.length, 1);
+    assert.strictEqual(p2[0].id, 'prop_2');
+
+    // Query ws_unit_1
+    await Storage.setActiveWorkspaceId('ws_unit_1');
+    const p1 = await Storage.getProposals();
+    assert.strictEqual(p1.length, 1);
+    assert.strictEqual(p1[0].id, 'prop_1');
+
+    Storage.cloudSync.getToken = origGetToken;
+  });
+
   console.log('\n====================================================');
   console.log(`Verification Complete: ${passedTests} passed, ${failedTests} failed.`);
   console.log('====================================================');

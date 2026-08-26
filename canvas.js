@@ -158,9 +158,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function loadWorkspaceData() {
-    // CRITICAL 2: Refresh workspaces from cloud on load
+    // Refresh workspaces and hydrate state from cloud on load
     workspaces = await Storage.fetchRemoteWorkspaces();
     updateWorkspaceDropdown();
+
+    await Storage.fetchRemoteState();
 
     [concepts, edges, sources, strokes, pendingProposals] = await Promise.all([
       Storage.getConcepts(),
