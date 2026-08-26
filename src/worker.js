@@ -14,6 +14,11 @@ export class DetectiveMapWorkspace {
 
   initDatabase() {
     this.sql.exec(`
+      CREATE TABLE IF NOT EXISTS system_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS workspaces (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
@@ -104,8 +109,16 @@ export class DetectiveMapWorkspace {
       `);
     }
 
-    // Purge legacy compromised pins and expired pins (CRITICAL A)
-    this.sql.exec(`DELETE FROM pairing_pins WHERE pin = 'MAP-2026' OR expiresAt <= ${Date.now()}`);
+    // CRITICAL 1: Durable Auth Migration (Invalidate all pre-v2.1 tokens exactly once)
+    const meta = this.sql.exec(`SELECT value FROM system_meta WHERE key = 'auth_version'`).toArray();
+    if (meta.length === 0 || meta[0].value !== 'v2.1_hardened') {
+      this.sql.exec(`DELETE FROM auth_tokens;`);
+      this.sql.exec(`DELETE FROM pairing_pins;`);
+      this.sql.exec(`INSERT OR REPLACE INTO system_meta (key, value) VALUES ('auth_version', 'v2.1_hardened');`);
+    }
+
+    // Purge expired pairing pins
+    this.sql.exec(`DELETE FROM pairing_pins WHERE expiresAt <= ${Date.now()}`);
   }
 
   isAuthorized(token) {
@@ -126,12 +139,14 @@ export class DetectiveMapWorkspace {
   async fetch(request) {
     const url = new URL(request.url);
 
-    // 1. Initial Bootstrap PIN Endpoint (/api/auth/bootstrap-pin)
-    // Only succeeds if ZERO authorized devices exist (secure first-device bootstrap)
+    // 1. Secure Bootstrap PIN Endpoint (/api/auth/bootstrap-pin)
+    // CRITICAL 2: Requires Cloudflare Secret (DM_BOOTSTRAP_SECRET)
     if (url.pathname === '/api/auth/bootstrap-pin' && request.method === 'POST') {
-      const tokenCount = this.sql.exec(`SELECT COUNT(*) as count FROM auth_tokens`).toArray()[0].count;
-      if (tokenCount > 0) {
-        return jsonResponse({ error: 'Bootstrap unavailable. Generate pairing PIN from an authorized device.' }, 403);
+      const expectedSecret = this.env.DM_BOOTSTRAP_SECRET || this.env.BOOTSTRAP_SECRET;
+      const clientSecret = request.headers.get('X-Bootstrap-Secret') || (await request.json().catch(() => ({}))).bootstrapSecret;
+
+      if (!expectedSecret || !clientSecret || clientSecret !== expectedSecret) {
+        return jsonResponse({ error: 'Forbidden. Valid bootstrap secret required.' }, 403);
       }
 
       // Generate a dynamic one-time PIN
@@ -158,7 +173,7 @@ export class DetectiveMapWorkspace {
         ).toArray();
 
         if (pins.length > 0) {
-          // ATOMIC CONSUMPTION: Delete PIN immediately so it cannot be used again
+          // ATOMIC CONSUMPTION: Delete PIN immediately upon verification
           this.sql.exec(`DELETE FROM pairing_pins WHERE pin = ?`, inputPin);
 
           const deviceToken = this.generateDeviceToken(body.deviceName || 'Client Device');
@@ -176,7 +191,7 @@ export class DetectiveMapWorkspace {
     }
 
     // 3. Generate New One-Time Pairing PIN (/api/auth/generate-pin)
-    // Requires an already-authorized device
+    // Requires an authorized device token
     if (url.pathname === '/api/auth/generate-pin' && request.method === 'POST') {
       const auth = this.checkAuthHeader(request);
       if (!auth) return jsonResponse({ error: 'Unauthorized' }, 401);
@@ -250,7 +265,7 @@ export class DetectiveMapWorkspace {
       return jsonResponse({ success: true, workspace: { id, title, revision: 1 } });
     }
 
-    // POST /api/sources & /api/quote (Ingest new Source & Trigger Incremental AI Update)
+    // POST /api/sources & /api/quote
     if ((url.pathname === '/api/sources' || url.pathname === '/api/quote') && request.method === 'POST') {
       try {
         const body = await request.json();
@@ -285,7 +300,7 @@ export class DetectiveMapWorkspace {
       }
     }
 
-    // POST /api/proposals/apply (With Real Stale Proposal Protection)
+    // POST /api/proposals/apply (CRITICAL 3 & 6: Stale check & status update)
     if (url.pathname === '/api/proposals/apply' && request.method === 'POST') {
       const body = await request.json();
       const { proposalId, operations } = body;
@@ -298,11 +313,12 @@ export class DetectiveMapWorkspace {
       const proposal = proposalRows[0];
       const workspaceId = proposal.workspaceId;
 
-      // Check Workspace Revision for Stale Protection (CRITICAL B)
       const wsRow = this.sql.exec(`SELECT revision FROM workspaces WHERE id = ?`, workspaceId).toArray()[0];
       const currentRevision = wsRow ? wsRow.revision : 1;
 
       if (proposal.baseRevision !== currentRevision) {
+        // Mark proposal as stale in SQLite so it does not reappear
+        this.sql.exec(`UPDATE proposals SET status = 'stale' WHERE id = ?`, proposalId);
         return jsonResponse({
           error: 'PROPOSAL_STALE',
           baseRevision: proposal.baseRevision,
@@ -328,7 +344,18 @@ export class DetectiveMapWorkspace {
       return jsonResponse({ success: true, ...applyResult });
     }
 
-    // POST /api/concepts (Create or Update Concept)
+    // POST /api/proposals/reject (CRITICAL 6: Persist proposal rejection)
+    if (url.pathname === '/api/proposals/reject' && request.method === 'POST') {
+      const body = await request.json();
+      const { proposalId } = body;
+      if (!proposalId) return jsonResponse({ error: 'proposalId required' }, 400);
+
+      this.sql.exec(`UPDATE proposals SET status = 'rejected' WHERE id = ?`, proposalId);
+      this.broadcast({ type: 'PROPOSAL_REJECTED', proposalId });
+      return jsonResponse({ success: true, proposalId });
+    }
+
+    // POST /api/concepts (CRITICAL 3: Authoritative Single-Write Mutation)
     if (url.pathname === '/api/concepts' && request.method === 'POST') {
       const body = await request.json();
       const workspaceId = body.workspaceId || 'ws_default';
@@ -357,19 +384,20 @@ export class DetectiveMapWorkspace {
       }
 
       this.incrementRevision(workspaceId);
+      const wsRow = this.sql.exec(`SELECT revision FROM workspaces WHERE id = ?`, workspaceId).toArray()[0];
       const concept = { ...body, id: conceptId, workspaceId, updatedAt: now };
-      this.broadcast({ type: 'CONCEPT_UPDATED', concept, workspaceId });
-      return jsonResponse({ success: true, concept });
+
+      this.broadcast({ type: 'CONCEPT_UPDATED', concept, workspaceId, revision: wsRow.revision });
+      return jsonResponse({ success: true, concept, revision: wsRow.revision });
     }
 
-    // POST /api/concepts/delete (Delete Concept with cascading edge deletion)
+    // POST /api/concepts/delete (CRITICAL 3: Authoritative Single-Write Delete)
     if (url.pathname === '/api/concepts/delete' && request.method === 'POST') {
       const body = await request.json();
       const { conceptId, workspaceId = 'ws_default' } = body;
 
       if (!conceptId) return jsonResponse({ error: 'conceptId required' }, 400);
 
-      // Find affected edge IDs before deleting
       const deletedEdges = this.sql.exec(
         `SELECT id FROM edges WHERE (fromId = ? OR toId = ?) AND workspaceId = ?`,
         conceptId, conceptId, workspaceId
@@ -379,18 +407,20 @@ export class DetectiveMapWorkspace {
       this.sql.exec(`DELETE FROM concepts WHERE id = ? AND workspaceId = ?`, conceptId, workspaceId);
 
       this.incrementRevision(workspaceId);
+      const wsRow = this.sql.exec(`SELECT revision FROM workspaces WHERE id = ?`, workspaceId).toArray()[0];
 
       this.broadcast({
         type: 'CONCEPT_DELETED',
         conceptId,
         deletedEdgeIds: deletedEdges,
-        workspaceId
+        workspaceId,
+        revision: wsRow.revision
       });
 
-      return jsonResponse({ success: true, conceptId, deletedEdgeIds: deletedEdges });
+      return jsonResponse({ success: true, conceptId, deletedEdgeIds: deletedEdges, revision: wsRow.revision });
     }
 
-    // POST /api/edges (Create Edge)
+    // POST /api/edges (CRITICAL 3: Authoritative Single-Write Edge Add)
     if (url.pathname === '/api/edges' && request.method === 'POST') {
       const body = await request.json();
       const workspaceId = body.workspaceId || 'ws_default';
@@ -406,12 +436,14 @@ export class DetectiveMapWorkspace {
       `, edgeId, workspaceId, fromId, toId, body.relation || 'relates', body.label || '', JSON.stringify(body.sourceRefs || []), body.createdBy || 'user');
 
       this.incrementRevision(workspaceId);
+      const wsRow = this.sql.exec(`SELECT revision FROM workspaces WHERE id = ?`, workspaceId).toArray()[0];
       const edge = { id: edgeId, workspaceId, fromId, toId, relation: body.relation || 'relates', label: body.label || '' };
-      this.broadcast({ type: 'EDGE_ADDED', edge, workspaceId });
-      return jsonResponse({ success: true, edge });
+
+      this.broadcast({ type: 'EDGE_ADDED', edge, workspaceId, revision: wsRow.revision });
+      return jsonResponse({ success: true, edge, revision: wsRow.revision });
     }
 
-    // POST /api/edges/delete (Delete Edge)
+    // POST /api/edges/delete (CRITICAL 3: Authoritative Single-Write Edge Delete)
     if (url.pathname === '/api/edges/delete' && request.method === 'POST') {
       const body = await request.json();
       const { edgeId, workspaceId = 'ws_default' } = body;
@@ -420,9 +452,10 @@ export class DetectiveMapWorkspace {
 
       this.sql.exec(`DELETE FROM edges WHERE id = ? AND workspaceId = ?`, edgeId, workspaceId);
       this.incrementRevision(workspaceId);
+      const wsRow = this.sql.exec(`SELECT revision FROM workspaces WHERE id = ?`, workspaceId).toArray()[0];
 
-      this.broadcast({ type: 'EDGE_DELETED', edgeId, workspaceId });
-      return jsonResponse({ success: true, edgeId });
+      this.broadcast({ type: 'EDGE_DELETED', edgeId, workspaceId, revision: wsRow.revision });
+      return jsonResponse({ success: true, edgeId, revision: wsRow.revision });
     }
 
     return jsonResponse({ error: 'Not Found' }, 404);
@@ -439,7 +472,7 @@ export class DetectiveMapWorkspace {
     const session = this.sessions.get(ws);
     if (!session) return;
 
-    // 1. Authentication Handshake (Phase 0 Requirement)
+    // 1. Authentication Handshake
     if (msg.type === 'AUTH') {
       const token = (msg.token || '').trim();
       if (this.isAuthorized(token)) {
@@ -452,7 +485,6 @@ export class DetectiveMapWorkspace {
           workspaceId: session.workspaceId
         }));
 
-        // Now safe to transmit full initial state
         const state = this.getFullWorkspaceState(session.workspaceId);
         ws.send(JSON.stringify({
           type: 'INIT_STATE',
@@ -466,7 +498,6 @@ export class DetectiveMapWorkspace {
       }
     }
 
-    // Must be authenticated for any subsequent messages
     if (!session.authenticated) {
       ws.send(JSON.stringify({ type: 'AUTH_REQUIRED', message: 'Send AUTH message first' }));
       return;
@@ -489,7 +520,7 @@ export class DetectiveMapWorkspace {
 
     const wsId = session.workspaceId;
 
-    // 3. Real-time Ink Strokes
+    // 3. Real-time Ink Strokes (WebSocket handles ink drawing stream)
     if (msg.type === 'ADD_INK_STROKE' && msg.stroke) {
       const s = msg.stroke;
       this.sql.exec(`
@@ -505,50 +536,9 @@ export class DetectiveMapWorkspace {
       this.broadcastExcept(ws, { type: 'INK_STROKES_DELETED', strokeIds: msg.strokeIds, workspaceId: wsId });
     }
 
-    // 4. Move Concept Node
-    if (msg.type === 'MOVE_CONCEPT' && msg.id) {
-      this.sql.exec(`UPDATE concepts SET x = ?, y = ?, updatedAt = ? WHERE id = ? AND workspaceId = ?`, msg.x, msg.y, new Date().toISOString(), msg.id, wsId);
+    // 4. Drag Position Preview (Broadcasts cursor position without triggering DB increment)
+    if (msg.type === 'MOVE_CONCEPT_PREVIEW' && msg.id) {
       this.broadcastExcept(ws, { type: 'CONCEPT_MOVED', id: msg.id, x: msg.x, y: msg.y, workspaceId: wsId });
-    }
-
-    // 5. Update Concept Details (CRITICAL F)
-    if (msg.type === 'UPDATE_CONCEPT' && msg.concept) {
-      const c = msg.concept;
-      const now = new Date().toISOString();
-      this.sql.exec(`
-        UPDATE concepts SET label = ?, description = ?, updatedAt = ? WHERE id = ? AND workspaceId = ?
-      `, c.label, c.description || '', now, c.id, wsId);
-      this.incrementRevision(wsId);
-      this.broadcastExcept(ws, { type: 'CONCEPT_UPDATED', concept: { ...c, workspaceId: wsId, updatedAt: now }, workspaceId: wsId });
-    }
-
-    // 6. Delete Concept (CRITICAL F)
-    if (msg.type === 'DELETE_CONCEPT' && msg.conceptId) {
-      const deletedEdges = this.sql.exec(
-        `SELECT id FROM edges WHERE (fromId = ? OR toId = ?) AND workspaceId = ?`,
-        msg.conceptId, msg.conceptId, wsId
-      ).toArray().map(e => e.id);
-
-      this.sql.exec(`DELETE FROM edges WHERE (fromId = ? OR toId = ?) AND workspaceId = ?`, msg.conceptId, msg.conceptId, wsId);
-      this.sql.exec(`DELETE FROM concepts WHERE id = ? AND workspaceId = ?`, msg.conceptId, wsId);
-      this.incrementRevision(wsId);
-
-      this.broadcastExcept(ws, { type: 'CONCEPT_DELETED', conceptId: msg.conceptId, deletedEdgeIds: deletedEdges, workspaceId: wsId });
-    }
-
-    // 7. Update Edges
-    if (msg.type === 'ADD_EDGE' && msg.edge) {
-      const e = msg.edge;
-      this.sql.exec(`
-        INSERT OR REPLACE INTO edges (id, workspaceId, fromId, toId, relation, label, sourceRefs, createdBy)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `, e.id, wsId, e.fromId || e.from, e.toId || e.to, e.relation || 'relates', e.label || '', JSON.stringify(e.sourceRefs || []), e.createdBy || 'user');
-      this.incrementRevision(wsId);
-      this.broadcast({ type: 'EDGE_ADDED', edge: e, workspaceId: wsId });
-    } else if (msg.type === 'DELETE_EDGE' && msg.edgeId) {
-      this.sql.exec(`DELETE FROM edges WHERE id = ? AND workspaceId = ?`, msg.edgeId, wsId);
-      this.incrementRevision(wsId);
-      this.broadcast({ type: 'EDGE_DELETED', edgeId: msg.edgeId, workspaceId: wsId });
     }
 
     if (msg.type === 'PING') {
@@ -562,6 +552,7 @@ export class DetectiveMapWorkspace {
     const rawConcepts = this.sql.exec(`SELECT * FROM concepts WHERE workspaceId = ?`, workspaceId).toArray();
     const rawEdges = this.sql.exec(`SELECT * FROM edges WHERE workspaceId = ?`, workspaceId).toArray();
     const rawStrokes = this.sql.exec(`SELECT * FROM ink_strokes WHERE workspaceId = ?`, workspaceId).toArray();
+    // Only load PENDING proposals into active UI
     const rawProposals = this.sql.exec(`SELECT * FROM proposals WHERE workspaceId = ? AND status = 'pending' ORDER BY createdAt DESC`, workspaceId).toArray();
 
     return {
@@ -591,7 +582,7 @@ export class DetectiveMapWorkspace {
     this.sql.exec(`UPDATE workspaces SET revision = revision + 1, updatedAt = ? WHERE id = ?`, new Date().toISOString(), workspaceId);
   }
 
-  // --- CRITICAL C & D: Cloudflare Workers AI with Chunking & Strict Schema Validation ---
+  // --- Cloudflare Workers AI with Deterministic Chunking & Strict Schema Validation ---
   async processSourceWithAI(workspaceId, source) {
     try {
       const state = this.getFullWorkspaceState(workspaceId);
@@ -600,7 +591,6 @@ export class DetectiveMapWorkspace {
       const baseRevision = state.workspace.revision || 1;
 
       if (!this.env.AI) {
-        console.warn('[AI] Workers AI binding not available. Marking source as failed.');
         this.sql.exec(`UPDATE sources SET processingStatus = 'failed' WHERE id = ?`, source.id);
         this.broadcast({ type: 'SOURCE_FAILED', sourceId: source.id, error: 'Workers AI binding not configured.' });
         return;
@@ -663,7 +653,6 @@ ${chunk}
             rawText = aiResponse;
           }
 
-          // Strip potential markdown JSON fences
           const jsonMatch = rawText.match(/\{[\s\S]*\}/);
           if (jsonMatch) {
             const parsed = JSON.parse(jsonMatch[0]);
@@ -686,7 +675,6 @@ ${chunk}
       );
 
       if (validatedOperations.length === 0) {
-        console.warn('[AI] No valid operations generated by AI. Marking source as failed.');
         this.sql.exec(`UPDATE sources SET processingStatus = 'failed' WHERE id = ?`, source.id);
         this.broadcast({ type: 'SOURCE_FAILED', sourceId: source.id, error: 'AI could not extract structured insights from this text.' });
         return;
@@ -803,7 +791,7 @@ ${chunk}
   }
 }
 
-// --- Chunking & Validation Helper Functions ---
+// Chunking & Validation Helper Functions
 function chunkSourceText(text, maxChunkSize = 2800, overlap = 250) {
   if (!text || text.length <= maxChunkSize) return [text || ''];
   const chunks = [];
@@ -830,8 +818,8 @@ function chunkSourceText(text, maxChunkSize = 2800, overlap = 250) {
 
 function validateAndSanitizeOperations(rawOps, existingConcepts, existingEdges, sourceId) {
   if (!Array.isArray(rawOps)) return [];
-  const conceptIds = new Set(existingConcepts.map(c => c.id));
-  const seenLabels = new Set(existingConcepts.map(c => c.label.toLowerCase()));
+  const conceptIds = new Set((existingConcepts || []).map(c => c.id));
+  const seenLabels = new Set((existingConcepts || []).map(c => (c.label || '').toLowerCase()));
   const tempIds = new Set();
   const validOps = [];
 
@@ -841,9 +829,8 @@ function validateAndSanitizeOperations(rawOps, existingConcepts, existingEdges, 
     if (op.op === 'add_concept') {
       const label = typeof op.label === 'string' ? op.label.trim() : '';
       if (label.length >= 2 && label.length <= 120) {
-        // If concept with identical name exists, convert to enrich_concept
         if (seenLabels.has(label.toLowerCase())) {
-          const match = existingConcepts.find(c => c.label.toLowerCase() === label.toLowerCase());
+          const match = existingConcepts.find(c => (c.label || '').toLowerCase() === label.toLowerCase());
           if (match && op.description) {
             validOps.push({
               op: 'enrich_concept',
@@ -895,6 +882,16 @@ function validateAndSanitizeOperations(rawOps, existingConcepts, existingEdges, 
           note: typeof op.note === 'string' ? op.note.trim() : 'Contradiction noted'
         });
       }
+    } else if (op.op === 'suggest_merge') {
+      if (op.conceptA && op.conceptB && conceptIds.has(op.conceptA) && conceptIds.has(op.conceptB) && op.conceptA !== op.conceptB) {
+        validOps.push({
+          op: 'suggest_merge',
+          conceptA: op.conceptA,
+          conceptB: op.conceptB,
+          mergedLabel: typeof op.mergedLabel === 'string' ? op.mergedLabel.trim() : '',
+          reason: typeof op.reason === 'string' ? op.reason.trim() : ''
+        });
+      }
     }
   }
 
@@ -908,7 +905,7 @@ function jsonResponse(data, status = 200) {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Bootstrap-Secret'
     }
   });
 }
@@ -927,7 +924,7 @@ export default {
         headers: {
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Bootstrap-Secret'
         }
       });
     }

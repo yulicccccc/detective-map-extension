@@ -87,11 +87,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Interaction State
   let isDrawing = false;
+  let activePenPointerId = null;
   let currentStroke = null;
   let isPanning = false;
   let isSpacePressed = false;
   let panStart = { x: 0, y: 0 };
-  let panOrigin = { x: 0, y: 0 };
+  let panOrigin = { x: viewport.panX, y: viewport.panY };
 
   let isDraggingConcept = false;
   let draggedConceptId = null;
@@ -218,7 +219,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const headerEl = node.querySelector('.concept-header');
       headerEl.addEventListener('pointerdown', (e) => handleConceptPointerDown(e, c));
 
-      // Inline text editing (CRITICAL F: server synced)
+      // Inline text editing (CRITICAL 3: Authoritative single-write REST)
       const titleEl = node.querySelector('.concept-title');
       titleEl.addEventListener('blur', async () => {
         const newLabel = titleEl.textContent.trim();
@@ -269,7 +270,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       });
 
-      // Delete concept (CRITICAL F: server synced with cascading edge deletion)
+      // Delete concept (CRITICAL 3: Cascading delete via REST)
       const closeBtn = node.querySelector('.btn-card-close');
       closeBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -379,7 +380,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     targetCtx.restore();
   }
 
-  // --- Pointer Routing & Apple Pencil / Touch Separation (CRITICAL H) ---
+  // --- Pointer Routing & Apple Pencil / Touch Separation (CRITICAL 5: Palm Rejection) ---
   function setupPointerListeners() {
     viewportContainer.addEventListener('pointerdown', handleViewportPointerDown);
     inkCanvas.addEventListener('pointerdown', handleInkPointerDown);
@@ -394,12 +395,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   function handleViewportPointerDown(e) {
     if (e.target.closest('.concept-node') || e.target.closest('.proposal-banner') || e.target.closest('.evidence-drawer')) return;
 
-    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
     updatePointerDeviceTag(e);
 
-    // Multi-touch pinch zoom
-    if (activePointers.size === 2) {
-      isDrawing = false;
+    // CRITICAL 5: If pen is currently drawing, ignore palm/touch completely!
+    if (isDrawing && activePenPointerId !== null) {
+      if (e.pointerType === 'touch') return;
+    }
+
+    // Multi-touch pinch zoom ONLY when not drawing with pen
+    if (activePointers.size === 2 && !isDrawing) {
       isPanning = false;
       const pts = Array.from(activePointers.values());
       initialPinchDistance = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
@@ -409,7 +414,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Touch pointer or Space panning: Touch NEVER creates ink
-    if (isSpacePressed || e.button === 1 || e.pointerType === 'touch' || (activeTool === 'select' && e.button === 0)) {
+    if (isSpacePressed || e.button === 1 || (e.pointerType === 'touch' && !isDrawing) || (activeTool === 'select' && e.button === 0)) {
       isPanning = true;
       panStart = { x: e.clientX, y: e.clientY };
       panOrigin = { x: viewport.panX, y: viewport.panY };
@@ -418,16 +423,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function handleInkPointerDown(e) {
-    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
     updatePointerDeviceTag(e);
 
-    // Multi-touch pinch zoom
-    if (activePointers.size === 2) {
-      if (isDrawing && currentStroke) {
-        isDrawing = false;
-        currentStroke = null;
-        scratchCtx.clearRect(-10000, -10000, 20000, 20000);
+    // CRITICAL 5: Resting palm while pencil is down MUST NOT interrupt or cancel pencil stroke!
+    if (isDrawing && activePenPointerId !== null) {
+      if (e.pointerType === 'touch') {
+        return;
       }
+    }
+
+    // Multi-touch pinch zoom ONLY when no pen stroke is active
+    if (activePointers.size === 2 && !isDrawing) {
       isPanning = false;
       const pts = Array.from(activePointers.values());
       initialPinchDistance = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
@@ -436,12 +443,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    // CRITICAL H: Touch NEVER creates ink, even in pen/highlighter mode!
+    // Touch pointer handling: Touch NEVER draws ink!
     if (e.pointerType === 'touch') {
-      isPanning = true;
-      panStart = { x: e.clientX, y: e.clientY };
-      panOrigin = { x: viewport.panX, y: viewport.panY };
-      viewportContainer.classList.add('cursor-panning-active');
+      if (!isDrawing) {
+        isPanning = true;
+        panStart = { x: e.clientX, y: e.clientY };
+        panOrigin = { x: viewport.panX, y: viewport.panY };
+        viewportContainer.classList.add('cursor-panning-active');
+      }
       return;
     }
 
@@ -460,6 +469,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Drawing Tools: Allowed ONLY for Apple Pencil ('pen') or Mouse on desktop!
     if ((e.pointerType === 'pen' || e.pointerType === 'mouse') && (activeTool === 'pen' || activeTool === 'highlighter')) {
       isDrawing = true;
+      activePenPointerId = e.pointerId;
       inkCanvas.setPointerCapture(e.pointerId);
 
       currentStroke = {
@@ -492,10 +502,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function handlePointerMove(e) {
     if (activePointers.has(e.pointerId)) {
-      activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
     }
 
-    if (activePointers.size === 2 && initialPinchDistance) {
+    // Multi-touch pinch zoom ONLY when no pen stroke is active
+    if (activePointers.size === 2 && initialPinchDistance && !isDrawing) {
       const pts = Array.from(activePointers.values());
       const currentDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
       const targetZoom = initialPinchZoom * (currentDist / initialPinchDistance);
@@ -507,7 +518,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    if (isPanning) {
+    if (isPanning && !isDrawing) {
       const dx = e.clientX - panStart.x;
       const dy = e.clientY - panStart.y;
       viewport.panX = panOrigin.x + dx;
@@ -533,8 +544,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const worldPoint = screenToWorld(e.clientX, e.clientY);
     updateCoordsTag(worldPoint);
 
-    // CRITICAL H: Only append points if pointer is pen or mouse (NEVER touch)
-    if (isDrawing && currentStroke && (e.pointerType === 'pen' || e.pointerType === 'mouse')) {
+    // CRITICAL 5: Only active pen pointer ID appends ink points; ignore palm movements!
+    if (isDrawing && currentStroke && e.pointerId === activePenPointerId) {
       const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
       for (const ev of events) {
         const pt = screenToWorld(ev.clientX, ev.clientY);
@@ -559,7 +570,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     activePointers.delete(e.pointerId);
     if (activePointers.size < 2) initialPinchDistance = null;
 
-    if (isPanning) {
+    if (isPanning && !isDrawing) {
       isPanning = false;
       viewportContainer.classList.remove('cursor-panning-active');
     }
@@ -576,8 +587,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       draggedConceptId = null;
     }
 
-    if (isDrawing && currentStroke) {
+    if (isDrawing && currentStroke && e.pointerId === activePenPointerId) {
       isDrawing = false;
+      activePenPointerId = null;
       scratchCtx.clearRect(-10000, -10000, 20000, 20000);
 
       if (currentStroke.points.length > 0) {
@@ -639,7 +651,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // --- Proposal Review & Ingestion UI (CRITICAL B & G) ---
+  // --- Proposal Review & Ingestion UI (CRITICAL 6) ---
   function checkPendingProposals() {
     if (pendingProposals.length > 0) {
       const p = pendingProposals[0];
@@ -779,11 +791,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     btnApplySelectedOps.disabled = false;
   });
 
+  // CRITICAL 6: Reject proposal persists to server
   btnRejectProposalAll.addEventListener('click', async () => {
     if (pendingProposals.length === 0) return;
     const p = pendingProposals[0];
+    await Storage.rejectProposal(p.id);
     pendingProposals.shift();
-    await Storage.saveProposalsLocal(pendingProposals);
     proposalReviewModal.style.display = 'none';
     checkPendingProposals();
   });
@@ -793,8 +806,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   btnDismissProposal.addEventListener('click', async () => {
+    if (pendingProposals.length === 0) return;
+    const p = pendingProposals[0];
+    await Storage.rejectProposal(p.id);
     pendingProposals.shift();
-    await Storage.saveProposalsLocal(pendingProposals);
     checkPendingProposals();
   });
 
@@ -853,7 +868,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
 
-    // Manual Add Concept (CRITICAL F: server synced)
+    // Manual Add Concept (CRITICAL 3: Authoritative REST)
     btnAddConcept.addEventListener('click', async () => {
       const label = prompt('Enter Concept Name:');
       if (label) {

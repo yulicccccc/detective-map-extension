@@ -56,6 +56,7 @@ function addFile(relPath) {
   'sidepanel.js',
   'shared/canvas-core.js',
   'shared/storage.js',
+  'shared/engine-core.js',
   'shared/peerjs.min.js',
   'icons/icon16.png',
   'icons/icon32.png',

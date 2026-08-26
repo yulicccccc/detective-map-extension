@@ -100,7 +100,6 @@ class V2CloudSyncEngine {
       this.ws = new WebSocket(CLOUDFLARE_WS_URL);
 
       this.ws.addEventListener('open', () => {
-        console.log('[Cloud Sync] WebSocket connected. Sending AUTH handshake...');
         this.ws.send(JSON.stringify({
           type: 'AUTH',
           token: token,
@@ -151,10 +150,8 @@ class V2CloudSyncEngine {
     if (!msg || !msg.type) return;
 
     if (msg.type === 'AUTH_SUCCESS') {
-      console.log('[Cloud Sync] AUTH successful for workspace:', msg.workspaceId);
       this.setStatus('connected');
     } else if (msg.type === 'AUTH_ERROR') {
-      console.warn('[Cloud Sync] AUTH failed. Pairing code required.');
       this.setStatus('unpaired');
     } else if (msg.type === 'INIT_STATE' || msg.type === 'WORKSPACE_SWITCHED') {
       if (msg.concepts) Storage.saveConceptsLocal(msg.concepts);
@@ -180,7 +177,7 @@ class V2CloudSyncEngine {
         Storage.saveProposalsLocal(updated);
         triggerChange({ [STORAGE_KEYS.PROPOSALS]: { newValue: updated } });
       });
-    } else if (msg.type === 'PROPOSAL_APPLIED') {
+    } else if (msg.type === 'PROPOSAL_APPLIED' || msg.type === 'PROPOSAL_REJECTED') {
       Storage.fetchRemoteState();
     } else if (msg.type === 'INK_STROKE_ADDED' && msg.stroke) {
       Storage.getAllStrokesLocal().then(existing => {
@@ -459,13 +456,16 @@ const Storage = {
     await this.saveConceptsLocal(all);
     triggerChange({ [STORAGE_KEYS.CONCEPTS]: { newValue: all } });
 
+    // Single Authoritative Mutation via REST
     const token = await cloudSync.getToken();
     if (token) {
-      fetch(`${CLOUDFLARE_BASE_URL}/api/concepts`, {
+      const res = await fetch(`${CLOUDFLARE_BASE_URL}/api/concepts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(newConcept)
-      }).catch(() => {});
+      });
+      const data = await res.json();
+      return data.concept || newConcept;
     }
 
     return newConcept;
@@ -480,19 +480,16 @@ const Storage = {
       await this.saveConceptsLocal(all);
       triggerChange({ [STORAGE_KEYS.CONCEPTS]: { newValue: all } });
 
-      if (typeof updates.x === 'number' && typeof updates.y === 'number' && Object.keys(updates).length === 2) {
-        cloudSync.send({ type: 'MOVE_CONCEPT', id, x: updates.x, y: updates.y });
-      } else {
-        cloudSync.send({ type: 'UPDATE_CONCEPT', concept: all[idx] });
-      }
-
+      // Single Authoritative Mutation via REST
       const token = await cloudSync.getToken();
       if (token) {
-        fetch(`${CLOUDFLARE_BASE_URL}/api/concepts`, {
+        const res = await fetch(`${CLOUDFLARE_BASE_URL}/api/concepts`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({ ...all[idx], workspaceId: wsId })
-        }).catch(() => {});
+        });
+        const data = await res.json();
+        return data.concept || all[idx];
       }
       return all[idx];
     }
@@ -514,11 +511,10 @@ const Storage = {
       [STORAGE_KEYS.EDGES]: { newValue: allEdges }
     });
 
-    cloudSync.send({ type: 'DELETE_CONCEPT', conceptId: id });
-
+    // Single Authoritative Mutation via REST
     const token = await cloudSync.getToken();
     if (token) {
-      fetch(`${CLOUDFLARE_BASE_URL}/api/concepts/delete`, {
+      await fetch(`${CLOUDFLARE_BASE_URL}/api/concepts/delete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ conceptId: id, workspaceId: wsId })
@@ -538,7 +534,8 @@ const Storage = {
       const res = await chrome.storage.local.get([STORAGE_KEYS.EDGES]);
       return res[STORAGE_KEYS.EDGES] || [];
     } else if (hasLocalStorage) {
-      const data = localStorage.getItem(STORAGE_KEYS.EDEdges);
+      // CRITICAL 4: Fix Safari localStorage typo STORAGE_KEYS.EDGES
+      const data = localStorage.getItem(STORAGE_KEYS.EDGES);
       return data ? JSON.parse(data) : [];
     }
     return memStore[STORAGE_KEYS.EDGES] || [];
@@ -568,15 +565,16 @@ const Storage = {
     await this.saveEdgesLocal(all);
     triggerChange({ [STORAGE_KEYS.EDGES]: { newValue: all } });
 
-    cloudSync.send({ type: 'ADD_EDGE', edge: newEdge });
-
+    // Single Authoritative Mutation via REST
     const token = await cloudSync.getToken();
     if (token) {
-      fetch(`${CLOUDFLARE_BASE_URL}/api/edges`, {
+      const res = await fetch(`${CLOUDFLARE_BASE_URL}/api/edges`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(newEdge)
-      }).catch(() => {});
+      });
+      const data = await res.json();
+      return data.edge || newEdge;
     }
 
     return newEdge;
@@ -589,11 +587,10 @@ const Storage = {
     await this.saveEdgesLocal(all);
     triggerChange({ [STORAGE_KEYS.EDGES]: { newValue: all } });
 
-    cloudSync.send({ type: 'DELETE_EDGE', edgeId: id });
-
+    // Single Authoritative Mutation via REST
     const token = await cloudSync.getToken();
     if (token) {
-      fetch(`${CLOUDFLARE_BASE_URL}/api/edges/delete`, {
+      await fetch(`${CLOUDFLARE_BASE_URL}/api/edges/delete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ edgeId: id, workspaceId: wsId })
@@ -691,6 +688,13 @@ const Storage = {
         const err = new Error(errorMsg);
         err.status = res.status;
         err.code = data.error;
+        // On 409 stale, mark local status as stale
+        if (res.status === 409) {
+          const all = await this.getAllProposalsLocal();
+          const prop = all.find(p => p.id === proposalId);
+          if (prop) prop.status = 'stale';
+          await this.saveProposalsLocal(all);
+        }
         throw err;
       }
       await this.fetchRemoteState();
@@ -758,6 +762,21 @@ const Storage = {
     }
   },
 
+  async rejectProposal(proposalId) {
+    const token = await cloudSync.getToken();
+    if (token) {
+      fetch(`${CLOUDFLARE_BASE_URL}/api/proposals/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ proposalId })
+      }).catch(() => {});
+    }
+    const all = await this.getAllProposalsLocal();
+    const filtered = all.filter(p => p.id !== proposalId);
+    await this.saveProposalsLocal(filtered);
+    triggerChange({ [STORAGE_KEYS.PROPOSALS]: { newValue: filtered } });
+  },
+
   async fetchRemoteState() {
     const token = await cloudSync.getToken();
     const wsId = await this.getActiveWorkspaceId();
@@ -786,7 +805,7 @@ const Storage = {
     }
   },
 
-  // --- Backward Compatibility Migration (Phase 16) ---
+  // --- Backward Compatibility Migration ---
   async migrateLegacyDataIfNeeded() {
     let isMigrated = false;
     if (isChromeStorage) {
@@ -812,7 +831,6 @@ const Storage = {
         }
 
         await chrome.storage.local.set({ [STORAGE_KEYS.MIGRATION_DONE]: true });
-        console.log('[Migration] Successfully migrated ' + sources.length + ' legacy quotes to Sources.');
       }
     } else if (hasLocalStorage) {
       isMigrated = localStorage.getItem(STORAGE_KEYS.MIGRATION_DONE);
