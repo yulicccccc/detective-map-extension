@@ -144,6 +144,79 @@ async function runCloudVerification() {
   assert.strictEqual(resRejectNoAuth.status, 401, 'Proposal reject without token must return HTTP 401');
   console.log('  ✓ PASS: Proposal reject endpoint strictly protected with HTTP 401');
 
+  // Test 8: Live Real Workers AI End-to-End Ingestion & Proposal Generation
+  console.log('[Test 8] Testing Real Live Workers AI Ingestion (Active Recall Sentence)...');
+  const resPairAI = await fetch(`${WORKER_BASE}/api/auth/pair`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pairingCode: 'KIRA-2026', deviceName: 'AI Test Runner' })
+  });
+  const { token: aiToken } = await resPairAI.json();
+  assert(aiToken, 'Must receive auth token for live AI test');
+
+  // Create temporary test workspace
+  const resWsAI = await fetch(`${WORKER_BASE}/api/workspaces`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({ title: 'AI Active Recall Test WS' })
+  });
+  const { workspace: testWs } = await resWsAI.json();
+  assert(testWs && testWs.id, 'Must create test workspace');
+
+  // POST the exact test sentence
+  const exactSentence = 'Active recall strengthens the ability to retrieve information without cues.';
+  const resSrcAI = await fetch(`${WORKER_BASE}/api/sources`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({
+      workspaceId: testWs.id,
+      type: 'chatgpt_selection',
+      title: 'Active Recall Test',
+      text: exactSentence
+    })
+  });
+  const { source: testSrc } = await resSrcAI.json();
+  assert(testSrc && testSrc.id, 'Source must be created');
+
+  // Poll /api/state for up to 60 seconds
+  const startPoll = Date.now();
+  let aiCompleted = false;
+  let finalAiState = null;
+
+  while (Date.now() - startPoll < 60000) {
+    await new Promise(r => setTimeout(r, 2000));
+    const resStateAI = await fetch(`${WORKER_BASE}/api/state?workspaceId=${encodeURIComponent(testWs.id)}`, {
+      headers: { 'Authorization': `Bearer ${aiToken}` }
+    });
+    const stateData = await resStateAI.json();
+    const currentSrc = (stateData.sources || []).find(s => s.id === testSrc.id);
+    if (currentSrc && currentSrc.processingStatus === 'completed') {
+      aiCompleted = true;
+      finalAiState = stateData;
+      break;
+    }
+  }
+
+  assert(aiCompleted, 'Workers AI must complete source processing within 60s');
+  assert.strictEqual(finalAiState.proposals.length, 1, 'Exactly one pending proposal must exist');
+  const operations = finalAiState.proposals[0].operations;
+  assert(Array.isArray(operations) && operations.length > 0, 'Proposal must have operations');
+  const hasValidOp = operations.some(o => o.op === 'add_concept' || o.op === 'enrich_concept');
+  assert(hasValidOp, 'Proposal must have valid add_concept or enrich_concept operation');
+  console.log(`  ✓ PASS: Live Workers AI generated valid proposal with ${operations.length} operation(s): "${operations[0].label || operations[0].op}"`);
+
+  // Test 9: Live Retry Analysis Endpoint
+  console.log('[Test 9] Testing POST /api/sources/retry endpoint...');
+  const resRetry = await fetch(`${WORKER_BASE}/api/sources/retry`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({ sourceId: testSrc.id })
+  });
+  assert.strictEqual(resRetry.status, 200, 'Retry endpoint must return HTTP 200');
+  const retryData = await resRetry.json();
+  assert(retryData.success, 'Retry endpoint must return success: true');
+  console.log('  ✓ PASS: Retry Analysis endpoint verified successfully');
+
   console.log('\n=== Cloudflare Worker Verification Completed Successfully (0 secrets logged) ===\n');
 }
 

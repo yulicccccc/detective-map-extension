@@ -308,12 +308,50 @@ export class DetectiveMapWorkspace {
           processingStatus: 'processing'
         };
 
-        this.broadcast({ type: 'SOURCE_ADDED', source: newSource });
+        this.broadcast({ type: 'SOURCE_ADDED', source: newSource, workspaceId });
 
         // Trigger Incremental AI Patch Proposal asynchronously
         this.ctx.waitUntil(this.processSourceWithAI(workspaceId, newSource));
 
         return jsonResponse({ success: true, source: newSource, quote: newSource });
+      } catch (err) {
+        return jsonResponse({ error: err.message }, 400);
+      }
+    }
+
+    // POST /api/sources/retry (Retry AI Analysis)
+    if (url.pathname === '/api/sources/retry' && request.method === 'POST') {
+      try {
+        const body = await request.json();
+        const { sourceId } = body;
+        if (!sourceId) return jsonResponse({ error: 'sourceId required' }, 400);
+
+        const sourceRows = this.sql.exec(`SELECT * FROM sources WHERE id = ?`, sourceId).toArray();
+        if (sourceRows.length === 0) {
+          return jsonResponse({ error: 'Source not found' }, 404);
+        }
+
+        const source = sourceRows[0];
+        const workspaceId = source.workspaceId || 'ws_default';
+
+        // Check if there is already a pending proposal for this source to prevent duplicate proposals
+        const existingProps = this.sql.exec(
+          `SELECT id FROM proposals WHERE sourceId = ? AND status = 'pending'`,
+          sourceId
+        ).toArray();
+
+        if (existingProps.length > 0) {
+          this.sql.exec(`UPDATE sources SET processingStatus = 'completed' WHERE id = ?`, sourceId);
+          return jsonResponse({ success: true, message: 'Proposal already exists', source: { ...source, processingStatus: 'completed' } });
+        }
+
+        this.sql.exec(`UPDATE sources SET processingStatus = 'processing' WHERE id = ?`, sourceId);
+        const updatedSource = { ...source, processingStatus: 'processing' };
+        this.broadcast({ type: 'SOURCE_UPDATED', source: updatedSource, workspaceId });
+
+        this.ctx.waitUntil(this.processSourceWithAI(workspaceId, updatedSource));
+
+        return jsonResponse({ success: true, message: 'Retry initiated', source: updatedSource });
       } catch (err) {
         return jsonResponse({ error: err.message }, 400);
       }
@@ -602,7 +640,7 @@ export class DetectiveMapWorkspace {
     this.sql.exec(`UPDATE workspaces SET revision = revision + 1, updatedAt = ? WHERE id = ?`, new Date().toISOString(), workspaceId);
   }
 
-  // --- Cloudflare Workers AI with Deterministic Chunking & Strict Schema Validation ---
+  // --- Cloudflare Workers AI with Active Models, Structured JSON & Error Broadcast ---
   async processSourceWithAI(workspaceId, source) {
     try {
       const state = this.getFullWorkspaceState(workspaceId);
@@ -612,7 +650,14 @@ export class DetectiveMapWorkspace {
 
       if (!this.env.AI) {
         this.sql.exec(`UPDATE sources SET processingStatus = 'failed' WHERE id = ?`, source.id);
-        this.broadcast({ type: 'SOURCE_FAILED', sourceId: source.id, error: 'Workers AI binding not configured.' });
+        this.broadcast({ type: 'SOURCE_FAILED', sourceId: source.id, workspaceId, error: 'Workers AI binding not configured.' });
+        return;
+      }
+
+      // Check if a pending proposal already exists for this source
+      const existingProps = this.sql.exec(`SELECT id FROM proposals WHERE sourceId = ? AND status = 'pending'`, source.id).toArray();
+      if (existingProps.length > 0) {
+        this.sql.exec(`UPDATE sources SET processingStatus = 'completed' WHERE id = ?`, source.id);
         return;
       }
 
@@ -620,6 +665,12 @@ export class DetectiveMapWorkspace {
       const textChunks = chunkSourceText(source.text, 2800, 250);
       let rawExtractedOperations = [];
       let finalSummary = `Analyzed ${source.title || 'source evidence'} (${textChunks.length} chunk${textChunks.length > 1 ? 's' : ''}).`;
+
+      const modelsToTry = [
+        '@cf/meta/llama-3.1-8b-instruct-fast',
+        '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+        '@cf/meta/llama-3-8b-instruct'
+      ];
 
       for (let i = 0; i < textChunks.length; i++) {
         const chunk = textChunks[i];
@@ -629,11 +680,11 @@ export class DetectiveMapWorkspace {
 Your goal: Compare new learning material to existing concepts and generate an INCREMENTAL JSON PATCH.
 
 RULES:
-1. ONLY return valid JSON object matching the exact schema below.
+1. ONLY return a valid JSON object matching the exact schema below.
 2. If an idea is already represented by an existing concept, use "enrich_concept". DO NOT duplicate.
 3. Only use "add_concept" for genuinely new key ideas. Keep labels concise (2-6 words).
 4. Use "add_edge" to link concepts logically (relation like "enhances", "causes", "requires", "contrasts").
-5. Do NOT include Markdown code fences or extra text. Output pure JSON.
+5. Output pure JSON without markdown explanation.
 
 SCHEMA:
 {
@@ -657,36 +708,65 @@ New Content ${chunkIndexText}:
 ${chunk}
 """`;
 
-        try {
-          const aiResponse = await this.env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt }
-            ],
-            max_tokens: 1200
-          });
+        let chunkSuccess = false;
+        let lastError = null;
 
-          let rawText = '';
-          if (aiResponse && typeof aiResponse === 'object') {
-            rawText = aiResponse.response || aiResponse.text || JSON.stringify(aiResponse);
-          } else if (typeof aiResponse === 'string') {
-            rawText = aiResponse;
-          }
+        for (const model of modelsToTry) {
+          try {
+            const aiResponse = await this.env.AI.run(model, {
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userPrompt }
+              ],
+              response_format: { type: 'json_object' },
+              max_tokens: 1500
+            });
 
-          const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            const parsed = JSON.parse(jsonMatch[0]);
-            if (parsed && Array.isArray(parsed.operations)) {
+            let rawText = '';
+            if (aiResponse && typeof aiResponse === 'object') {
+              if (aiResponse.response) {
+                rawText = typeof aiResponse.response === 'string' ? aiResponse.response : JSON.stringify(aiResponse.response);
+              } else if (aiResponse.text) {
+                rawText = aiResponse.text;
+              } else {
+                rawText = JSON.stringify(aiResponse);
+              }
+            } else if (typeof aiResponse === 'string') {
+              rawText = aiResponse;
+            }
+
+            let parsed = null;
+            try {
+              parsed = JSON.parse(rawText);
+            } catch {
+              const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+              if (jsonMatch) {
+                parsed = JSON.parse(jsonMatch[0]);
+              }
+            }
+
+            if (parsed && Array.isArray(parsed.operations) && parsed.operations.length > 0) {
               rawExtractedOperations.push(...parsed.operations);
               if (parsed.summary && i === 0) finalSummary = parsed.summary;
+              chunkSuccess = true;
+              break;
+            } else if (parsed && Array.isArray(parsed.operations)) {
+              // Valid schema, empty operations
+              chunkSuccess = true;
+              break;
             }
+          } catch (modelErr) {
+            lastError = modelErr;
+            console.warn(`[AI Model ${model} Failed for chunk ${i + 1}]`, modelErr.message);
           }
-        } catch (chunkErr) {
-          console.warn(`[AI Chunk ${i + 1} Error]`, chunkErr.message);
+        }
+
+        if (!chunkSuccess && lastError) {
+          console.error(`[AI Chunk ${i + 1} Error]`, lastError.message);
         }
       }
 
-      // CRITICAL C: Strict Schema Validation via shared engine core
+      // Strict Schema Validation via shared engine core
       const validatedOperations = validateAndSanitizeOperations(
         rawExtractedOperations,
         currentConcepts,
@@ -696,7 +776,12 @@ ${chunk}
 
       if (validatedOperations.length === 0) {
         this.sql.exec(`UPDATE sources SET processingStatus = 'failed' WHERE id = ?`, source.id);
-        this.broadcast({ type: 'SOURCE_FAILED', sourceId: source.id, error: 'AI could not extract structured insights from this text.' });
+        this.broadcast({
+          type: 'SOURCE_FAILED',
+          sourceId: source.id,
+          workspaceId,
+          error: 'AI could not extract structured insights from this text. Click Retry to try again.'
+        });
         return;
       }
 
@@ -722,11 +807,17 @@ ${chunk}
         createdAt: now
       };
 
-      this.broadcast({ type: 'PROPOSAL_CREATED', proposal, sourceId: source.id });
+      this.broadcast({ type: 'PROPOSAL_CREATED', proposal, sourceId: source.id, workspaceId });
+      this.broadcast({ type: 'SOURCE_UPDATED', source: { ...source, processingStatus: 'completed' }, workspaceId });
     } catch (err) {
       console.error('[AI Processing Fatal Error]', err);
       this.sql.exec(`UPDATE sources SET processingStatus = 'failed' WHERE id = ?`, source.id);
-      this.broadcast({ type: 'SOURCE_FAILED', sourceId: source.id, error: err.message });
+      this.broadcast({
+        type: 'SOURCE_FAILED',
+        sourceId: source.id,
+        workspaceId,
+        error: err.message || 'AI service error during processing.'
+      });
     }
   }
 

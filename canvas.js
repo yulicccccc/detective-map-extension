@@ -41,6 +41,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnReviewProposal = document.getElementById('btn-review-proposal');
   const btnDismissProposal = document.getElementById('btn-dismiss-proposal');
 
+  // Source Failed Toast
+  const sourceFailedToast = document.getElementById('source-failed-toast');
+  const sourceFailedTitle = document.getElementById('source-failed-title');
+  const sourceFailedDesc = document.getElementById('source-failed-desc');
+  const btnRetrySource = document.getElementById('btn-retry-source');
+  const btnDismissFailedSource = document.getElementById('btn-dismiss-failed-source');
+  let currentFailedSourceId = null;
+
   const proposalReviewModal = document.getElementById('proposal-review-modal');
   const reviewProposalSummary = document.getElementById('review-proposal-summary');
   const reviewOperationsList = document.getElementById('review-operations-list');
@@ -654,7 +662,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // --- Proposal Review & Ingestion UI (CRITICAL 4 & 6) ---
+  // --- Proposal Review & Ingestion UI ---
   function checkPendingProposals() {
     if (pendingProposals.length > 0) {
       const p = pendingProposals[0];
@@ -666,10 +674,43 @@ document.addEventListener('DOMContentLoaded', async () => {
       proposalSummary.textContent = p.summary || 'New learning material processed';
       proposalStats.textContent = `+ ${addCount} Concepts  |  + ${edgeCount} Relationships  |  ~ ${enrichCount} Enriched`;
       proposalToast.style.display = 'block';
+      if (sourceFailedToast) sourceFailedToast.style.display = 'none';
     } else {
       proposalToast.style.display = 'none';
+      checkFailedSources();
     }
   }
+
+  function checkFailedSources() {
+    if (!sourceFailedToast) return;
+    const failedSource = sources.find(s => s.processingStatus === 'failed');
+    if (failedSource && pendingProposals.length === 0) {
+      currentFailedSourceId = failedSource.id;
+      sourceFailedTitle.textContent = `AI analysis failed for "${failedSource.title || 'Source'}".`;
+      sourceFailedDesc.textContent = failedSource.processingError || 'Your source text is safely saved. Click below to retry AI analysis.';
+      sourceFailedToast.style.display = 'block';
+    } else {
+      sourceFailedToast.style.display = 'none';
+    }
+  }
+
+  btnRetrySource?.addEventListener('click', async () => {
+    if (!currentFailedSourceId) return;
+    btnRetrySource.disabled = true;
+    btnRetrySource.textContent = 'Retrying...';
+    try {
+      await Storage.retrySource(currentFailedSourceId);
+      sourceFailedToast.style.display = 'none';
+    } catch (err) {
+      alert('Retry error: ' + err.message);
+    }
+    btnRetrySource.disabled = false;
+    btnRetrySource.textContent = 'Retry Analysis';
+  });
+
+  btnDismissFailedSource?.addEventListener('click', () => {
+    if (sourceFailedToast) sourceFailedToast.style.display = 'none';
+  });
 
   async function executeApplyProposal(proposalId, operations) {
     try {

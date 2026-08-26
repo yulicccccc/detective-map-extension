@@ -269,6 +269,32 @@ async function runSuite() {
     await Storage.setActiveWorkspaceId('ws_ai_learning');
   });
 
+  // Test 11: SOURCE_FAILED state update & Retry Analysis
+  await test('11. SOURCE_FAILED updates source status to failed with user-visible error', async () => {
+    const src = await Storage.addSource({
+      title: 'Failed Analysis Candidate',
+      text: 'Gibberish text test',
+      workspaceId: 'ws_ai_learning'
+    });
+    assert.strictEqual(src.processingStatus, 'processing');
+
+    // Simulate SOURCE_FAILED incoming message
+    Storage.cloudSync.handleIncomingMessage({
+      type: 'SOURCE_FAILED',
+      sourceId: src.id,
+      error: 'AI could not extract structured insights'
+    });
+
+    // Wait a tick for local store update
+    await new Promise(r => setTimeout(r, 50));
+
+    const sources = await Storage.getSources();
+    const updated = sources.find(s => s.id === src.id);
+    assert(updated, 'Source must exist');
+    assert.strictEqual(updated.processingStatus, 'failed');
+    assert.strictEqual(updated.processingError, 'AI could not extract structured insights');
+  });
+
   console.log('\n====================================================');
   console.log(`Verification Complete: ${passedTests} passed, ${failedTests} failed.`);
   console.log('====================================================');

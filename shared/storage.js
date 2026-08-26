@@ -219,6 +219,27 @@ class V2CloudSyncEngine {
         Storage.saveSourcesLocal(updated);
         triggerChange({ [STORAGE_KEYS.SOURCES]: { newValue: updated } });
       });
+    } else if (msg.type === 'SOURCE_UPDATED' && msg.source) {
+      Storage.getAllSourcesLocal().then(existing => {
+        const idx = existing.findIndex(s => s.id === msg.source.id);
+        if (idx !== -1) {
+          existing[idx] = { ...existing[idx], ...msg.source };
+        } else {
+          existing.unshift(msg.source);
+        }
+        Storage.saveSourcesLocal(existing);
+        triggerChange({ [STORAGE_KEYS.SOURCES]: { newValue: existing } });
+      });
+    } else if (msg.type === 'SOURCE_FAILED' && msg.sourceId) {
+      Storage.getAllSourcesLocal().then(existing => {
+        const src = existing.find(s => s.id === msg.sourceId);
+        if (src) {
+          src.processingStatus = 'failed';
+          src.processingError = msg.error || 'AI analysis could not complete.';
+          Storage.saveSourcesLocal(existing);
+          triggerChange({ [STORAGE_KEYS.SOURCES]: { newValue: existing } });
+        }
+      });
     } else if (msg.type === 'PROPOSAL_CREATED' && msg.proposal) {
       Storage.getAllProposalsLocal().then(existing => {
         const updated = [msg.proposal, ...existing.filter(p => p.id !== msg.proposal.id)];
@@ -481,6 +502,34 @@ const Storage = {
     }
 
     return newSource;
+  },
+
+  async retrySource(sourceId) {
+    const token = await cloudSync.getToken();
+    if (token) {
+      try {
+        const res = await fetch(`${CLOUDFLARE_BASE_URL}/api/sources/retry`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ sourceId })
+        });
+        const data = await res.json();
+        if (data.source) {
+          const existing = await this.getAllSourcesLocal();
+          const idx = existing.findIndex(s => s.id === sourceId);
+          if (idx !== -1) {
+            existing[idx] = { ...existing[idx], ...data.source };
+            await this.saveSourcesLocal(existing);
+            triggerChange({ [STORAGE_KEYS.SOURCES]: { newValue: existing } });
+          }
+        }
+        return data;
+      } catch (err) {
+        console.warn('[Retry Source Error]', err);
+        return { success: false, error: err.message };
+      }
+    }
+    return { success: false, error: 'No authorization token' };
   },
 
   // --- Concepts ---

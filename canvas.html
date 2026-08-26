@@ -126,6 +126,19 @@
       </div>
     </div>
 
+    <!-- Source Ingestion Failure Toast with Retry -->
+    <div id="source-failed-toast" class="proposal-banner banner-failed" style="display:none;">
+      <div class="proposal-header">
+        <span class="proposal-icon">⚠️</span>
+        <span id="source-failed-title" class="proposal-title">AI analysis failed. Your source is safely saved.</span>
+      </div>
+      <div id="source-failed-desc" class="proposal-stats"></div>
+      <div class="proposal-actions">
+        <button id="btn-retry-source" class="btn-primary">Retry Analysis</button>
+        <button id="btn-dismiss-failed-source" class="btn-ghost">Dismiss</button>
+      </div>
+    </div>
+
     <!-- Detailed Proposal Review Modal (CRITICAL G) -->
     <div id="proposal-review-modal" class="modal-backdrop" style="display:none;">
       <div class="modal-card modal-wide">
