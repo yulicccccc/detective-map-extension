@@ -1111,8 +1111,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           cloudSyncLabel.textContent = 'Pair Device';
           pairingModal.style.display = 'flex';
         } else {
-          cloudSyncIcon.textContent = '⚪';
-          cloudSyncLabel.textContent = 'Sync: Offline';
+          cloudSyncIcon.textContent = '🔴';
+          cloudSyncLabel.textContent = 'Sync: Offline (Local)';
         }
       });
     }

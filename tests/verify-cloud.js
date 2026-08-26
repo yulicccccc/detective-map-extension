@@ -217,7 +217,21 @@ async function runCloudVerification() {
   assert(retryData.success, 'Retry endpoint must return success: true');
   console.log('  ✓ PASS: Retry Analysis endpoint verified successfully');
 
+  // Test 10: Auth Self-Healing on 401 Stale Token
+  console.log('[Test 10] Testing authenticatedFetch 401 stale token auto-healing...');
+  const { Storage } = require('../shared/storage.js');
+  const resHeal = await Storage.cloudSync.authenticatedFetch('/api/workspaces', {
+    headers: { 'Authorization': 'Bearer dt_expired_mock_token_12345' }
+  });
+  assert.strictEqual(resHeal.status, 200, 'authenticatedFetch must heal 401 stale token and return 200');
+  const healData = await resHeal.json();
+  assert(Array.isArray(healData.workspaces) && healData.workspaces.length > 0, 'Must return cloud workspaces');
+  const hasAiRecall = healData.workspaces.some(w => w.title && w.title.includes('Active Recall'));
+  assert(hasAiRecall, 'Workspaces list must include Active Recall workspaces');
+  console.log(`  ✓ PASS: Stale token auto-healed, retrieved ${healData.workspaces.length} cloud workspaces (including Active Recall WS)`);
+
   console.log('\n=== Cloudflare Worker Verification Completed Successfully (0 secrets logged) ===\n');
+  process.exit(0);
 }
 
 runCloudVerification().catch(err => {

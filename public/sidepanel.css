@@ -749,3 +749,19 @@ body {
   background: var(--accent-emerald);
   box-shadow: 0 0 6px var(--accent-emerald);
 }
+
+.sp-dot-connecting {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-amber);
+  box-shadow: 0 0 6px var(--accent-amber);
+}
+
+.sp-dot-offline {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-rose);
+  box-shadow: 0 0 6px var(--accent-rose);
+}

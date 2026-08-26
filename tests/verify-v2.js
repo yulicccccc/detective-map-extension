@@ -297,8 +297,8 @@ async function runSuite() {
 
   // Test 12: Workspace Proposal Scoped Isolation & Hydration
   await test('12. Proposal scoped saving preserves proposals across multiple workspaces', async () => {
-    const origGetToken = Storage.cloudSync.getToken;
-    Storage.cloudSync.getToken = async () => null; // Test offline local isolation
+    const origFetchRemoteState = Storage.fetchRemoteState;
+    Storage.fetchRemoteState = async () => {}; // Test offline local isolation
 
     await Storage.setActiveWorkspaceId('ws_unit_1');
     await Storage.saveProposalsLocal([
@@ -321,12 +321,16 @@ async function runSuite() {
     assert.strictEqual(p1.length, 1);
     assert.strictEqual(p1[0].id, 'prop_1');
 
-    Storage.cloudSync.getToken = origGetToken;
+    Storage.fetchRemoteState = origFetchRemoteState;
   });
 
   console.log('\n====================================================');
   console.log(`Verification Complete: ${passedTests} passed, ${failedTests} failed.`);
   console.log('====================================================');
+  process.exit(failedTests > 0 ? 1 : 0);
 }
 
-runSuite().catch(console.error);
+runSuite().catch(err => {
+  console.error(err);
+  process.exit(1);
+});

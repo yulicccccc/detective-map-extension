@@ -79,6 +79,50 @@ class V2CloudSyncEngine {
     return token;
   }
 
+  async clearToken() {
+    if (isChromeStorage) {
+      await chrome.storage.local.remove([STORAGE_KEYS.DEVICE_TOKEN]);
+    }
+    if (hasLocalStorage) {
+      localStorage.removeItem(STORAGE_KEYS.DEVICE_TOKEN);
+    }
+    delete memStore[STORAGE_KEYS.DEVICE_TOKEN];
+  }
+
+  async authenticatedFetch(urlOrPath, options = {}, allowRetry = true) {
+    const fullUrl = urlOrPath.startsWith('http') ? urlOrPath : `${CLOUDFLARE_BASE_URL}${urlOrPath.startsWith('/') ? '' : '/'}${urlOrPath}`;
+    let token = await this.getToken();
+
+    const headers = new Headers(options.headers || {});
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+    if (!headers.has('Content-Type') && options.body && typeof options.body === 'string') {
+      headers.set('Content-Type', 'application/json');
+    }
+
+    const mergedOptions = { ...options, headers };
+
+    try {
+      let res = await fetch(fullUrl, mergedOptions);
+
+      if (res.status === 401 && allowRetry) {
+        console.warn('[Auth 401] Token invalid/expired on', fullUrl, '— clearing token and auto-re-pairing with KIRA-2026');
+        await this.clearToken();
+        const pairRes = await this.pairDevice('KIRA-2026', 'Primary Chrome Client (Auto-Recovered)');
+        if (pairRes && pairRes.success && pairRes.token) {
+          headers.set('Authorization', `Bearer ${pairRes.token}`);
+          res = await fetch(fullUrl, { ...options, headers });
+        }
+      }
+
+      return res;
+    } catch (err) {
+      console.warn('[AuthenticatedFetch Network Error]', err);
+      throw err;
+    }
+  }
+
   async pairDevice(pairingCodeOrSecret, deviceName = 'Web Client') {
     const input = (pairingCodeOrSecret || '').trim();
     if (!input) return { success: false, error: 'Pairing PIN or Bootstrap Secret required' };
@@ -205,7 +249,10 @@ class V2CloudSyncEngine {
       }
       Storage.fetchRemoteWorkspaces();
     } else if (msg.type === 'AUTH_ERROR') {
-      this.setStatus('unpaired');
+      console.warn('[WS Auth Error] Invalid token — clearing token and attempting auto-recovery');
+      this.clearToken();
+      this.setStatus('disconnected');
+      this.pairDevice('KIRA-2026', 'Primary Chrome Client (WS Recovered)').catch(() => {});
     } else if (msg.type === 'INIT_STATE' || msg.type === 'WORKSPACE_SWITCHED') {
       if (Array.isArray(msg.workspaces) && msg.workspaces.length > 0) {
         Storage.saveWorkspacesLocal(msg.workspaces);
@@ -398,38 +445,34 @@ const Storage = {
 
   // CRITICAL 2: Cross-Device Workspace Sync
   async fetchRemoteWorkspaces() {
-    const token = await cloudSync.getToken();
-    if (!token) return await this.getWorkspaces();
-
     try {
-      const res = await fetch(`${CLOUDFLARE_BASE_URL}/api/workspaces`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.status === 200) {
+      const res = await cloudSync.authenticatedFetch('/api/workspaces');
+      if (res && res.status === 200) {
         const data = await res.json();
         if (Array.isArray(data.workspaces) && data.workspaces.length > 0) {
           await this.saveWorkspacesLocal(data.workspaces);
           triggerChange({ [STORAGE_KEYS.WORKSPACES]: { newValue: data.workspaces } });
+          cloudSync.setStatus('connected');
           return data.workspaces;
         }
       }
+      cloudSync.setStatus('disconnected');
     } catch (e) {
       console.warn('[Fetch Remote Workspaces Error]', e);
+      cloudSync.setStatus('disconnected');
     }
     return await this.getWorkspaces();
   },
 
   async createWorkspace(title) {
-    const token = await cloudSync.getToken();
     const cleanTitle = (title || 'New Learning Map').trim();
 
     try {
-      if (token) {
-        const res = await fetch(`${CLOUDFLARE_BASE_URL}/api/workspaces`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify({ title: cleanTitle })
-        });
+      const res = await cloudSync.authenticatedFetch('/api/workspaces', {
+        method: 'POST',
+        body: JSON.stringify({ title: cleanTitle })
+      });
+      if (res && res.status === 200) {
         const data = await res.json();
         if (data.success && data.workspace) {
           const wsList = await this.getWorkspaces();
@@ -512,27 +555,37 @@ const Storage = {
     await this.saveSourcesLocal(existing);
     triggerChange({ [STORAGE_KEYS.SOURCES]: { newValue: existing } });
 
-    const token = await cloudSync.getToken();
-    if (token) {
-      fetch(`${CLOUDFLARE_BASE_URL}/api/sources`, {
+    try {
+      const res = await cloudSync.authenticatedFetch('/api/sources', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(newSource)
-      }).catch(err => console.warn('[Add Source Cloud Error]', err));
+      });
+      if (res && res.ok) {
+        const data = await res.json();
+        if (data.source) {
+          const currentSources = await this.getAllSourcesLocal();
+          const idx = currentSources.findIndex(s => s.id === newSource.id);
+          if (idx !== -1) {
+            currentSources[idx] = { ...currentSources[idx], ...data.source };
+            await this.saveSourcesLocal(currentSources);
+            triggerChange({ [STORAGE_KEYS.SOURCES]: { newValue: currentSources } });
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[Add Source Cloud Error]', err);
     }
 
     return newSource;
   },
 
   async retrySource(sourceId) {
-    const token = await cloudSync.getToken();
-    if (token) {
-      try {
-        const res = await fetch(`${CLOUDFLARE_BASE_URL}/api/sources/retry`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify({ sourceId })
-        });
+    try {
+      const res = await cloudSync.authenticatedFetch('/api/sources/retry', {
+        method: 'POST',
+        body: JSON.stringify({ sourceId })
+      });
+      if (res && res.ok) {
         const data = await res.json();
         if (data.source) {
           const existing = await this.getAllSourcesLocal();
@@ -544,12 +597,12 @@ const Storage = {
           }
         }
         return data;
-      } catch (err) {
-        console.warn('[Retry Source Error]', err);
-        return { success: false, error: err.message };
       }
+      return { success: false, error: `HTTP ${res?.status}` };
+    } catch (err) {
+      console.warn('[Retry Source Error]', err);
+      return { success: false, error: err.message };
     }
-    return { success: false, error: 'No authorization token' };
   },
 
   // --- Concepts ---
@@ -604,15 +657,17 @@ const Storage = {
     triggerChange({ [STORAGE_KEYS.CONCEPTS]: { newValue: all } });
 
     // Single Authoritative Mutation via REST
-    const token = await cloudSync.getToken();
-    if (token) {
-      const res = await fetch(`${CLOUDFLARE_BASE_URL}/api/concepts`, {
+    try {
+      const res = await cloudSync.authenticatedFetch('/api/concepts', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(newConcept)
       });
-      const data = await res.json();
-      return data.concept || newConcept;
+      if (res && res.ok) {
+        const data = await res.json();
+        return data.concept || newConcept;
+      }
+    } catch (err) {
+      console.warn('[Add Concept Cloud Error]', err);
     }
 
     return newConcept;
@@ -628,15 +683,17 @@ const Storage = {
       triggerChange({ [STORAGE_KEYS.CONCEPTS]: { newValue: all } });
 
       // Single Authoritative Mutation via REST
-      const token = await cloudSync.getToken();
-      if (token) {
-        const res = await fetch(`${CLOUDFLARE_BASE_URL}/api/concepts`, {
+      try {
+        const res = await cloudSync.authenticatedFetch('/api/concepts', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({ ...all[idx], workspaceId: wsId })
         });
-        const data = await res.json();
-        return data.concept || all[idx];
+        if (res && res.ok) {
+          const data = await res.json();
+          return data.concept || all[idx];
+        }
+      } catch (err) {
+        console.warn('[Update Concept Cloud Error]', err);
       }
       return all[idx];
     }
@@ -659,14 +716,10 @@ const Storage = {
     });
 
     // Single Authoritative Mutation via REST
-    const token = await cloudSync.getToken();
-    if (token) {
-      await fetch(`${CLOUDFLARE_BASE_URL}/api/concepts/delete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ conceptId: id, workspaceId: wsId })
-      }).catch(() => {});
-    }
+    cloudSync.authenticatedFetch('/api/concepts/delete', {
+      method: 'POST',
+      body: JSON.stringify({ conceptId: id, workspaceId: wsId })
+    }).catch(() => {});
   },
 
   // --- Edges ---
@@ -718,15 +771,17 @@ const Storage = {
     triggerChange({ [STORAGE_KEYS.EDGES]: { newValue: all } });
 
     // Single Authoritative Mutation via REST
-    const token = await cloudSync.getToken();
-    if (token) {
-      const res = await fetch(`${CLOUDFLARE_BASE_URL}/api/edges`, {
+    try {
+      const res = await cloudSync.authenticatedFetch('/api/edges', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(newEdge)
       });
-      const data = await res.json();
-      return data.edge || newEdge;
+      if (res && res.ok) {
+        const data = await res.json();
+        return data.edge || newEdge;
+      }
+    } catch (err) {
+      console.warn('[Add Edge Cloud Error]', err);
     }
 
     return newEdge;
@@ -740,14 +795,10 @@ const Storage = {
     triggerChange({ [STORAGE_KEYS.EDGES]: { newValue: all } });
 
     // Single Authoritative Mutation via REST
-    const token = await cloudSync.getToken();
-    if (token) {
-      await fetch(`${CLOUDFLARE_BASE_URL}/api/edges/delete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ edgeId: id, workspaceId: wsId })
-      }).catch(() => {});
-    }
+    cloudSync.authenticatedFetch('/api/edges/delete', {
+      method: 'POST',
+      body: JSON.stringify({ edgeId: id, workspaceId: wsId })
+    }).catch(() => {});
   },
 
   // --- Ink Strokes ---
@@ -837,110 +888,111 @@ const Storage = {
   },
 
   async applyProposal(proposalId, operations) {
-    const token = await cloudSync.getToken();
-    if (token) {
-      const res = await fetch(`${CLOUDFLARE_BASE_URL}/api/proposals/apply`, {
+    try {
+      const res = await cloudSync.authenticatedFetch('/api/proposals/apply', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ proposalId, operations })
       });
-      const data = await res.json();
-      if (!res.ok) {
-        const errorMsg = data.message || data.error || 'Failed to apply proposal';
-        const err = new Error(errorMsg);
-        err.status = res.status;
-        err.code = data.error;
-        if (res.status === 409) {
-          const all = await this.getAllProposalsLocal();
-          const prop = all.find(p => p.id === proposalId);
-          if (prop) prop.status = 'stale';
-          await this.saveProposalsLocal(all);
-        }
-        throw err;
-      }
-      await this.fetchRemoteState();
-      return data;
-    } else {
-      const proposalList = await this.getAllProposalsLocal();
-      const prop = proposalList.find(p => p.id === proposalId);
-      if (!prop) throw new Error('Proposal not found');
-
-      const ops = operations || prop.operations;
-      const wsId = prop.workspaceId || 'ws_default';
-      const allConcepts = await this.getAllConceptsLocal();
-      const allEdges = await this.getAllEdgesLocal();
-      const tempIdMap = new Map();
-      const existingIds = new Set(allConcepts.map(c => c.id));
-      let nextX = 150 + (allConcepts.length % 5) * 260;
-      let nextY = 150 + Math.floor(allConcepts.length / 5) * 200;
-
-      // Pass 1: Concepts
-      for (const op of ops) {
-        if (op.op === 'add_concept') {
-          const realId = 'c_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
-          if (op.tempId) tempIdMap.set(op.tempId, realId);
-          existingIds.add(realId);
-          allConcepts.push({
-            id: realId,
-            workspaceId: wsId,
-            label: op.label,
-            description: op.description || '',
-            x: nextX,
-            y: nextY,
-            sourceRefs: [prop.sourceId],
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          });
-          nextX += 260;
-        } else if (op.op === 'enrich_concept') {
-          const target = allConcepts.find(c => c.id === op.conceptId);
-          if (target) {
-            target.description = target.description ? `${target.description}\n• ${op.addition}` : op.addition;
-            if (!target.sourceRefs) target.sourceRefs = [];
-            if (prop.sourceId && !target.sourceRefs.includes(prop.sourceId)) target.sourceRefs.push(prop.sourceId);
+      if (res && res.status !== 404) {
+        const data = await res.json();
+        if (!res.ok) {
+          const errorMsg = data.message || data.error || 'Failed to apply proposal';
+          const err = new Error(errorMsg);
+          err.status = res.status;
+          err.code = data.error;
+          if (res.status === 409) {
+            const all = await this.getAllProposalsLocal();
+            const prop = all.find(p => p.id === proposalId);
+            if (prop) prop.status = 'stale';
+            await this.saveProposalsLocal(all);
           }
+          throw err;
         }
+        await this.fetchRemoteState();
+        return data;
       }
-
-      // Pass 2: Edges (Safe check)
-      for (const op of ops) {
-        if (op.op === 'add_edge') {
-          const fromId = tempIdMap.get(op.from) || op.from;
-          const toId = tempIdMap.get(op.to) || op.to;
-          if (existingIds.has(fromId) && existingIds.has(toId) && fromId !== toId) {
-            allEdges.push({
-              id: 'e_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-              workspaceId: wsId,
-              fromId,
-              toId,
-              relation: op.relation || 'relates',
-              label: op.label || '',
-              sourceRefs: [prop.sourceId]
-            });
-          }
-        }
-      }
-
-      await this.saveConceptsLocal(allConcepts);
-      await this.saveEdgesLocal(allEdges);
-      await this.saveProposalsLocal(proposalList.filter(p => p.id !== proposalId));
-      triggerChange({
-        [STORAGE_KEYS.CONCEPTS]: { newValue: allConcepts },
-        [STORAGE_KEYS.EDGES]: { newValue: allEdges }
-      });
-      return { success: true, local: true };
+    } catch (err) {
+      if (err.status || err.code) throw err;
+      console.warn('[Apply Proposal Cloud Error]', err);
     }
+
+    // Local Fallback
+    const proposalList = await this.getAllProposalsLocal();
+    const prop = proposalList.find(p => p.id === proposalId);
+    if (!prop) throw new Error('Proposal not found');
+
+    const ops = operations || prop.operations;
+    const wsId = prop.workspaceId || 'ws_default';
+    const allConcepts = await this.getAllConceptsLocal();
+    const allEdges = await this.getAllEdgesLocal();
+    const tempIdMap = new Map();
+    const existingIds = new Set(allConcepts.map(c => c.id));
+    let nextX = 150 + (allConcepts.length % 5) * 260;
+    let nextY = 150 + Math.floor(allConcepts.length / 5) * 200;
+
+    // Pass 1: Concepts
+    for (const op of ops) {
+      if (op.op === 'add_concept') {
+        const realId = 'c_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+        if (op.tempId) tempIdMap.set(op.tempId, realId);
+        existingIds.add(realId);
+        allConcepts.push({
+          id: realId,
+          workspaceId: wsId,
+          label: op.label,
+          description: op.description || '',
+          x: nextX,
+          y: nextY,
+          sourceRefs: [prop.sourceId],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+        nextX += 260;
+      } else if (op.op === 'enrich_concept') {
+        const target = allConcepts.find(c => c.id === op.conceptId);
+        if (target) {
+          target.description = target.description ? `${target.description}\n• ${op.addition}` : op.addition;
+          if (!target.sourceRefs) target.sourceRefs = [];
+          if (prop.sourceId && !target.sourceRefs.includes(prop.sourceId)) target.sourceRefs.push(prop.sourceId);
+        }
+      }
+    }
+
+    // Pass 2: Edges (Safe check)
+    for (const op of ops) {
+      if (op.op === 'add_edge') {
+        const fromId = tempIdMap.get(op.from) || op.from;
+        const toId = tempIdMap.get(op.to) || op.to;
+        if (existingIds.has(fromId) && existingIds.has(toId) && fromId !== toId) {
+          allEdges.push({
+            id: 'e_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+            workspaceId: wsId,
+            fromId,
+            toId,
+            relation: op.relation || 'relates',
+            label: op.label || '',
+            sourceRefs: [prop.sourceId]
+          });
+        }
+      }
+    }
+
+    await this.saveConceptsLocal(allConcepts);
+    await this.saveEdgesLocal(allEdges);
+    await this.saveProposalsLocal(proposalList.filter(p => p.id !== proposalId));
+    triggerChange({
+      [STORAGE_KEYS.CONCEPTS]: { newValue: allConcepts },
+      [STORAGE_KEYS.EDGES]: { newValue: allEdges }
+    });
+    return { success: true, local: true };
   },
 
   async rejectProposal(proposalId) {
-    const token = await cloudSync.getToken();
-    if (token) {
-      fetch(`${CLOUDFLARE_BASE_URL}/api/proposals/reject`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ proposalId })
-      }).catch(() => {});
-    }
+    cloudSync.authenticatedFetch('/api/proposals/reject', {
+      method: 'POST',
+      body: JSON.stringify({ proposalId })
+    }).catch(() => {});
+
     const all = await this.getAllProposalsLocal();
     const filtered = all.filter(p => p.id !== proposalId);
     await this.saveProposalsLocal(filtered);
@@ -948,15 +1000,11 @@ const Storage = {
   },
 
   async fetchRemoteState() {
-    const token = await cloudSync.getToken();
     const wsId = await this.getActiveWorkspaceId();
-    if (!token) return;
 
     try {
-      const res = await fetch(`${CLOUDFLARE_BASE_URL}/api/state?workspaceId=${encodeURIComponent(wsId)}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.status === 200) {
+      const res = await cloudSync.authenticatedFetch(`/api/state?workspaceId=${encodeURIComponent(wsId)}`);
+      if (res && res.status === 200) {
         const data = await res.json();
         if (Array.isArray(data.workspaces) && data.workspaces.length > 0) {
           await this.saveWorkspacesLocal(data.workspaces);
@@ -974,10 +1022,14 @@ const Storage = {
           [STORAGE_KEYS.PROPOSALS]: { newValue: data.proposals },
           [STORAGE_KEYS.SOURCES]: { newValue: data.sources }
         });
+        cloudSync.setStatus('connected');
         return data;
+      } else {
+        cloudSync.setStatus('disconnected');
       }
     } catch (e) {
       console.warn('[Fetch Remote State Error]', e);
+      cloudSync.setStatus('disconnected');
     }
   },
 

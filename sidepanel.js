@@ -14,6 +14,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnNewWs = document.getElementById('sp-btn-new-ws');
   const btnAddSourceQuick = document.getElementById('sp-btn-add-source-quick');
   const btnOpenCanvas = document.getElementById('btn-open-canvas');
+  const statusDot = document.getElementById('sp-status-dot');
   const statusText = document.getElementById('sp-status-text');
 
   // Map Viewport Elements
@@ -200,9 +201,24 @@ document.addEventListener('DOMContentLoaded', async () => {
       inputText.focus();
     });
 
+    function updateSyncIndicator(st) {
+      if (!statusText) return;
+      if (st === 'connected') {
+        if (statusDot) statusDot.className = 'sp-dot-live';
+        statusText.textContent = '🟢 Cloud Synced';
+      } else if (st === 'connecting') {
+        if (statusDot) statusDot.className = 'sp-dot-connecting';
+        statusText.textContent = '🟡 Connecting...';
+      } else {
+        if (statusDot) statusDot.className = 'sp-dot-offline';
+        statusText.textContent = '🔴 Cloud sync unavailable — showing local data';
+      }
+    }
+
     if (Storage.cloudSync) {
+      updateSyncIndicator(Storage.cloudSync.status);
       Storage.cloudSync.onStatusChange(st => {
-        statusText.textContent = st === 'connected' ? 'Live Cloud Sync' : (st === 'connecting' ? 'Connecting...' : 'Local Mode');
+        updateSyncIndicator(st);
       });
     }
   }
