@@ -11,7 +11,7 @@ async function runCloudVerification() {
   console.log('=== Verifying Cloudflare Worker Production Security & Endpoints ===\n');
 
   let aiToken = null;
-  let createdTestWsId = null;
+  const createdTestWsIds = [];
 
   try {
     // Test 1: Fetching Canvas HTML from Worker root
@@ -168,7 +168,7 @@ async function runCloudVerification() {
   });
   const { workspace: testWs } = await resWsAI.json();
   assert(testWs && testWs.id, 'Must create test workspace');
-  createdTestWsId = testWs.id;
+  createdTestWsIds.push(testWs.id);
 
   // POST the exact test sentence
   const exactSentence = 'Active recall strengthens the ability to retrieve information without cues.';
@@ -247,7 +247,7 @@ async function runCloudVerification() {
   assert.strictEqual(resDelDefault.status, 403, 'Deleting My Learning Map (ws_default) must return HTTP 403');
   const delDefaultJson = await resDelDefault.json();
   assert(delDefaultJson.error && delDefaultJson.error.includes('only allowed for test workspaces'), 'Must explain test workspaces restriction');
-  console.log('  ✓ PASS: Deleting "My Learning Map" safely rejected with HTTP 403 Forbidden');
+  console.log('  ✓ PASS: 1. Deleting "My Learning Map" safely rejected with HTTP 403 Forbidden');
 
   // 11.2: Deleting ws_8fd9bcca89 (Test - Living Map) MUST be rejected with HTTP 403
   const resDelLiving = await fetch(`${WORKER_BASE}/api/workspaces/delete`, {
@@ -256,7 +256,7 @@ async function runCloudVerification() {
     body: JSON.stringify({ workspaceId: 'ws_8fd9bcca89' })
   });
   assert.strictEqual(resDelLiving.status, 403, 'Deleting Test - Living Map must return HTTP 403');
-  console.log('  ✓ PASS: Deleting "Test - Living Map" safely rejected with HTTP 403 Forbidden');
+  console.log('  ✓ PASS: 2. Deleting "Test - Living Map" safely rejected with HTTP 403 Forbidden');
 
   // 11.3: cleanup-tests endpoint IGNORES arbitrary client-provided titles
   const resCleanupArbitrary = await fetch(`${WORKER_BASE}/api/workspaces/cleanup-tests`, {
@@ -272,7 +272,7 @@ async function runCloudVerification() {
   const hasDefault = checkWsData.workspaces.some(w => w.id === 'ws_default');
   const hasLiving = checkWsData.workspaces.some(w => w.id === 'ws_8fd9bcca89');
   assert(hasDefault && hasLiving, 'Legitimate workspaces must remain completely intact');
-  console.log('  ✓ PASS: cleanup-tests rejects arbitrary title lists and preserves user data');
+  console.log('  ✓ PASS: 3. cleanup-tests rejects arbitrary title lists and preserves user data');
 
   // 11.4: Creating and deleting a __TEST__ workspace returns HTTP 200
   const resWsTest = await fetch(`${WORKER_BASE}/api/workspaces`, {
@@ -282,39 +282,43 @@ async function runCloudVerification() {
   });
   const { workspace: wsTemp } = await resWsTest.json();
   assert(wsTemp && wsTemp.id, 'Must create temp __TEST__ workspace');
+  createdTestWsIds.push(wsTemp.id);
+
   const resDelTest = await fetch(`${WORKER_BASE}/api/workspaces/delete`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
     body: JSON.stringify({ workspaceId: wsTemp.id })
   });
   assert.strictEqual(resDelTest.status, 200, 'Deleting __TEST__ workspace must return HTTP 200');
-  console.log('  ✓ PASS: Deleting valid __TEST__ workspace returns HTTP 200');
+  console.log('  ✓ PASS: 4. Deleting valid __TEST__ workspace returns HTTP 200');
 
   } finally {
-    // GUARANTEED CLEANUP OF TEMPORARY TEST RESOURCES WITH POST-DELETION VERIFICATION
-    if (createdTestWsId && aiToken) {
-      console.log(`\n[Cleanup] Removing temporary test workspace ${createdTestWsId}...`);
+    // GUARANTEED CLEANUP OF ALL TEMPORARY TEST RESOURCES WITH POST-DELETION VERIFICATION
+    if (createdTestWsIds.length > 0 && aiToken) {
+      console.log(`\n[Cleanup] Removing ${createdTestWsIds.length} temporary test workspace(s)...`);
       try {
-        const resDel = await fetch(`${WORKER_BASE}/api/workspaces/delete`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
-          body: JSON.stringify({ workspaceId: createdTestWsId })
-        });
-        const delData = await resDel.json();
-        if (resDel.status !== 200 && resDel.status !== 404) {
-          throw new Error(`Deletion API failed with HTTP ${resDel.status}: ${JSON.stringify(delData)}`);
+        for (const wsId of createdTestWsIds) {
+          const resDel = await fetch(`${WORKER_BASE}/api/workspaces/delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+            body: JSON.stringify({ workspaceId: wsId })
+          });
+          if (resDel.status !== 200 && resDel.status !== 404) {
+            const delData = await resDel.json();
+            throw new Error(`Deletion API failed for ${wsId} with HTTP ${resDel.status}: ${JSON.stringify(delData)}`);
+          }
         }
 
-        // VERIFY DELETION: Must query /api/workspaces and assert createdTestWsId no longer exists
+        // VERIFY DELETION: Query /api/workspaces and assert NONE of createdTestWsIds exist
         const resVerify = await fetch(`${WORKER_BASE}/api/workspaces`, {
           headers: { 'Authorization': `Bearer ${aiToken}` }
         });
         const verifyData = await resVerify.json();
-        const stillExists = (verifyData.workspaces || []).some(w => w.id === createdTestWsId);
-        if (stillExists) {
-          throw new Error(`[CRITICAL TEST FAILURE] Test workspace ${createdTestWsId} STILL EXISTS in production after delete!`);
+        const remainingTestIds = (verifyData.workspaces || []).filter(w => createdTestWsIds.includes(w.id));
+        if (remainingTestIds.length > 0) {
+          throw new Error(`[CRITICAL TEST FAILURE] Test workspace(s) [${remainingTestIds.map(w => w.id).join(', ')}] STILL EXIST in production after delete!`);
         }
-        console.log(`  ✓ VERIFIED: Test workspace ${createdTestWsId} is completely gone from production.`);
+        console.log(`  ✓ VERIFIED: All ${createdTestWsIds.length} test workspace(s) are completely gone from production.`);
       } catch (err) {
         console.error(`\n✕ [ZERO-RESIDUE VIOLATION] Cleanup verification failed:`, err.message);
         process.exit(1);
