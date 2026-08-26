@@ -284,15 +284,24 @@ export class DetectiveMapWorkspace {
       return jsonResponse({ success: true, workspace: wsObj });
     }
 
-    // POST /api/workspaces/delete
+    // POST /api/workspaces/delete (Strict Safety: Only __TEST__ workspaces allowed)
     if (url.pathname === '/api/workspaces/delete' && request.method === 'POST') {
-      const body = await request.json();
+      const body = await request.json().catch(() => ({}));
       const workspaceId = body.workspaceId;
       if (!workspaceId) return jsonResponse({ error: 'workspaceId required' }, 400);
 
-      // Strictly protect default and user-created workspaces
-      if (workspaceId === 'ws_default' || workspaceId === 'ws_8fd9bcca89') {
-        return jsonResponse({ error: 'Cannot delete protected workspace' }, 400);
+      // Fetch target workspace to verify strict safety policy
+      const rows = this.sql.exec(`SELECT id, title FROM workspaces WHERE id = ?`, workspaceId).toArray();
+      if (rows.length === 0) {
+        return jsonResponse({ error: 'Workspace not found' }, 404);
+      }
+
+      const ws = rows[0];
+      // STRICT SAFETY POLICY: Automated deletion is strictly restricted to test workspaces starting with '__TEST__'
+      if (!ws.title || !ws.title.startsWith('__TEST__')) {
+        return jsonResponse({
+          error: 'Automated deletion only allowed for test workspaces (title must start with __TEST__)'
+        }, 403);
       }
 
       this.sql.exec(`DELETE FROM workspaces WHERE id = ?`, workspaceId);
@@ -303,32 +312,18 @@ export class DetectiveMapWorkspace {
       this.sql.exec(`DELETE FROM proposals WHERE workspaceId = ?`, workspaceId);
 
       this.broadcast({ type: 'WORKSPACE_DELETED', workspaceId });
-      return jsonResponse({ success: true, workspaceId });
+      return jsonResponse({ success: true, workspaceId, deletedTitle: ws.title });
     }
 
-    // POST /api/workspaces/cleanup-tests (Authenticated Test Cleanup)
+    // POST /api/workspaces/cleanup-tests (Server-decided: ONLY title LIKE '__TEST__%')
     if (url.pathname === '/api/workspaces/cleanup-tests' && request.method === 'POST') {
-      const body = await request.json().catch(() => ({}));
-      const testTitles = body.titles || [
-        'Quantum Computing',
-        'Neuroscience',
-        'AI Active Recall Test WS',
-        'AI Learning',
-        'Retry Test Workspace',
-        'Live AI Active Recall Test'
-      ];
-
-      const placeholders = testTitles.map(() => '?').join(',');
+      // Server determines test data strictly by prefix. Arbitrary client-provided titles are never trusted.
       const rows = this.sql.exec(
-        `SELECT id, title FROM workspaces WHERE title IN (${placeholders}) OR title LIKE '__TEST__%'`,
-        ...testTitles
+        `SELECT id, title FROM workspaces WHERE title LIKE '__TEST__%'`
       ).toArray();
 
       const deletedList = [];
       for (const row of rows) {
-        if (row.id === 'ws_default' || row.id === 'ws_8fd9bcca89' || row.title === 'Test - Living Map' || row.title === 'My Learning Map') {
-          continue;
-        }
         this.sql.exec(`DELETE FROM workspaces WHERE id = ?`, row.id);
         this.sql.exec(`DELETE FROM concepts WHERE workspaceId = ?`, row.id);
         this.sql.exec(`DELETE FROM edges WHERE workspaceId = ?`, row.id);
