@@ -513,6 +513,7 @@ Do not implement yet: handwriting OCR, AI interpretation of handwritten symbols,
 
 # 19. V2.1 / Future Direction
 
+## 19.1 Human-AI Co-thinking Canvas
 ```text
 User circles concepts
 + writes “same thing?”
@@ -524,8 +525,24 @@ AI proposes merge / relation / clarification
         ↓
 Human approves
 ```
-
 This is the intended **Human-AI Co-thinking Canvas** direction.
+
+## 19.2 Pluggable AI Provider Layer & Long-Context Evolution
+```text
+Detective Map Core
+        │
+        ▼
+AI Provider Abstraction Layer
+  ├─ Cloudflare Workers AI (Default / Built-in / 0-config)
+  ├─ Agnes 2.5 Flash (OpenAI-compatible / 512K Long Context candidate)
+  └─ External Providers (OpenAI GPT-4o / Gemini 1.5 Pro)
+```
+
+**Key Architectural Decisions**:
+1. **Zero Coupling to Single Model**: The core concept map, workspace, SQLite schema, and proposal state machine remain strictly isolated from LLM provider details.
+2. **Long-Context Advantage for Large Living Maps**: As a map grows to hundreds of concepts and source documents, 512K context models (like Agnes 2.5 Flash) can ingest the entire existing knowledge graph + new incoming text to make highly contextual decisions (`add_concept` vs `enrich_concept` vs `detect_conflict` vs `add_edge`).
+3. **A/B Benchmark Strategy**: Run side-by-side evaluations on identical sources and mature maps (`Workers AI` vs `Agnes 2.5 Flash` vs `GPT-4o-mini`) to measure structural extraction accuracy and relationship quality before promoting any secondary provider.
+4. **Credential Security**: All third-party provider keys must reside exclusively in Cloudflare Worker Secrets (`wrangler secret put`), never in chat logs, client storage, or code commits.
 
 ---
 

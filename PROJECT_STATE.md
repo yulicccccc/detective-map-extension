@@ -59,7 +59,7 @@ Side Panel / Canvas UI (Interactive Map + Apply All / Review)
 |---|---|---|
 | `tests/verify-all.js` | **9/9 Passed** | MV3 structure, coordinate math, zoom invariance, eraser hit detection, export/import schema |
 | `tests/verify-v2.js` | **12/12 Passed** | Workspace CRUD, Safari localStorage, palm rejection, cascading delete, tail chunking, proposal sanitization, subset validation, ink isolation, failure UI, proposal scoped storage |
-| `tests/verify-cloud.js` | **9/9 Passed** | Live Cloudflare security, legacy token rejection, KIRA-2026 auth, atomic PIN, real Workers AI live execution, retry endpoint |
+| `tests/verify-cloud.js` | **10/10 Passed** | Live Cloudflare security, legacy token rejection, KIRA-2026 auth, atomic PIN, real Workers AI execution, retry endpoint, 401 stale token auto-healing |
 
 ---
 
@@ -68,3 +68,18 @@ Side Panel / Canvas UI (Interactive Map + Apply All / Review)
 - **Rebuild Public & Bundle**: `node scripts/bundle-assets.js; node scripts/build-public.js`
 - **One-Click Deploy**: `cmd.exe /c "DetectiveMap_V2.0.0_detectivemap.qchen9108.workers.dev_一键更新网站.bat"`
 - **Run Tests**: `node tests/verify-cloud.js; node tests/verify-v2.js; node tests/verify-all.js`
+
+---
+
+## 5. V2.1 Roadmap: Pluggable AI Provider Layer & Benchmark A/B
+
+- **Target Architecture**:
+  - `Detective Map -> AI Provider Abstraction Layer`
+  - Adapters:
+    - `WorkersAIProvider` (Current default, `@cf/meta/llama-3.1-8b-instruct-fast`, 0-config)
+    - `AgnesFlashProvider` (OpenAI-compatible `/v1/chat/completions`, 512K context for mature maps)
+    - `OpenAIProvider` / `GeminiProvider`
+- **Benchmarking Plan**:
+  - Feed identical complex text + 50-node existing map to evaluate concept deduplication, relationship precision, and contradiction detection.
+- **Rule**: Do not refactor active AI engine until V2.0 user workflow is 100% verified.
+
