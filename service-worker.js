@@ -6,15 +6,26 @@ const CONTEXT_MENU_ID = 'add-to-detective-map';
 
 // Initialize extension lifecycle
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.create({
-    id: CONTEXT_MENU_ID,
-    title: 'Add to Active Detective Map',
-    contexts: ['selection'],
-    documentUrlPatterns: ['https://chatgpt.com/*']
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: CONTEXT_MENU_ID,
+      title: 'Add to Active Detective Map',
+      contexts: ['selection'],
+      documentUrlPatterns: ['https://chatgpt.com/*']
+    }, () => {
+      if (chrome.runtime.lastError) {
+        console.warn(
+          '[Detective Map] Context menu initialization:',
+          chrome.runtime.lastError.message
+        );
+      }
+    });
   });
 
   if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
-    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+    chrome.sidePanel
+      .setPanelBehavior({ openPanelOnActionClick: true })
+      .catch(() => {});
   }
 
   console.log('[Detective Map V2] Service Worker Installed.');
