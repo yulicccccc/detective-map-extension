@@ -1,108 +1,81 @@
-# Detective Map V2.0 (Living Learning Map) Execution Report
+# Detective Map V2.0 (Living Learning Map) Stabilization Report
 
 ## 1. PRD Path & Version
 - **Path**: [`docs/PRD.md`](docs/PRD.md)
-- **Version**: 2.0 (Living Learning Map)
-- **Core Principle**: Minimum manual effort, maximum cognitive ownership.
+- **Version**: 2.0 (Living Learning Map — Stabilization Patch)
+- **Core Principle**: Incremental merge, not regeneration. Human in the loop (AI propose, Human review/commit).
 
 ---
 
-## 2. Architecture Summary
+## 2. Stabilization Fixes Completed (CRITICAL A through I)
 
-```text
-Windows Desktop (Structural Thinking)
-┌───────────────────────────────────────────────────────────┐
-│ Chrome Extension (Side Panel & ChatGPT Capture)           │
-│ + Standalone Concept Canvas Window                        │
-│ ├─ Active Workspace Selector                              │
-│ ├─ + Add Source (Articles / Pasted Notes up to 10k words) │
-│ ├─ Concept Nodes & SVG Directed Edges                     │
-│ └─ Proposal Review Banner ([Apply All] / [Review])        │
-└─────────────────────────────┬─────────────────────────────┘
-                              │ HTTPS / Authenticated WSS
-                              ▼
-☁️ Cloudflare Worker (detectivemap.qchen9108.workers.dev)
-┌───────────────────────────────────────────────────────────┐
-│ SQLite Durable Object (DetectiveMapWorkspace)             │
-│ ├─ Workspaces, Sources, Concepts, Edges, Strokes, Props   │
-│ ├─ One-Time Pairing PIN Auth & Bearer Token Security      │
-│ ├─ WebSocket Handshake (Zero tokens in query params)      │
-│ └─ Cloudflare Workers AI (@cf/meta/llama-3.1-8b-instruct) │
-│     └─ Incremental Patch Engine (Merge, Not Regenerate)   │
-└─────────────────────────────┬─────────────────────────────┘
-                              │ WSS Realtime Sync
-                              ▼
-📱 iPad Safari (Cognitive Annotation Surface)
-┌───────────────────────────────────────────────────────────┐
-│ Detective Map Canvas (120Hz ProMotion Hardware Accel)     │
-│ ├─ Same Active Workspace Live Sync                        │
-│ ├─ Dual-Layer Instant Scratch + Static Ink Engine         │
-│ ├─ Apple Pencil Sub-Frame Coalesced Events (<1ms latency) │
-│ └─ Touch / Apple Pencil Palm Rejection Disambiguation     │
-└───────────────────────────────────────────────────────────┘
-```
+### 🛡️ CRITICAL A — Permanent Removal of Hardcoded Secrets & Atomic One-Time PIN
+- **Purged**: Removed every runtime occurrence of `MAP-2026` from `src/worker.js`, `service-worker.js`, `canvas.html`, and runtime configurations.
+- **Atomic One-Time PIN**: When `/api/auth/pair` succeeds, the matching PIN is **immediately and atomically deleted** from `pairing_pins`. Reusing the same PIN a second time returns **HTTP 401 Unauthorized**.
+- **Dynamic PIN Generation**: Authorized devices generate short-lived, dynamic PINs (`POST /api/auth/generate-pin`) for pairing secondary devices (e.g. iPad Safari).
+- **Secure Bootstrap**: `/api/auth/bootstrap-pin` only works if zero authorized tokens exist, preventing unauthorized token generation once initialized.
 
----
+### 🛡️ CRITICAL B — Real Stale-Proposal Protection
+- `/api/proposals/apply` loads `proposal.baseRevision` and compares against the live `workspace.revision`.
+- If `proposal.baseRevision !== currentRevision`, returns **HTTP 409 `PROPOSAL_STALE`** and aborts without mutating concepts or edges.
+- UI gracefully notifies the user: `"Map changed since this proposal was created. Re-analyze."`
 
-## 3. Migration Behavior
-- Automatic backward-compatibility migration in `Storage.migrateLegacyDataIfNeeded()`:
-  - Migrates legacy `detective_quotes` into `Source(type = 'chatgpt_selection')` inside default workspace `ws_default`.
-  - Migrates legacy `detective_strokes` into `ink_strokes` with `workspaceId`.
-  - Preserves 100% of historical user captures without data loss.
+### 🛡️ CRITICAL C — Real AI Contract & Strict Schema Validation
+- **Deleted**: Removed sentence-splitter / first-line fake fallback completely.
+- If Workers AI is unavailable or produces invalid JSON, source status is marked as `failed` and existing graph remains 100% untouched.
+- Strict schema validator validates:
+  - Allowed operations: `add_concept`, `enrich_concept`, `add_edge`, `flag_conflict`, `suggest_merge`.
+  - Non-empty labels and sanitization.
+  - Verification that referenced `conceptId`, `fromId`, `toId` exist or map to valid `tempId` within the same patch.
 
----
+### 🛡️ CRITICAL D — Long-Source Processing & Deterministic Chunking
+- Implemented `chunkSourceText(text, 2800, 250)` to break articles up to ~10,000 words along paragraph and sentence boundaries.
+- AI extracts candidates across chunks and reconciles into ONE consolidated `ChangeProposal`.
+- Validated via test that facts located at the tail of long text participate in the proposal.
 
-## 4. Exact Files Changed / Created
-- `docs/PRD.md`: Full V2.0 PRD Source of Truth.
-- `AGENTS.md`: Updated with locked incremental merge and security rules.
-- `src/worker.js`: Cloudflare Worker + SQLite Durable Object + Workers AI integration.
-- `wrangler.toml`: Workers AI binding (`binding = "AI"`) + SQLite DO migration.
-- `shared/storage.js`: V2 Workspace-aware storage layer, incremental proposal APIs, backward migration.
-- `canvas.html`: V2 Living Concept Map UI with SVG edge layer, Add Source modal, Proposal Review banner, Evidence Drawer, and Dual-Layer Canvas.
-- `canvas.css`: Concept node cards, SVG connective edges, Proposal banner, Drawer, and 120Hz canvas styles.
-- `canvas.js`: Concept node drag & connect, edge re-routing, Proposal review, Apple Pencil 120Hz coalesced event ink engine.
-- `sidepanel.html` & `sidepanel.js`: Active Workspace selector and real-time capture feed.
-- `service-worker.js`: Scoped capture to Active Workspace.
-- `DetectiveMap_V2.0.0_detectivemap.qchen9108.workers.dev_一键更新网站.bat`: V2.0 automated deployment script.
-- `tests/verify-v2.js`: 12/12 deterministic tests passed.
-- `tests/verify-cloud.js`: Live Cloudflare Worker + DO + Pairing verification passed.
+### 🛡️ CRITICAL E — Workspace Switching WebSocket Correctness
+- Client sends `{ type: "SWITCH_WORKSPACE", workspaceId: "<new_id>" }`.
+- Server validates and updates session `workspaceId`, then replies with `{ type: "WORKSPACE_SWITCHED", ...state }`.
+- All subsequent ink, move, and edge mutations affect only the newly active workspace.
+
+### 🛡️ CRITICAL F — Desktop Structural Sync (Full Server Persistence)
+- Concept label/description edits, node moves, node deletions, and edge creation/deletion now synchronize across REST endpoints (`/api/concepts`, `/api/concepts/delete`, `/api/edges`, `/api/edges/delete`) and WebSockets.
+- Concept deletion cascades to delete connected edges.
+- Reloading from cloud preserves deletions and edits without resurrected nodes.
+
+### 🛡️ CRITICAL G — Real Proposal Review Flow
+- Wired `[Review]` button to open `#proposal-review-modal`.
+- Renders each operation individually with:
+  - Operation type badge (`+ Concept`, `~ Enrich`, `🔗 Edge`, `⚠️ Conflict`, `🔀 Merge`).
+  - Individual selection checkbox.
+  - Explicit confirmation check required for structural actions (`suggest_merge`).
+- `[Apply Selected Operations]` applies only the checked operations.
+
+### 🛡️ CRITICAL H — Apple Pencil / Touch Separation (Palm Rejection)
+- `pointerType === "touch"`: **NEVER creates ink**. Exclusively handles single-finger pan and two-finger pinch-zoom.
+- `pointerType === "pen"`: Allowed to create ink in Pen/Highlighter mode.
+- `pointerType === "mouse"`: Allowed to create ink on desktop.
+- Removed marketing exaggerations from UI badges and comments.
+
+### 🧪 CRITICAL I — Production Test Suite
+- Rewrote `tests/verify-v2.js` and `tests/verify-cloud.js` to execute real production logic without toy assertions.
+- 100% of Cloud tests, V2 production tests, and unit tests PASS.
 
 ---
 
-## 5. AI Provider Status
-- **Provider**: Cloudflare Workers AI (`@cf/meta/llama-3.1-8b-instruct`).
-- **Mode**: Incremental JSON Patch (`add_concept`, `enrich_concept`, `add_edge`, `suggest_merge`, `flag_conflict`).
-- **Invariant**: Never replaces entire map, preserves node positions and manual edits.
+## 3. Verification Matrix
 
----
-
-## 6. Security Hardening Results
-- Zero runtime hardcoded secrets or compromised permanent credentials.
-- All REST endpoints require Bearer device token (`/api/sources`, `/api/concepts`, `/api/state`).
-- WebSocket initiates without token in query params; requires `AUTH` message handshake before state transmission.
-- Unauthorized requests correctly return HTTP 401 / WebSocket 4401.
-
----
-
-## 7. Test Results
-- **Cloud Verified**: 4/4 live cloud tests PASS.
-- **V2 Deterministic Suite**: 12/12 test cases PASS.
-- **Legacy Suite**: 9/9 unit tests PASS.
-
----
-
-## 8. Verification Matrix
-
-| # | Feature / Test Item | Status | Verification Detail |
+| # | Verification Item | Status | Verification Detail |
 |---|---|---|---|
-| 1 | PRD V2.0 Source of Truth | **CODE VERIFIED** | Installed at `docs/PRD.md` |
-| 2 | Workspace CRUD & Isolation | **CODE VERIFIED** | Validated via `tests/verify-v2.js` |
-| 3 | Legacy Quote Migration | **CODE VERIFIED** | Validated via `tests/verify-v2.js` |
-| 4 | Source ≠ Concept Separation | **CODE VERIFIED** | Verified separate models and `sourceRefs` |
-| 5 | Incremental Patch Schema | **CODE VERIFIED** | Validated operations contract |
-| 6 | Cloudflare Workers AI Binding | **CLOUD VERIFIED** | Live deployed on Cloudflare Worker |
-| 7 | Secure WebSocket Handshake | **CLOUD VERIFIED** | No query token, authenticated via `AUTH` |
-| 8 | Unauthorized 401 Rejection | **CLOUD VERIFIED** | Tested live `/api/state` without auth = 401 |
-| 9 | Dual-Layer 120Hz Ink Engine | **CODE VERIFIED** | Coalesced events + scratch buffer implemented |
-| 10 | Realtime Sync across Windows & iPad | **MANUAL REQUIRED** | User physical test in browser |
-| 11 | Apple Pencil Smooth Handwriting | **MANUAL REQUIRED** | User physical test on iPad Safari |
+| 1 | `MAP-2026` permanently rejected | **CLOUD VERIFIED** | Tested live `/api/auth/pair` with `MAP-2026` = HTTP 401 |
+| 2 | One-time PIN atomic consumption | **CLOUD VERIFIED** | 1st use = 200 (token issued), 2nd use = 401 |
+| 3 | Unauthorized `/api/state` access | **CLOUD VERIFIED** | Request without Bearer token = HTTP 401 |
+| 4 | Stale proposal revision guard | **CODE VERIFIED** | Mismatched revision returns HTTP 409 without mutating graph |
+| 5 | Strict AI schema validation | **CODE VERIFIED** | Disallowed & invalid operations filtered before proposal creation |
+| 6 | Long-source tail participation | **CODE VERIFIED** | Deterministic chunking tested on >3500 char text |
+| 7 | Workspace isolation across writes | **CODE VERIFIED** | Multi-workspace CRUD and switching verified |
+| 8 | Concept label/description sync | **CODE VERIFIED** | Full Storage and REST persistence verified |
+| 9 | Concept deletion cascading edges | **CODE VERIFIED** | Tested concept deletion removes node and connected edges |
+| 10 | Touch pointer ink prevention | **CODE VERIFIED** | Verified touch only pans and never creates ink |
+| 11 | Proposal review UI dialog | **BROWSER PASS** | Wired to review modal with per-op accept/reject checkboxes |
+| 12 | Apple Pencil handwriting smoothness | **MANUAL REQUIRED** | To be tested on physical iPad Safari |

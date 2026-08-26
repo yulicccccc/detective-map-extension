@@ -18,19 +18,26 @@ chrome.runtime.onInstalled.addListener(() => {
     chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
   }
 
-  // Pre-pair device token if not exists
+  // Securely bootstrap initial device token if zero devices exist
   chrome.storage.local.get(['dm_device_token_v2'], (res) => {
     if (!res.dm_device_token_v2) {
-      fetch(`${CLOUDFLARE_WORKER_URL}/api/auth/pair`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pairingCode: 'MAP-2026', deviceName: 'Chrome Extension' })
-      }).then(r => r.json()).then(data => {
-        if (data.success && data.token) {
-          chrome.storage.local.set({ dm_device_token_v2: data.token });
-          console.log('[Detective Map V2] Extension paired with Cloudflare successfully.');
-        }
-      }).catch(() => {});
+      fetch(`${CLOUDFLARE_WORKER_URL}/api/auth/bootstrap-pin`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+          if (data.success && data.pin) {
+            return fetch(`${CLOUDFLARE_WORKER_URL}/api/auth/pair`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ pairingCode: data.pin, deviceName: 'Chrome Extension (Host)' })
+            }).then(r => r.json()).then(pairData => {
+              if (pairData.success && pairData.token) {
+                chrome.storage.local.set({ dm_device_token_v2: pairData.token });
+                console.log('[Detective Map V2] Host extension dynamically paired.');
+              }
+            });
+          }
+        })
+        .catch(() => {});
     }
   });
 
@@ -57,7 +64,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       capturedAt: new Date().toISOString()
     };
 
-    // 1. Save locally in chrome.storage.local immediately (Source of truth on PC)
+    // 1. Save locally in chrome.storage.local immediately
     await Storage.addSource(newSource);
 
     // Badge notification

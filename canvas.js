@@ -22,6 +22,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnZoomFit = document.getElementById('btn-zoom-fit');
   const btnExport = document.getElementById('btn-export-canvas');
   const btnCloudSync = document.getElementById('btn-cloud-sync');
+  const btnPairDeviceMenu = document.getElementById('btn-pair-device-menu');
   const cloudSyncIcon = document.getElementById('cloud-sync-icon');
   const cloudSyncLabel = document.getElementById('cloud-sync-label');
 
@@ -32,17 +33,28 @@ document.addEventListener('DOMContentLoaded', async () => {
   const edgeCountTag = document.getElementById('edge-count-tag');
   const strokeCountTag = document.getElementById('stroke-count-tag');
 
+  // Proposal Toast & Review Modal
   const proposalToast = document.getElementById('proposal-toast');
   const proposalSummary = document.getElementById('proposal-summary');
   const proposalStats = document.getElementById('proposal-stats');
   const btnApplyProposalAll = document.getElementById('btn-apply-proposal-all');
+  const btnReviewProposal = document.getElementById('btn-review-proposal');
   const btnDismissProposal = document.getElementById('btn-dismiss-proposal');
 
+  const proposalReviewModal = document.getElementById('proposal-review-modal');
+  const reviewProposalSummary = document.getElementById('review-proposal-summary');
+  const reviewOperationsList = document.getElementById('review-operations-list');
+  const btnCloseReviewModal = document.getElementById('btn-close-review-modal');
+  const btnApplySelectedOps = document.getElementById('btn-apply-selected-ops');
+  const btnRejectProposalAll = document.getElementById('btn-reject-proposal-all');
+
+  // Evidence Drawer
   const evidenceDrawer = document.getElementById('evidence-drawer');
   const drawerConceptTitle = document.getElementById('drawer-concept-title');
   const drawerContent = document.getElementById('drawer-content');
   const btnCloseDrawer = document.getElementById('btn-close-drawer');
 
+  // Add Source Modal
   const addSourceModal = document.getElementById('add-source-modal');
   const formAddSource = document.getElementById('form-add-source');
   const inputSourceTitle = document.getElementById('input-source-title');
@@ -51,10 +63,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   const sourceWordCount = document.getElementById('source-word-count');
   const btnCloseSourceModal = document.getElementById('btn-close-source-modal');
 
+  // Device Pairing & PIN Modal
   const pairingModal = document.getElementById('pairing-modal');
   const formPair = document.getElementById('form-pair');
   const inputPairingCode = document.getElementById('input-pairing-code');
   const pairingErrorMsg = document.getElementById('pairing-error-msg');
+
+  const generatePinModal = document.getElementById('generate-pin-modal');
+  const generatedPinText = document.getElementById('generated-pin-text');
+  const btnClosePinModal = document.getElementById('btn-close-pin-modal');
+  const btnCopyPin = document.getElementById('btn-copy-pin');
 
   // State
   let activeWorkspaceId = 'ws_default';
@@ -66,7 +84,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   let pendingProposals = [];
   let viewport = { panX: 100, panY: 100, zoom: 1.0 };
   let activeTool = 'select'; // 'select' | 'connect' | 'pen' | 'highlighter' | 'eraser'
-  let undoStack = [];
 
   // Interaction State
   let isDrawing = false;
@@ -201,7 +218,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const headerEl = node.querySelector('.concept-header');
       headerEl.addEventListener('pointerdown', (e) => handleConceptPointerDown(e, c));
 
-      // Inline text editing
+      // Inline text editing (CRITICAL F: server synced)
       const titleEl = node.querySelector('.concept-title');
       titleEl.addEventListener('blur', async () => {
         const newLabel = titleEl.textContent.trim();
@@ -252,13 +269,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       });
 
-      // Delete concept
+      // Delete concept (CRITICAL F: server synced with cascading edge deletion)
       const closeBtn = node.querySelector('.btn-card-close');
       closeBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
         if (confirm(`Remove concept "${c.label}"?`)) {
-          concepts = concepts.filter(item => item.id !== c.id);
-          await Storage.saveConceptsLocal(concepts);
+          await Storage.deleteConcept(c.id);
+          concepts = await Storage.getConcepts();
+          edges = await Storage.getEdges();
           renderConcepts();
           renderEdges();
           updateStatusPills();
@@ -306,7 +324,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     edgeCountTag.textContent = `${edges.length} Edge${edges.length === 1 ? '' : 's'}`;
   }
 
-  // --- Hardware-Accelerated Dual Canvas Ink Engine (120Hz iPad ProMotion) ---
+  // --- Dual Canvas Ink Engine ---
   function renderAllStrokes() {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, inkCanvas.width, inkCanvas.height);
@@ -361,7 +379,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     targetCtx.restore();
   }
 
-  // --- Pointer Routing & Apple Pencil Sub-Frame Acceleration ---
+  // --- Pointer Routing & Apple Pencil / Touch Separation (CRITICAL H) ---
   function setupPointerListeners() {
     viewportContainer.addEventListener('pointerdown', handleViewportPointerDown);
     inkCanvas.addEventListener('pointerdown', handleInkPointerDown);
@@ -390,7 +408,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    // Touch navigation / Space panning / Select tool
+    // Touch pointer or Space panning: Touch NEVER creates ink
     if (isSpacePressed || e.button === 1 || e.pointerType === 'touch' || (activeTool === 'select' && e.button === 0)) {
       isPanning = true;
       panStart = { x: e.clientX, y: e.clientY };
@@ -403,13 +421,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     updatePointerDeviceTag(e);
 
+    // Multi-touch pinch zoom
     if (activePointers.size === 2) {
-      isDrawing = false;
+      if (isDrawing && currentStroke) {
+        isDrawing = false;
+        currentStroke = null;
+        scratchCtx.clearRect(-10000, -10000, 20000, 20000);
+      }
       isPanning = false;
+      const pts = Array.from(activePointers.values());
+      initialPinchDistance = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      initialPinchZoom = viewport.zoom;
+      pinchCenterScreen = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
       return;
     }
 
-    if (isSpacePressed || e.button === 1 || (e.pointerType === 'touch' && activeTool !== 'pen' && activeTool !== 'highlighter')) {
+    // CRITICAL H: Touch NEVER creates ink, even in pen/highlighter mode!
+    if (e.pointerType === 'touch') {
+      isPanning = true;
+      panStart = { x: e.clientX, y: e.clientY };
+      panOrigin = { x: viewport.panX, y: viewport.panY };
+      viewportContainer.classList.add('cursor-panning-active');
+      return;
+    }
+
+    // Spacebar or middle click panning
+    if (isSpacePressed || e.button === 1) {
       isPanning = true;
       panStart = { x: e.clientX, y: e.clientY };
       panOrigin = { x: viewport.panX, y: viewport.panY };
@@ -420,8 +457,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const worldPoint = screenToWorld(e.clientX, e.clientY);
     updateCoordsTag(worldPoint);
 
-    // Drawing Tools (Apple Pencil & Mouse)
-    if (activeTool === 'pen' || activeTool === 'highlighter') {
+    // Drawing Tools: Allowed ONLY for Apple Pencil ('pen') or Mouse on desktop!
+    if ((e.pointerType === 'pen' || e.pointerType === 'mouse') && (activeTool === 'pen' || activeTool === 'highlighter')) {
       isDrawing = true;
       inkCanvas.setPointerCapture(e.pointerId);
 
@@ -448,7 +485,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Eraser Tool
-    if (activeTool === 'eraser') {
+    if (activeTool === 'eraser' && (e.pointerType === 'pen' || e.pointerType === 'mouse')) {
       eraseStrokesAtPoint(worldPoint);
     }
   }
@@ -496,8 +533,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const worldPoint = screenToWorld(e.clientX, e.clientY);
     updateCoordsTag(worldPoint);
 
-    // 120Hz Coalesced Event Ink Rendering
-    if (isDrawing && currentStroke) {
+    // CRITICAL H: Only append points if pointer is pen or mouse (NEVER touch)
+    if (isDrawing && currentStroke && (e.pointerType === 'pen' || e.pointerType === 'mouse')) {
       const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
       for (const ev of events) {
         const pt = screenToWorld(ev.clientX, ev.clientY);
@@ -508,13 +545,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
       }
 
-      // Fast scratch redraw
       scratchCtx.clearRect(-10000, -10000, 20000, 20000);
       drawStrokeOnContext(scratchCtx, currentStroke);
       return;
     }
 
-    if (activeTool === 'eraser' && (e.buttons === 1 || e.pressure > 0)) {
+    if (activeTool === 'eraser' && (e.buttons === 1 || e.pressure > 0) && (e.pointerType === 'pen' || e.pointerType === 'mouse')) {
       eraseStrokesAtPoint(worldPoint);
     }
   }
@@ -603,7 +639,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // --- Proposal Review & Ingestion UI ---
+  // --- Proposal Review & Ingestion UI (CRITICAL B & G) ---
   function checkPendingProposals() {
     if (pendingProposals.length > 0) {
       const p = pendingProposals[0];
@@ -620,20 +656,140 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  async function executeApplyProposal(proposalId, operations) {
+    try {
+      await Storage.applyProposal(proposalId, operations);
+      pendingProposals = pendingProposals.filter(p => p.id !== proposalId);
+      await Storage.saveProposalsLocal(pendingProposals);
+      await loadWorkspaceData();
+      proposalToast.style.display = 'none';
+      proposalReviewModal.style.display = 'none';
+    } catch (err) {
+      if (err.status === 409 || err.code === 'PROPOSAL_STALE') {
+        alert('⚠️ Map changed since this proposal was created. Re-analyze.');
+        pendingProposals = pendingProposals.filter(p => p.id !== proposalId);
+        await Storage.saveProposalsLocal(pendingProposals);
+        proposalToast.style.display = 'none';
+        proposalReviewModal.style.display = 'none';
+        checkPendingProposals();
+      } else {
+        alert(`Error applying proposal: ${err.message}`);
+      }
+    }
+  }
+
   btnApplyProposalAll.addEventListener('click', async () => {
     if (pendingProposals.length === 0) return;
     const p = pendingProposals[0];
     btnApplyProposalAll.textContent = 'Applying...';
     btnApplyProposalAll.disabled = true;
 
-    await Storage.applyProposal(p.id, p.operations);
-    pendingProposals.shift();
-    await Storage.saveProposalsLocal(pendingProposals);
+    await executeApplyProposal(p.id, p.operations);
 
-    await loadWorkspaceData();
-    proposalToast.style.display = 'none';
     btnApplyProposalAll.textContent = 'Apply All';
     btnApplyProposalAll.disabled = false;
+  });
+
+  btnReviewProposal.addEventListener('click', () => {
+    if (pendingProposals.length === 0) return;
+    const p = pendingProposals[0];
+    openProposalReviewModal(p);
+  });
+
+  function openProposalReviewModal(proposal) {
+    reviewProposalSummary.textContent = proposal.summary || 'Review proposed graph modifications:';
+    reviewOperationsList.innerHTML = '';
+
+    const ops = proposal.operations || [];
+    ops.forEach((op, index) => {
+      const card = document.createElement('div');
+      const isMerge = op.op === 'suggest_merge';
+      card.className = `review-op-card ${isMerge ? 'warning-card' : ''}`;
+
+      let tagClass = 'tag-add-concept';
+      let tagText = '+ Concept';
+      let titleText = op.label || 'New Concept';
+      let descText = op.description || '';
+
+      if (op.op === 'enrich_concept') {
+        tagClass = 'tag-enrich-concept';
+        tagText = '~ Enrich';
+        const target = concepts.find(c => c.id === op.conceptId);
+        titleText = target ? target.label : `Concept (${op.conceptId})`;
+        descText = `Addition: ${op.addition}`;
+      } else if (op.op === 'add_edge') {
+        tagClass = 'tag-add-edge';
+        tagText = '🔗 Edge';
+        titleText = `${op.from} → ${op.to}`;
+        descText = `Relation: ${op.relation || 'relates'} ${op.label ? `("${op.label}")` : ''}`;
+      } else if (op.op === 'flag_conflict') {
+        tagClass = 'tag-flag-conflict';
+        tagText = '⚠️ Conflict';
+        const target = concepts.find(c => c.id === op.conceptId);
+        titleText = target ? target.label : 'Concept Conflict';
+        descText = op.note || 'Potential contradiction';
+      } else if (op.op === 'suggest_merge') {
+        tagClass = 'tag-suggest-merge';
+        tagText = '🔀 Merge';
+        titleText = `Merge ${op.conceptA} & ${op.conceptB}`;
+        descText = `Reason: ${op.reason || 'Semantic overlap'}`;
+      }
+
+      card.innerHTML = `
+        <input type="checkbox" class="review-op-checkbox" data-index="${index}" ${isMerge ? '' : 'checked'} />
+        <div class="review-op-body">
+          <div class="review-op-header">
+            <span class="review-op-tag ${tagClass}">${tagText}</span>
+            <span class="review-op-title">${escapeHtml(titleText)}</span>
+          </div>
+          <div class="review-op-desc">${escapeHtml(descText)}</div>
+          ${isMerge ? '<div class="review-merge-warning">⚠️ Merging concepts is structural. Check box to confirm.</div>' : ''}
+        </div>
+      `;
+      reviewOperationsList.appendChild(card);
+    });
+
+    proposalReviewModal.style.display = 'flex';
+  }
+
+  btnApplySelectedOps.addEventListener('click', async () => {
+    if (pendingProposals.length === 0) return;
+    const p = pendingProposals[0];
+    const checkboxes = reviewOperationsList.querySelectorAll('.review-op-checkbox');
+    const selectedOps = [];
+
+    checkboxes.forEach(cb => {
+      if (cb.checked) {
+        const idx = parseInt(cb.getAttribute('data-index'), 10);
+        if (p.operations[idx]) selectedOps.push(p.operations[idx]);
+      }
+    });
+
+    if (selectedOps.length === 0) {
+      alert('No operations selected to apply.');
+      return;
+    }
+
+    btnApplySelectedOps.textContent = 'Applying...';
+    btnApplySelectedOps.disabled = true;
+
+    await executeApplyProposal(p.id, selectedOps);
+
+    btnApplySelectedOps.textContent = 'Apply Selected Operations';
+    btnApplySelectedOps.disabled = false;
+  });
+
+  btnRejectProposalAll.addEventListener('click', async () => {
+    if (pendingProposals.length === 0) return;
+    const p = pendingProposals[0];
+    pendingProposals.shift();
+    await Storage.saveProposalsLocal(pendingProposals);
+    proposalReviewModal.style.display = 'none';
+    checkPendingProposals();
+  });
+
+  btnCloseReviewModal.addEventListener('click', () => {
+    proposalReviewModal.style.display = 'none';
   });
 
   btnDismissProposal.addEventListener('click', async () => {
@@ -681,7 +837,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     });
 
-    // Workspace Switching
+    // Workspace Switching (CRITICAL E: triggers WS switch)
     selectWorkspace.addEventListener('change', async (e) => {
       activeWorkspaceId = e.target.value;
       await Storage.setActiveWorkspaceId(activeWorkspaceId);
@@ -697,7 +853,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
 
-    // Manual Add Concept
+    // Manual Add Concept (CRITICAL F: server synced)
     btnAddConcept.addEventListener('click', async () => {
       const label = prompt('Enter Concept Name:');
       if (label) {
@@ -796,7 +952,46 @@ document.addEventListener('DOMContentLoaded', async () => {
       inputSourceTitle.value = '';
       inputSourceUrl.value = '';
 
-      alert('Source added! AI is analyzing and will propose incremental updates shortly.');
+      alert('Source added! AI is processing in the background and will propose incremental updates shortly.');
+    });
+
+    // Dynamic PIN Generator Modal (for pairing iPad)
+    btnPairDeviceMenu?.addEventListener('click', async () => {
+      generatePinModal.style.display = 'flex';
+      generatedPinText.textContent = 'Generating...';
+
+      const token = await Storage.cloudSync.getToken();
+      if (token) {
+        try {
+          const res = await fetch(`${CLOUDFLARE_BASE_URL}/api/auth/generate-pin`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await res.json();
+          if (data.success && data.pin) {
+            generatedPinText.textContent = data.pin;
+          } else {
+            generatedPinText.textContent = 'Error: ' + (data.error || 'Failed');
+          }
+        } catch (err) {
+          generatedPinText.textContent = 'Error generating PIN';
+        }
+      } else {
+        generatedPinText.textContent = 'Authorize host first';
+      }
+    });
+
+    btnClosePinModal?.addEventListener('click', () => {
+      generatePinModal.style.display = 'none';
+    });
+
+    btnCopyPin?.addEventListener('click', () => {
+      const pin = generatedPinText.textContent;
+      if (pin && !pin.startsWith('Generating') && !pin.startsWith('Error')) {
+        navigator.clipboard.writeText(pin);
+        btnCopyPin.textContent = '✓ PIN Copied!';
+        setTimeout(() => { btnCopyPin.textContent = 'Copy Pairing PIN'; }, 2000);
+      }
     });
   }
 
@@ -842,7 +1037,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (res.success) {
         pairingModal.style.display = 'none';
       } else {
-        pairingErrorMsg.textContent = res.error || 'Invalid Pairing Code';
+        pairingErrorMsg.textContent = res.error || 'Invalid or expired Pairing PIN';
         pairingErrorMsg.style.display = 'block';
       }
     });

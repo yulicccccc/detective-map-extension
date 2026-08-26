@@ -104,16 +104,8 @@ export class DetectiveMapWorkspace {
       `);
     }
 
-    // Ensure initial pairing PIN is available (e.g. valid for first-time pairing)
-    const pinCount = this.sql.exec(`SELECT COUNT(*) as count FROM pairing_pins WHERE expiresAt > ${Date.now()}`).toArray()[0].count;
-    if (pinCount === 0) {
-      // Create a clean active pairing pin
-      const defaultPin = "MAP-2026";
-      this.sql.exec(`
-        INSERT OR REPLACE INTO pairing_pins (pin, expiresAt)
-        VALUES ('${defaultPin}', ${Date.now() + 30 * 24 * 3600 * 1000});
-      `);
-    }
+    // Purge legacy compromised pins and expired pins (CRITICAL A)
+    this.sql.exec(`DELETE FROM pairing_pins WHERE pin = 'MAP-2026' OR expiresAt <= ${Date.now()}`);
   }
 
   isAuthorized(token) {
@@ -134,11 +126,31 @@ export class DetectiveMapWorkspace {
   async fetch(request) {
     const url = new URL(request.url);
 
-    // 1. Device Pairing Endpoint (/api/auth/pair & /api/pair)
+    // 1. Initial Bootstrap PIN Endpoint (/api/auth/bootstrap-pin)
+    // Only succeeds if ZERO authorized devices exist (secure first-device bootstrap)
+    if (url.pathname === '/api/auth/bootstrap-pin' && request.method === 'POST') {
+      const tokenCount = this.sql.exec(`SELECT COUNT(*) as count FROM auth_tokens`).toArray()[0].count;
+      if (tokenCount > 0) {
+        return jsonResponse({ error: 'Bootstrap unavailable. Generate pairing PIN from an authorized device.' }, 403);
+      }
+
+      // Generate a dynamic one-time PIN
+      const pin = 'PIN-' + Math.floor(100000 + Math.random() * 900000);
+      const expiresAt = Date.now() + 60 * 60 * 1000; // 1 hour
+      this.sql.exec(`INSERT INTO pairing_pins (pin, expiresAt) VALUES (?, ?)`, pin, expiresAt);
+
+      return jsonResponse({ success: true, pin, expiresAt });
+    }
+
+    // 2. Device Pairing Endpoint (/api/auth/pair & /api/pair)
     if ((url.pathname === '/api/auth/pair' || url.pathname === '/api/pair') && request.method === 'POST') {
       try {
         const body = await request.json();
         const inputPin = (body.pairingCode || body.pin || '').trim().toUpperCase();
+
+        if (!inputPin || inputPin === 'MAP-2026') {
+          return jsonResponse({ success: false, error: 'Invalid or expired Pairing Code' }, 401);
+        }
 
         const pins = this.sql.exec(
           `SELECT pin FROM pairing_pins WHERE pin = ? AND expiresAt > ?`,
@@ -146,6 +158,9 @@ export class DetectiveMapWorkspace {
         ).toArray();
 
         if (pins.length > 0) {
+          // ATOMIC CONSUMPTION: Delete PIN immediately so it cannot be used again
+          this.sql.exec(`DELETE FROM pairing_pins WHERE pin = ?`, inputPin);
+
           const deviceToken = this.generateDeviceToken(body.deviceName || 'Client Device');
           return jsonResponse({
             success: true,
@@ -160,18 +175,19 @@ export class DetectiveMapWorkspace {
       }
     }
 
-    // 2. Generate New Pairing PIN (/api/auth/generate-pin)
+    // 3. Generate New One-Time Pairing PIN (/api/auth/generate-pin)
+    // Requires an already-authorized device
     if (url.pathname === '/api/auth/generate-pin' && request.method === 'POST') {
       const auth = this.checkAuthHeader(request);
       if (!auth) return jsonResponse({ error: 'Unauthorized' }, 401);
 
-      const randomPin = 'MAP-' + Math.floor(1000 + Math.random() * 9000);
+      const randomPin = 'PIN-' + Math.floor(100000 + Math.random() * 900000);
       const expiresAt = Date.now() + 15 * 60 * 1000; // 15 mins
       this.sql.exec(`INSERT INTO pairing_pins (pin, expiresAt) VALUES (?, ?)`, randomPin, expiresAt);
       return jsonResponse({ success: true, pin: randomPin, expiresAt });
     }
 
-    // 3. WebSocket Upgrade (/api/ws)
+    // 4. WebSocket Upgrade (/api/ws)
     if (url.pathname === '/api/ws' || url.pathname === '/ws') {
       const pair = new WebSocketPair();
       const [client, server] = Object.values(pair);
@@ -199,7 +215,7 @@ export class DetectiveMapWorkspace {
       return new Response(null, { status: 101, webSocket: client });
     }
 
-    // 4. Authenticated REST Endpoints (Require Bearer Token)
+    // 5. Authenticated REST Endpoints (Require Bearer Token)
     const token = this.checkAuthHeader(request);
     if (!token) {
       return jsonResponse({ error: 'Unauthorized. Valid Bearer device token required.' }, 401);
@@ -269,7 +285,7 @@ export class DetectiveMapWorkspace {
       }
     }
 
-    // POST /api/proposals/apply
+    // POST /api/proposals/apply (With Real Stale Proposal Protection)
     if (url.pathname === '/api/proposals/apply' && request.method === 'POST') {
       const body = await request.json();
       const { proposalId, operations } = body;
@@ -281,8 +297,21 @@ export class DetectiveMapWorkspace {
 
       const proposal = proposalRows[0];
       const workspaceId = proposal.workspaceId;
-      const opsToApply = operations || JSON.parse(proposal.operations);
 
+      // Check Workspace Revision for Stale Protection (CRITICAL B)
+      const wsRow = this.sql.exec(`SELECT revision FROM workspaces WHERE id = ?`, workspaceId).toArray()[0];
+      const currentRevision = wsRow ? wsRow.revision : 1;
+
+      if (proposal.baseRevision !== currentRevision) {
+        return jsonResponse({
+          error: 'PROPOSAL_STALE',
+          baseRevision: proposal.baseRevision,
+          currentRevision: currentRevision,
+          message: 'Map changed since this proposal was created. Re-analyze.'
+        }, 409);
+      }
+
+      const opsToApply = operations || JSON.parse(proposal.operations);
       const applyResult = this.applyProposalOperations(workspaceId, opsToApply, proposal.sourceId);
 
       this.sql.exec(`UPDATE proposals SET status = 'applied' WHERE id = ?`, proposalId);
@@ -299,22 +328,101 @@ export class DetectiveMapWorkspace {
       return jsonResponse({ success: true, ...applyResult });
     }
 
-    // POST /api/concepts (Manual CRUD)
+    // POST /api/concepts (Create or Update Concept)
     if (url.pathname === '/api/concepts' && request.method === 'POST') {
       const body = await request.json();
       const workspaceId = body.workspaceId || 'ws_default';
       const conceptId = body.id || 'c_' + crypto.randomUUID().replace(/-/g, '').slice(0, 10);
       const now = new Date().toISOString();
 
-      this.sql.exec(`
-        INSERT OR REPLACE INTO concepts (id, workspaceId, label, description, x, y, width, pinned, createdAt, updatedAt, sourceRefs, createdBy)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, conceptId, workspaceId, body.label, body.description || '', body.x || 150, body.y || 150, body.width || 240, body.pinned ? 1 : 0, now, now, JSON.stringify(body.sourceRefs || []), body.createdBy || 'user');
+      const existing = this.sql.exec(`SELECT * FROM concepts WHERE id = ? AND workspaceId = ?`, conceptId, workspaceId).toArray()[0];
+      if (existing) {
+        const label = body.label !== undefined ? body.label : existing.label;
+        const description = body.description !== undefined ? body.description : existing.description;
+        const x = body.x !== undefined ? body.x : existing.x;
+        const y = body.y !== undefined ? body.y : existing.y;
+        const pinned = body.pinned !== undefined ? (body.pinned ? 1 : 0) : existing.pinned;
+        const sourceRefs = body.sourceRefs ? JSON.stringify(body.sourceRefs) : existing.sourceRefs;
+
+        this.sql.exec(`
+          UPDATE concepts
+          SET label = ?, description = ?, x = ?, y = ?, pinned = ?, sourceRefs = ?, updatedAt = ?
+          WHERE id = ? AND workspaceId = ?
+        `, label, description, x, y, pinned, sourceRefs, now, conceptId, workspaceId);
+      } else {
+        this.sql.exec(`
+          INSERT INTO concepts (id, workspaceId, label, description, x, y, width, pinned, createdAt, updatedAt, sourceRefs, createdBy)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, conceptId, workspaceId, body.label, body.description || '', body.x || 150, body.y || 150, body.width || 240, body.pinned ? 1 : 0, now, now, JSON.stringify(body.sourceRefs || []), body.createdBy || 'user');
+      }
 
       this.incrementRevision(workspaceId);
       const concept = { ...body, id: conceptId, workspaceId, updatedAt: now };
-      this.broadcast({ type: 'CONCEPT_UPDATED', concept });
+      this.broadcast({ type: 'CONCEPT_UPDATED', concept, workspaceId });
       return jsonResponse({ success: true, concept });
+    }
+
+    // POST /api/concepts/delete (Delete Concept with cascading edge deletion)
+    if (url.pathname === '/api/concepts/delete' && request.method === 'POST') {
+      const body = await request.json();
+      const { conceptId, workspaceId = 'ws_default' } = body;
+
+      if (!conceptId) return jsonResponse({ error: 'conceptId required' }, 400);
+
+      // Find affected edge IDs before deleting
+      const deletedEdges = this.sql.exec(
+        `SELECT id FROM edges WHERE (fromId = ? OR toId = ?) AND workspaceId = ?`,
+        conceptId, conceptId, workspaceId
+      ).toArray().map(e => e.id);
+
+      this.sql.exec(`DELETE FROM edges WHERE (fromId = ? OR toId = ?) AND workspaceId = ?`, conceptId, conceptId, workspaceId);
+      this.sql.exec(`DELETE FROM concepts WHERE id = ? AND workspaceId = ?`, conceptId, workspaceId);
+
+      this.incrementRevision(workspaceId);
+
+      this.broadcast({
+        type: 'CONCEPT_DELETED',
+        conceptId,
+        deletedEdgeIds: deletedEdges,
+        workspaceId
+      });
+
+      return jsonResponse({ success: true, conceptId, deletedEdgeIds: deletedEdges });
+    }
+
+    // POST /api/edges (Create Edge)
+    if (url.pathname === '/api/edges' && request.method === 'POST') {
+      const body = await request.json();
+      const workspaceId = body.workspaceId || 'ws_default';
+      const edgeId = body.id || 'e_' + crypto.randomUUID().replace(/-/g, '').slice(0, 10);
+      const fromId = body.fromId || body.from;
+      const toId = body.toId || body.to;
+
+      if (!fromId || !toId) return jsonResponse({ error: 'from and to required' }, 400);
+
+      this.sql.exec(`
+        INSERT OR REPLACE INTO edges (id, workspaceId, fromId, toId, relation, label, sourceRefs, createdBy)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, edgeId, workspaceId, fromId, toId, body.relation || 'relates', body.label || '', JSON.stringify(body.sourceRefs || []), body.createdBy || 'user');
+
+      this.incrementRevision(workspaceId);
+      const edge = { id: edgeId, workspaceId, fromId, toId, relation: body.relation || 'relates', label: body.label || '' };
+      this.broadcast({ type: 'EDGE_ADDED', edge, workspaceId });
+      return jsonResponse({ success: true, edge });
+    }
+
+    // POST /api/edges/delete (Delete Edge)
+    if (url.pathname === '/api/edges/delete' && request.method === 'POST') {
+      const body = await request.json();
+      const { edgeId, workspaceId = 'ws_default' } = body;
+
+      if (!edgeId) return jsonResponse({ error: 'edgeId required' }, 400);
+
+      this.sql.exec(`DELETE FROM edges WHERE id = ? AND workspaceId = ?`, edgeId, workspaceId);
+      this.incrementRevision(workspaceId);
+
+      this.broadcast({ type: 'EDGE_DELETED', edgeId, workspaceId });
+      return jsonResponse({ success: true, edgeId });
     }
 
     return jsonResponse({ error: 'Not Found' }, 404);
@@ -364,9 +472,24 @@ export class DetectiveMapWorkspace {
       return;
     }
 
+    // 2. Switch Workspace (CRITICAL E)
+    if (msg.type === 'SWITCH_WORKSPACE' && msg.workspaceId) {
+      const wsCheck = this.sql.exec(`SELECT id FROM workspaces WHERE id = ? AND archived = 0`, msg.workspaceId).toArray();
+      if (wsCheck.length > 0) {
+        session.workspaceId = msg.workspaceId;
+        const newState = this.getFullWorkspaceState(msg.workspaceId);
+        ws.send(JSON.stringify({
+          type: 'WORKSPACE_SWITCHED',
+          workspaceId: msg.workspaceId,
+          ...newState
+        }));
+      }
+      return;
+    }
+
     const wsId = session.workspaceId;
 
-    // 2. Real-time Ink Strokes
+    // 3. Real-time Ink Strokes
     if (msg.type === 'ADD_INK_STROKE' && msg.stroke) {
       const s = msg.stroke;
       this.sql.exec(`
@@ -382,13 +505,38 @@ export class DetectiveMapWorkspace {
       this.broadcastExcept(ws, { type: 'INK_STROKES_DELETED', strokeIds: msg.strokeIds, workspaceId: wsId });
     }
 
-    // 3. Move Concept Node
+    // 4. Move Concept Node
     if (msg.type === 'MOVE_CONCEPT' && msg.id) {
       this.sql.exec(`UPDATE concepts SET x = ?, y = ?, updatedAt = ? WHERE id = ? AND workspaceId = ?`, msg.x, msg.y, new Date().toISOString(), msg.id, wsId);
       this.broadcastExcept(ws, { type: 'CONCEPT_MOVED', id: msg.id, x: msg.x, y: msg.y, workspaceId: wsId });
     }
 
-    // 4. Update Edge
+    // 5. Update Concept Details (CRITICAL F)
+    if (msg.type === 'UPDATE_CONCEPT' && msg.concept) {
+      const c = msg.concept;
+      const now = new Date().toISOString();
+      this.sql.exec(`
+        UPDATE concepts SET label = ?, description = ?, updatedAt = ? WHERE id = ? AND workspaceId = ?
+      `, c.label, c.description || '', now, c.id, wsId);
+      this.incrementRevision(wsId);
+      this.broadcastExcept(ws, { type: 'CONCEPT_UPDATED', concept: { ...c, workspaceId: wsId, updatedAt: now }, workspaceId: wsId });
+    }
+
+    // 6. Delete Concept (CRITICAL F)
+    if (msg.type === 'DELETE_CONCEPT' && msg.conceptId) {
+      const deletedEdges = this.sql.exec(
+        `SELECT id FROM edges WHERE (fromId = ? OR toId = ?) AND workspaceId = ?`,
+        msg.conceptId, msg.conceptId, wsId
+      ).toArray().map(e => e.id);
+
+      this.sql.exec(`DELETE FROM edges WHERE (fromId = ? OR toId = ?) AND workspaceId = ?`, msg.conceptId, msg.conceptId, wsId);
+      this.sql.exec(`DELETE FROM concepts WHERE id = ? AND workspaceId = ?`, msg.conceptId, wsId);
+      this.incrementRevision(wsId);
+
+      this.broadcastExcept(ws, { type: 'CONCEPT_DELETED', conceptId: msg.conceptId, deletedEdgeIds: deletedEdges, workspaceId: wsId });
+    }
+
+    // 7. Update Edges
     if (msg.type === 'ADD_EDGE' && msg.edge) {
       const e = msg.edge;
       this.sql.exec(`
@@ -443,7 +591,7 @@ export class DetectiveMapWorkspace {
     this.sql.exec(`UPDATE workspaces SET revision = revision + 1, updatedAt = ? WHERE id = ?`, new Date().toISOString(), workspaceId);
   }
 
-  // --- Phase 6 & 7: Cloudflare Workers AI Incremental Patch Engine ---
+  // --- CRITICAL C & D: Cloudflare Workers AI with Chunking & Strict Schema Validation ---
   async processSourceWithAI(workspaceId, source) {
     try {
       const state = this.getFullWorkspaceState(workspaceId);
@@ -451,78 +599,107 @@ export class DetectiveMapWorkspace {
       const currentEdges = state.edges;
       const baseRevision = state.workspace.revision || 1;
 
-      let patchOperations = [];
-      let patchSummary = 'Processed new source content.';
+      if (!this.env.AI) {
+        console.warn('[AI] Workers AI binding not available. Marking source as failed.');
+        this.sql.exec(`UPDATE sources SET processingStatus = 'failed' WHERE id = ?`, source.id);
+        this.broadcast({ type: 'SOURCE_FAILED', sourceId: source.id, error: 'Workers AI binding not configured.' });
+        return;
+      }
 
-      if (this.env.AI) {
-        // Use Cloudflare Workers AI Llama-3.1-8B-Instruct
-        const systemPrompt = `You are the AI engine of Detective Map (Living Learning Map).
-Your goal: Compare new learning material to the user's existing Concept Map and generate an INCREMENTAL JSON PATCH.
+      // Chunk long text deterministically (up to ~10,000 words)
+      const textChunks = chunkSourceText(source.text, 2800, 250);
+      let rawExtractedOperations = [];
+      let finalSummary = `Analyzed ${source.title || 'source evidence'} (${textChunks.length} chunk${textChunks.length > 1 ? 's' : ''}).`;
 
-CRITICAL INVARIANTS:
-1. NEVER regenerate the full map.
-2. If a concept already exists, do NOT duplicate it. Use "enrich_concept".
-3. Only use "add_concept" for genuinely new key ideas.
-4. Use "add_edge" to link new or enriched concepts with existing concepts.
-5. All operations must be valid JSON matching the schema below.
+      for (let i = 0; i < textChunks.length; i++) {
+        const chunk = textChunks[i];
+        const chunkIndexText = textChunks.length > 1 ? `[Part ${i + 1}/${textChunks.length}] ` : '';
 
-Allowed Operations Schema:
-- { "op": "add_concept", "tempId": "tmp_1", "label": "Short Title", "description": "1-2 sentence essence", "sourceRefs": ["${source.id}"] }
-- { "op": "enrich_concept", "conceptId": "<existing_concept_id>", "addition": "new insight to append", "sourceRefs": ["${source.id}"] }
-- { "op": "add_edge", "from": "<concept_id_or_tempId>", "to": "<concept_id_or_tempId>", "label": "relationship label", "sourceRefs": ["${source.id}"] }
-- { "op": "flag_conflict", "conceptId": "<concept_id>", "note": "potential contradiction" }
+        const systemPrompt = `You are the core extraction engine of Detective Map.
+Your goal: Compare new learning material to existing concepts and generate an INCREMENTAL JSON PATCH.
 
-OUTPUT FORMAT: Strict JSON only:
+RULES:
+1. ONLY return valid JSON object matching the exact schema below.
+2. If an idea is already represented by an existing concept, use "enrich_concept". DO NOT duplicate.
+3. Only use "add_concept" for genuinely new key ideas. Keep labels concise (2-6 words).
+4. Use "add_edge" to link concepts logically (relation like "enhances", "causes", "requires", "contrasts").
+5. Do NOT include Markdown code fences or extra text. Output pure JSON.
+
+SCHEMA:
 {
-  "summary": "1 sentence overview of what this adds",
-  "operations": [ ... ]
+  "summary": "1 concise sentence explaining the addition",
+  "operations": [
+    { "op": "add_concept", "tempId": "tmp_1", "label": "Concept Title", "description": "1 sentence explanation" },
+    { "op": "enrich_concept", "conceptId": "<existing_concept_id>", "addition": "new insight to append" },
+    { "op": "add_edge", "from": "<conceptId_or_tempId>", "to": "<conceptId_or_tempId>", "relation": "relates", "label": "connective text" },
+    { "op": "flag_conflict", "conceptId": "<existing_concept_id>", "note": "contradiction note" }
+  ]
 }`;
 
         const userPrompt = `Existing Concepts:
 ${JSON.stringify(currentConcepts.map(c => ({ id: c.id, label: c.label, description: c.description })), null, 2)}
 
-Existing Edges:
+Existing Relationships:
 ${JSON.stringify(currentEdges.map(e => ({ from: e.fromId, to: e.toId, label: e.label })), null, 2)}
 
-New Source Material:
-"${source.text.slice(0, 4000)}"`;
+New Content ${chunkIndexText}:
+"""
+${chunk}
+"""`;
 
-        const aiResponse = await this.env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ],
-          response_format: { type: 'json_object' }
-        });
+        try {
+          const aiResponse = await this.env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt }
+            ],
+            max_tokens: 1200
+          });
 
-        const parsed = safeParseJSON(aiResponse.response || aiResponse, null);
-        if (parsed && Array.isArray(parsed.operations)) {
-          patchOperations = parsed.operations;
-          patchSummary = parsed.summary || patchSummary;
+          let rawText = '';
+          if (aiResponse && typeof aiResponse === 'object') {
+            rawText = aiResponse.response || aiResponse.text || JSON.stringify(aiResponse);
+          } else if (typeof aiResponse === 'string') {
+            rawText = aiResponse;
+          }
+
+          // Strip potential markdown JSON fences
+          const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]);
+            if (parsed && Array.isArray(parsed.operations)) {
+              rawExtractedOperations.push(...parsed.operations);
+              if (parsed.summary && i === 0) finalSummary = parsed.summary;
+            }
+          }
+        } catch (chunkErr) {
+          console.warn(`[AI Chunk ${i + 1} Error]`, chunkErr.message);
         }
       }
 
-      // Fallback extraction if AI not bound or returned empty
-      if (patchOperations.length === 0) {
-        const lines = source.text.split(/[.!\n]+/).map(s => s.trim()).filter(s => s.length > 10);
-        const topIdea = lines[0] || source.title || 'Key Insight';
-        patchOperations.push({
-          op: 'add_concept',
-          tempId: 'tmp_' + Date.now(),
-          label: topIdea.slice(0, 40),
-          description: source.text.slice(0, 200),
-          sourceRefs: [source.id]
-        });
+      // CRITICAL C: Strict Schema Validation & Sanitization (NO fake fallbacks)
+      const validatedOperations = validateAndSanitizeOperations(
+        rawExtractedOperations,
+        currentConcepts,
+        currentEdges,
+        source.id
+      );
+
+      if (validatedOperations.length === 0) {
+        console.warn('[AI] No valid operations generated by AI. Marking source as failed.');
+        this.sql.exec(`UPDATE sources SET processingStatus = 'failed' WHERE id = ?`, source.id);
+        this.broadcast({ type: 'SOURCE_FAILED', sourceId: source.id, error: 'AI could not extract structured insights from this text.' });
+        return;
       }
 
-      // Save Proposal in SQLite
+      // Save valid ChangeProposal in SQLite
       const proposalId = 'prop_' + crypto.randomUUID().replace(/-/g, '').slice(0, 10);
       const now = new Date().toISOString();
 
       this.sql.exec(`
         INSERT INTO proposals (id, workspaceId, baseRevision, sourceId, summary, operations, status, createdAt)
         VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
-      `, proposalId, workspaceId, baseRevision, source.id, patchSummary, JSON.stringify(patchOperations), now);
+      `, proposalId, workspaceId, baseRevision, source.id, finalSummary, JSON.stringify(validatedOperations), now);
 
       this.sql.exec(`UPDATE sources SET processingStatus = 'completed' WHERE id = ?`, source.id);
 
@@ -531,15 +708,15 @@ New Source Material:
         workspaceId,
         baseRevision,
         sourceId: source.id,
-        summary: patchSummary,
-        operations: patchOperations,
+        summary: finalSummary,
+        operations: validatedOperations,
         status: 'pending',
         createdAt: now
       };
 
       this.broadcast({ type: 'PROPOSAL_CREATED', proposal, sourceId: source.id });
     } catch (err) {
-      console.error('[AI Processing Error]', err);
+      console.error('[AI Processing Fatal Error]', err);
       this.sql.exec(`UPDATE sources SET processingStatus = 'failed' WHERE id = ?`, source.id);
       this.broadcast({ type: 'SOURCE_FAILED', sourceId: source.id, error: err.message });
     }
@@ -626,6 +803,104 @@ New Source Material:
   }
 }
 
+// --- Chunking & Validation Helper Functions ---
+function chunkSourceText(text, maxChunkSize = 2800, overlap = 250) {
+  if (!text || text.length <= maxChunkSize) return [text || ''];
+  const chunks = [];
+  let start = 0;
+  while (start < text.length) {
+    let end = start + maxChunkSize;
+    if (end < text.length) {
+      const lastBreak = text.lastIndexOf('\n', end);
+      const lastPeriod = text.lastIndexOf('. ', end);
+      if (lastBreak > start + maxChunkSize * 0.7) {
+        end = lastBreak + 1;
+      } else if (lastPeriod > start + maxChunkSize * 0.7) {
+        end = lastPeriod + 2;
+      }
+    } else {
+      end = text.length;
+    }
+    chunks.push(text.slice(start, end));
+    start = end > start ? end - overlap : end;
+    if (end >= text.length) break;
+  }
+  return chunks;
+}
+
+function validateAndSanitizeOperations(rawOps, existingConcepts, existingEdges, sourceId) {
+  if (!Array.isArray(rawOps)) return [];
+  const conceptIds = new Set(existingConcepts.map(c => c.id));
+  const seenLabels = new Set(existingConcepts.map(c => c.label.toLowerCase()));
+  const tempIds = new Set();
+  const validOps = [];
+
+  for (const op of rawOps) {
+    if (!op || typeof op !== 'object') continue;
+
+    if (op.op === 'add_concept') {
+      const label = typeof op.label === 'string' ? op.label.trim() : '';
+      if (label.length >= 2 && label.length <= 120) {
+        // If concept with identical name exists, convert to enrich_concept
+        if (seenLabels.has(label.toLowerCase())) {
+          const match = existingConcepts.find(c => c.label.toLowerCase() === label.toLowerCase());
+          if (match && op.description) {
+            validOps.push({
+              op: 'enrich_concept',
+              conceptId: match.id,
+              addition: op.description.trim(),
+              sourceRefs: [sourceId]
+            });
+          }
+        } else {
+          const tempId = op.tempId || 'tmp_' + Math.random().toString(36).slice(2, 8);
+          tempIds.add(tempId);
+          seenLabels.add(label.toLowerCase());
+          validOps.push({
+            op: 'add_concept',
+            tempId,
+            label,
+            description: typeof op.description === 'string' ? op.description.trim() : '',
+            sourceRefs: [sourceId]
+          });
+        }
+      }
+    } else if (op.op === 'enrich_concept') {
+      if (op.conceptId && conceptIds.has(op.conceptId) && typeof op.addition === 'string' && op.addition.trim().length > 0) {
+        validOps.push({
+          op: 'enrich_concept',
+          conceptId: op.conceptId,
+          addition: op.addition.trim(),
+          sourceRefs: [sourceId]
+        });
+      }
+    } else if (op.op === 'add_edge') {
+      const fromValid = conceptIds.has(op.from) || tempIds.has(op.from);
+      const toValid = conceptIds.has(op.to) || tempIds.has(op.to);
+      if (fromValid && toValid && op.from !== op.to) {
+        validOps.push({
+          op: 'add_edge',
+          from: op.from,
+          to: op.to,
+          relation: typeof op.relation === 'string' ? op.relation : 'relates',
+          label: typeof op.label === 'string' ? op.label.trim() : '',
+          sourceRefs: [sourceId]
+        });
+      }
+    } else if (op.op === 'flag_conflict') {
+      if (op.conceptId && conceptIds.has(op.conceptId)) {
+        validOps.push({
+          op: 'flag_conflict',
+          conceptId: op.conceptId,
+          note: typeof op.note === 'string' ? op.note.trim() : 'Contradiction noted'
+        });
+      }
+    }
+  }
+
+  return validOps;
+}
+
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -657,14 +932,12 @@ export default {
       });
     }
 
-    // Route API and WebSocket requests to Durable Object
     if (url.pathname.startsWith('/api/') || url.pathname === '/ws') {
       const id = env.DETECTIVE_WORKSPACE.idFromName('global_workspace_hub');
       const stub = env.DETECTIVE_WORKSPACE.get(id);
       return stub.fetch(request);
     }
 
-    // Serve Static Web Assets (Canvas, HTML, CSS, JS, Icons)
     let pathname = url.pathname;
     if (pathname === '/' || pathname === '/canvas') {
       pathname = '/canvas.html';

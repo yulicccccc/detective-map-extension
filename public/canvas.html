@@ -86,6 +86,7 @@
           <span id="cloud-sync-icon" class="btn-icon">☁️</span>
           <span id="cloud-sync-label" class="btn-label">Sync: Connecting</span>
         </button>
+        <button id="btn-pair-device-menu" class="icon-btn" title="Pair Another Device (iPad)">📱</button>
         <button id="btn-export-canvas" class="icon-btn" title="Export Backup JSON">💾</button>
       </div>
     </header>
@@ -107,11 +108,11 @@
       <!-- Full-Screen Ink Canvas (Committed Strokes) -->
       <canvas id="ink-canvas"></canvas>
 
-      <!-- Instant Scratch Canvas (120Hz Apple Pencil Sub-Frame Layer) -->
+      <!-- Instant Scratch Canvas (Active Drawing Sub-Frame Layer) -->
       <canvas id="scratch-canvas"></canvas>
     </main>
 
-    <!-- Proposal Review Toast / Modal -->
+    <!-- Proposal Review Toast -->
     <div id="proposal-toast" class="proposal-banner" style="display:none;">
       <div class="proposal-header">
         <span class="proposal-icon">✨</span>
@@ -122,6 +123,24 @@
         <button id="btn-apply-proposal-all" class="btn-primary">Apply All</button>
         <button id="btn-review-proposal" class="btn-secondary">Review</button>
         <button id="btn-dismiss-proposal" class="btn-ghost">Dismiss</button>
+      </div>
+    </div>
+
+    <!-- Detailed Proposal Review Modal (CRITICAL G) -->
+    <div id="proposal-review-modal" class="modal-backdrop" style="display:none;">
+      <div class="modal-card modal-wide">
+        <div class="modal-header">
+          <h2>🔍 Review AI Incremental Updates</h2>
+          <button id="btn-close-review-modal" class="btn-card-close">✕</button>
+        </div>
+        <p id="review-proposal-summary" class="modal-desc"></p>
+        
+        <div id="review-operations-list" class="review-ops-container"></div>
+
+        <div class="modal-footer">
+          <button id="btn-reject-proposal-all" class="btn-secondary">Reject Proposal</button>
+          <button id="btn-apply-selected-ops" class="btn-primary">Apply Selected Operations</button>
+        </div>
       </div>
     </div>
 
@@ -141,12 +160,12 @@
           <h2>📥 Add Learning Material</h2>
           <button id="btn-close-source-modal" class="btn-card-close">✕</button>
         </div>
-        <p class="modal-desc">Paste an article, paragraph, or ChatGPT conversation. AI will compare it with your existing map and propose incremental updates.</p>
+        <p class="modal-desc">Paste an article, paragraph, or ChatGPT notes (up to ~10,000 words). AI will chunk, extract, and compare against your existing concepts.</p>
         
         <form id="form-add-source" class="source-form">
-          <input type="text" id="input-source-title" class="text-input" placeholder="Title (e.g. Active Recall Study, Article Name)" />
+          <input type="text" id="input-source-title" class="text-input" placeholder="Title (e.g. Cognitive Psychology Notes)" />
           <input type="url" id="input-source-url" class="text-input" placeholder="Source URL (Optional)" />
-          <textarea id="input-source-text" class="textarea-input" rows="8" placeholder="Paste your learning material here (up to ~10,000 words)..." required></textarea>
+          <textarea id="input-source-text" class="textarea-input" rows="8" placeholder="Paste text here..." required></textarea>
           
           <div class="modal-footer">
             <span id="source-word-count" class="word-count">0 words</span>
@@ -161,14 +180,31 @@
       <div class="modal-card">
         <div class="modal-icon">🔐</div>
         <h2>Private Workspace Pairing</h2>
-        <p>Enter your <strong>Workspace Pairing Code</strong> to connect this iPad with your Windows PC in real time.</p>
+        <p>Enter your <strong>One-Time Pairing Code</strong> to connect this device in real time.</p>
         
         <form id="form-pair" class="pairing-form">
-          <input type="text" id="input-pairing-code" class="pairing-input" placeholder="e.g. MAP-2026" autofocus autocomplete="off" autocapitalize="characters" />
+          <input type="text" id="input-pairing-code" class="pairing-input" placeholder="e.g. PIN-123456" autofocus autocomplete="off" autocapitalize="characters" />
           <button type="submit" id="btn-submit-pair" class="btn-pair-submit">Pair & Connect</button>
         </form>
 
         <div id="pairing-error-msg" class="pairing-error" style="display:none;"></div>
+      </div>
+    </div>
+
+    <!-- Generate PIN Modal (for iPad Pairing) -->
+    <div id="generate-pin-modal" class="modal-backdrop" style="display:none;">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2>📱 Connect iPad / Second Device</h2>
+          <button id="btn-close-pin-modal" class="btn-card-close">✕</button>
+        </div>
+        <p class="modal-desc">Use this one-time code on your iPad Safari to connect to this Workspace. Valid for 15 minutes.</p>
+        
+        <div class="pin-display-box">
+          <span id="generated-pin-text" class="generated-pin">Generating...</span>
+        </div>
+
+        <button id="btn-copy-pin" class="btn-primary-block" style="margin-top:12px;">Copy Pairing PIN</button>
       </div>
     </div>
 
@@ -182,7 +218,7 @@
         <span id="concept-count-tag" class="status-pill">0 Concepts</span>
         <span id="edge-count-tag" class="status-pill">0 Edges</span>
         <span id="stroke-count-tag" class="status-pill">0 Strokes</span>
-        <span class="status-pill hint-pill">iPad ProMotion 120Hz Active</span>
+        <span class="status-pill hint-pill">Apple Pencil Optimized</span>
       </div>
     </footer>
   </div>
