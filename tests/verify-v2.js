@@ -1161,6 +1161,46 @@ async function runSuite() {
     assert.strictEqual(mockActivePenPointerId, 2, 'Active pen pointer ID must remain authoritative');
   });
 
+  // Test 22: Structure-First Concept Map UI Invariants
+  await test('22. Structure-First Concept Map UI Invariants', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const canvasCss = fs.readFileSync(path.join(__dirname, '../canvas.css'), 'utf8');
+    const canvasJs = fs.readFileSync(path.join(__dirname, '../canvas.js'), 'utf8');
+
+    // 22.1 Nodes default collapsed & description hidden by default
+    assert(canvasCss.includes('.concept-body {\n  display: none;') || canvasCss.includes('.concept-body {\r\n  display: none;'), 'Concept body must have display: none by default');
+    assert(canvasCss.includes('.concept-node.expanded .concept-body {\n  display: block;') || canvasCss.includes('.concept-node.expanded .concept-body {\r\n  display: block;'), 'Concept body must be displayed only when .expanded class is applied');
+
+    // 22.2 Title preservation & multi-line wrapping without ellipsis
+    assert(canvasCss.includes('-webkit-line-clamp: 2;'), 'Concept title must support 2-line wrapping');
+    assert(canvasCss.includes('overflow-wrap: break-word;') || canvasCss.includes('word-break: break-word;'), 'Concept title must wrap long words');
+    assert(!canvasCss.includes('.concept-title {\n  text-overflow: ellipsis;'), 'Concept title MUST NOT silently truncate with ellipsis');
+
+    // 22.3 Node footprint constraints
+    assert(canvasCss.includes('min-width: 160px;'), 'Concept node min-width must be ~160px');
+    assert(canvasCss.includes('max-width: 260px;'), 'Concept node collapsed max-width must be ~260px');
+
+    // 22.4 In-memory UI view state & expand/collapse toggle
+    assert(canvasJs.includes('const expandedConceptIds = new Set();'), 'Expanded state must be tracked as purely in-memory UI state');
+    assert(canvasJs.includes('function toggleConceptExpansion(conceptId)'), 'canvas.js must contain toggleConceptExpansion');
+    assert(canvasJs.includes('node.addEventListener(\'dblclick\''), 'canvas.js must bind double-click to toggle expansion');
+    assert(canvasJs.includes('.btn-toggle-expand'), 'canvas.js must include explicit expand toggle button');
+
+    // 22.5 Auto-collapse on clicking empty canvas
+    assert(canvasJs.includes('expandedConceptIds.clear()'), 'Clicking canvas background must clear temporary expansions');
+
+    // 22.6 Evidence Drawer knowledge integration
+    assert(canvasJs.includes('evidence-concept-description'), 'Evidence drawer must display full concept description');
+    assert(canvasJs.includes('drawerConceptTitle.textContent = concept.label'), 'Evidence drawer must show concept label');
+
+    // 22.7 Compact corner toast banner styling
+    assert(canvasCss.includes('.proposal-banner {\n  position: absolute;\n  bottom: 40px;\n  right: 16px;') || canvasCss.includes('max-width: 320px;'), 'Proposal banner must be a compact corner toast');
+
+    // 22.8 Edge dynamic center calculation
+    assert(canvasJs.includes('fromEl.offsetWidth / 2') && canvasJs.includes('fromEl.offsetHeight / 2'), 'renderEdges must dynamically calculate from true element dimensions');
+  });
+
   assert.strictEqual(networkCallsAttempted, 0, 'verify-v2.js MUST execute with ZERO network calls');
   console.log(`  ✓ VERIFIED: Zero (0) network calls attempted during verify-v2 execution.`);
 

@@ -218,26 +218,50 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderAllStrokes();
   }
 
+  // View State for Concept Cards (in-memory UI only)
+  const expandedConceptIds = new Set();
+
+  function toggleConceptExpansion(conceptId) {
+    const isExpanded = expandedConceptIds.has(conceptId);
+    if (isExpanded) {
+      expandedConceptIds.delete(conceptId);
+    } else {
+      expandedConceptIds.add(conceptId);
+    }
+
+    const node = document.getElementById(`concept-${conceptId}`);
+    if (node) {
+      node.classList.toggle('expanded', !isExpanded);
+      const btn = node.querySelector('.btn-toggle-expand');
+      if (btn) {
+        btn.textContent = !isExpanded ? '▴' : '▾';
+        btn.title = !isExpanded ? 'Collapse summary' : 'Expand summary';
+      }
+    }
+    renderEdges();
+  }
+
   // --- Concept Nodes & Edges Rendering ---
   function renderConcepts() {
     conceptsContainer.innerHTML = '';
 
     concepts.forEach(c => {
+      const isExpanded = expandedConceptIds.has(c.id);
       const node = document.createElement('div');
-      node.className = 'concept-node';
+      node.className = `concept-node${isExpanded ? ' expanded' : ''}`;
       node.id = `concept-${c.id}`;
       node.style.left = `${c.x}px`;
       node.style.top = `${c.y}px`;
-      node.style.width = `${c.width || 240}px`;
 
       const sourceCount = (c.sourceRefs || []).length;
-      const badgeHtml = sourceCount > 0 ? `<span class="badge-sources" data-id="${c.id}" title="View supporting evidence">📚 ${sourceCount}</span>` : '';
+      const badgeHtml = sourceCount > 0 ? `<span class="badge-sources" data-id="${c.id}" title="View full evidence and knowledge">📚 ${sourceCount}</span>` : '';
 
       node.innerHTML = `
         <div class="concept-header" data-id="${c.id}">
           <div class="concept-drag-handle" data-id="${c.id}" title="Drag to reposition card">⋮⋮</div>
-          <span class="concept-title" contenteditable="true" data-id="${c.id}">${escapeHtml(c.label)}</span>
+          <span class="concept-title" contenteditable="true" data-id="${c.id}" title="${escapeHtml(c.label)}">${escapeHtml(c.label)}</span>
           <div class="concept-actions">
+            <button class="btn-toggle-expand" data-id="${c.id}" title="${isExpanded ? 'Collapse summary' : 'Expand summary'}">${isExpanded ? '▴' : '▾'}</button>
             ${badgeHtml}
             <button class="btn-card-close" data-id="${c.id}" title="Delete Concept">✕</button>
           </div>
@@ -249,6 +273,21 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Header dragging in Select mode
       const headerEl = node.querySelector('.concept-header');
       headerEl.addEventListener('pointerdown', (e) => handleConceptPointerDown(e, c));
+
+      // Double-click to toggle quick expansion
+      node.addEventListener('dblclick', (e) => {
+        if (e.target.getAttribute('contenteditable') === 'true' || e.target.closest('[contenteditable="true"]') || e.target.closest('.badge-sources') || e.target.closest('.btn-card-close') || e.target.closest('.btn-toggle-expand')) return;
+        toggleConceptExpansion(c.id);
+      });
+
+      // Toggle expand chevron button
+      const toggleBtn = node.querySelector('.btn-toggle-expand');
+      if (toggleBtn) {
+        toggleBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          toggleConceptExpansion(c.id);
+        });
+      }
 
       // Inline text editing (Authoritative single-write REST)
       const titleEl = node.querySelector('.concept-title');
@@ -329,9 +368,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       const toEl = document.getElementById(`concept-${edge.toId || edge.to}`);
       if (!fromEl || !toEl) return;
 
-      const fromX = parseFloat(fromEl.style.left) + (parseFloat(fromEl.style.width) || 240) / 2;
+      const fromX = parseFloat(fromEl.style.left) + fromEl.offsetWidth / 2;
       const fromY = parseFloat(fromEl.style.top) + fromEl.offsetHeight / 2;
-      const toX = parseFloat(toEl.style.left) + (parseFloat(toEl.style.width) || 240) / 2;
+      const toX = parseFloat(toEl.style.left) + toEl.offsetWidth / 2;
       const toY = parseFloat(toEl.style.top) + toEl.offsetHeight / 2;
 
       const dx = (toX - fromX) / 2;
@@ -388,6 +427,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function handleViewportPointerDown(e) {
     if (e.target.closest('.concept-node') || e.target.closest('.proposal-banner') || e.target.closest('.evidence-drawer')) return;
+
+    // Clicking elsewhere on background collapses temporary concept expansion
+    if (expandedConceptIds.size > 0) {
+      expandedConceptIds.clear();
+      document.querySelectorAll('.concept-node.expanded').forEach(n => {
+        n.classList.remove('expanded');
+        const btn = n.querySelector('.btn-toggle-expand');
+        if (btn) {
+          btn.textContent = '▾';
+          btn.title = 'Expand summary';
+        }
+      });
+      renderEdges();
+    }
 
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
     updatePointerDeviceTag(e);
@@ -988,17 +1041,37 @@ document.addEventListener('DOMContentLoaded', async () => {
     checkPendingProposals();
   });
 
-  // --- Evidence Drawer ---
+  // --- Evidence Drawer (Full Concept Knowledge) ---
   function openEvidenceDrawer(concept) {
     drawerConceptTitle.textContent = concept.label;
     drawerContent.innerHTML = '';
+
+    // 1. Concept Knowledge Description
+    if (concept.description) {
+      const descCard = document.createElement('div');
+      descCard.className = 'evidence-concept-description';
+      descCard.innerHTML = `
+        <div class="evidence-section-label">Concept Description</div>
+        <div class="evidence-desc-text">${escapeHtml(concept.description)}</div>
+      `;
+      drawerContent.appendChild(descCard);
+    }
 
     const refSet = new Set(concept.sourceRefs || []);
     const matchingSources = sources.filter(s => refSet.has(s.id));
 
     if (matchingSources.length === 0) {
-      drawerContent.innerHTML = '<p class="text-dim">No direct evidence captured for this concept.</p>';
+      const emptyCard = document.createElement('p');
+      emptyCard.className = 'text-dim';
+      emptyCard.textContent = 'No direct sources captured for this concept.';
+      drawerContent.appendChild(emptyCard);
     } else {
+      const sourceHeader = document.createElement('div');
+      sourceHeader.className = 'evidence-section-label';
+      sourceHeader.style.marginTop = '8px';
+      sourceHeader.textContent = `Captured Sources (${matchingSources.length})`;
+      drawerContent.appendChild(sourceHeader);
+
       matchingSources.forEach(s => {
         const card = document.createElement('div');
         card.className = 'evidence-card';
