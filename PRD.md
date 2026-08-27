@@ -84,11 +84,11 @@ New learning processed
 
 The low-friction default is **Apply All**. Review allows per-operation accept/reject. Destructive operations such as merge, delete, replacement, or large restructuring always require confirmation.
 
-### 3.2.1 Verifiable Server-Side Mutation Audit Trail
-To guarantee that "AI Proposes; Human Commits" is cryptographically and operationally verifiable rather than an unverified assumption:
+### 3.2.1 Durable Server-Side Mutation Audit Trail
+To provide a durable, attributable server-side mutation audit trail ensuring "AI Proposes; Human Commits" is verifiable and traceable:
 - **Server Mutation Audit Table (`mutation_audit`)**: Every proposal apply attempt, stale conflict (409), error, and successful application is durably recorded in SQLite.
 - **Traceable Invariants**: Every client UI click on `Apply All` / `Apply Selected` transmits `X-Detective-Surface` (`sidepanel` | `canvas`) and a unique `X-Detective-Action-Id`.
-- **Zero-Secret Logging**: Device tokens are SHA-256 fingerprinted (`fp_...`). Raw auth tokens, pairing codes, and source bodies are strictly excluded from audit records.
+- **Zero-Secret & Zero-Content Logging**: Device tokens are SHA-256 fingerprinted (`fp_...`). Raw auth tokens, pairing codes, source bodies, and concept content text are strictly excluded from audit records.
 - **Authenticated Audit Endpoint**: `GET /api/audit?workspaceId=...` exposes recent mutation events for auditability without data leakage.
 
 ## 3.3 Source ≠ Concept

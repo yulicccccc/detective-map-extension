@@ -418,17 +418,73 @@ async function runCloudVerification() {
   assert.strictEqual(successRecord.revisionAfter, 2);
   assert(successRecord.metadata && successRecord.metadata.createdConceptCount >= 1);
 
-  // 13.5: Verify security — NO raw tokens or secrets in audit trail
-  const resAuditFinal = await fetch(`${WORKER_BASE}/api/audit?workspaceId=${wsAudit.id}`, {
+  // 13.5: Test Programmatic Apply without headers -> surface and actionId must be 'unknown'
+  // Ingest second source for programmatic apply test
+  const resSourceProg = await fetch(`${WORKER_BASE}/api/sources`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({
+      workspaceId: wsAudit.id,
+      text: 'Backpropagation computes the gradient of the loss function with respect to weights.'
+    })
+  });
+  assert.strictEqual(resSourceProg.status, 200);
+
+  let progProp = null;
+  for (let i = 0; i < 15; i++) {
+    await new Promise(r => setTimeout(r, 1000));
+    const resState = await fetch(`${WORKER_BASE}/api/state?workspaceId=${wsAudit.id}`, {
+      headers: { 'Authorization': `Bearer ${aiToken}` }
+    });
+    const stateData = await resState.json();
+    const found = (stateData.proposals || []).find(p => p.id !== auditProp.id);
+    if (found) {
+      progProp = found;
+      break;
+    }
+  }
+  assert(progProp, 'AI must generate second proposal for programmatic apply test');
+
+  // Apply without X-Detective-Surface or X-Detective-Action-Id headers
+  const resApplyProg = await fetch(`${WORKER_BASE}/api/proposals/apply`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${aiToken}`
+    },
+    body: JSON.stringify({ proposalId: progProp.id })
+  });
+  assert.strictEqual(resApplyProg.status, 200, 'Programmatic apply must succeed');
+
+  const resAuditProg = await fetch(`${WORKER_BASE}/api/audit?workspaceId=${wsAudit.id}`, {
     headers: { 'Authorization': `Bearer ${aiToken}` }
   });
-  const { audit: finalAuditList } = await resAuditFinal.json();
-  for (const entry of finalAuditList) {
+  const { audit: progAuditEntries } = await resAuditProg.json();
+  const progAttempt = progAuditEntries.find(a => a.proposalId === progProp.id && a.action === 'proposal_apply_attempt');
+  assert(progAttempt, 'Audit trail must record programmatic apply attempt');
+  assert.strictEqual(progAttempt.surface, 'unknown', 'Programmatic apply without header must record surface = unknown');
+  assert.strictEqual(progAttempt.clientActionId, 'unknown', 'Programmatic apply without header must record clientActionId = unknown');
+
+  // 13.6: Verify state hydration / reload produces ZERO mutation audit records
+  const preReloadCount = progAuditEntries.length;
+  await fetch(`${WORKER_BASE}/api/state?workspaceId=${wsAudit.id}`, { headers: { 'Authorization': `Bearer ${aiToken}` } });
+  await fetch(`${WORKER_BASE}/api/state?workspaceId=${wsAudit.id}`, { headers: { 'Authorization': `Bearer ${aiToken}` } });
+  const resAuditReload = await fetch(`${WORKER_BASE}/api/audit?workspaceId=${wsAudit.id}`, {
+    headers: { 'Authorization': `Bearer ${aiToken}` }
+  });
+  const { audit: postReloadAudit } = await resAuditReload.json();
+  assert.strictEqual(postReloadAudit.length, preReloadCount, 'Fetching state/reloading must produce ZERO mutation audit records');
+
+  // 13.7: Verify security & content privacy — NO raw tokens, pairing codes, proposal summaries, or source texts
+  for (const entry of postReloadAudit) {
     assert(!JSON.stringify(entry).includes(aiToken), 'Audit trail must NEVER contain raw auth tokens');
     assert(!JSON.stringify(entry).includes('KIRA-2026'), 'Audit trail must NEVER contain pairing codes');
+    assert(!JSON.stringify(entry).includes('summary'), 'Audit metadata must NOT contain proposal summary text');
+    assert(!JSON.stringify(entry).includes('gradient descent'), 'Audit metadata must NOT contain raw source text');
+    assert(!JSON.stringify(entry).includes('Backpropagation'), 'Audit metadata must NOT contain raw source text');
   }
 
-  console.log('  ✓ PASS: Live server-side Mutation Audit Trail fully verified (attempt, success, metadata, zero secret leak)');
+  console.log('  ✓ PASS: Live server-side Mutation Audit Trail fully verified (provenance, unknown fallback, 0 reload mutations, 0 content leaks)');
   } finally {
     // GUARANTEED CLEANUP OF ALL TEMPORARY TEST RESOURCES WITH POST-DELETION VERIFICATION
     if (createdTestWsIds.length > 0 && aiToken) {

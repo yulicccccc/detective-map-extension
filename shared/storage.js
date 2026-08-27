@@ -1065,7 +1065,7 @@ const Storage = {
   async applyProposal(proposalId, operations, options = {}) {
     const wsId = await this.getActiveWorkspaceId();
     const surface = options.surface || 'unknown';
-    const clientActionId = options.clientActionId || 'act_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    const clientActionId = options.clientActionId || 'unknown';
 
     if (!isTestMode()) {
       try {

@@ -160,36 +160,32 @@ export class DetectiveMapWorkspace {
   }
 
   recordMutationAudit(row) {
-    try {
-      this.sql.exec(`
-        INSERT INTO mutation_audit (
-          id, timestamp, workspaceId, action, proposalId, sourceId,
-          baseRevision, revisionBefore, revisionAfter, requestId,
-          clientActionId, surface, deviceFingerprint, userAgent,
-          result, httpStatus, metadata
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-        row.id,
-        row.timestamp,
-        row.workspaceId || 'unknown',
-        row.action,
-        row.proposalId || null,
-        row.sourceId || null,
-        row.baseRevision !== undefined ? row.baseRevision : null,
-        row.revisionBefore !== undefined ? row.revisionBefore : null,
-        row.revisionAfter !== undefined ? row.revisionAfter : null,
-        row.requestId || null,
-        row.clientActionId || null,
-        row.surface || 'unknown',
-        row.deviceFingerprint || 'unknown',
-        row.userAgent || 'unknown',
-        row.result || 'unknown',
-        row.httpStatus !== undefined ? row.httpStatus : null,
-        row.metadata || null
-      );
-    } catch (err) {
-      console.warn('[Mutation Audit Record Error]', err.message);
-    }
+    this.sql.exec(`
+      INSERT INTO mutation_audit (
+        id, timestamp, workspaceId, action, proposalId, sourceId,
+        baseRevision, revisionBefore, revisionAfter, requestId,
+        clientActionId, surface, deviceFingerprint, userAgent,
+        result, httpStatus, metadata
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+      row.id,
+      row.timestamp,
+      row.workspaceId || 'unknown',
+      row.action,
+      row.proposalId || null,
+      row.sourceId || null,
+      row.baseRevision !== undefined ? row.baseRevision : null,
+      row.revisionBefore !== undefined ? row.revisionBefore : null,
+      row.revisionAfter !== undefined ? row.revisionAfter : null,
+      row.requestId || null,
+      row.clientActionId || 'unknown',
+      row.surface || 'unknown',
+      row.deviceFingerprint || 'unknown',
+      row.userAgent || 'unknown',
+      row.result || 'unknown',
+      row.httpStatus !== undefined ? row.httpStatus : null,
+      row.metadata || null
+    );
   }
 
   async fetch(request) {
@@ -547,6 +543,12 @@ export class DetectiveMapWorkspace {
       const wsRow = this.sql.exec(`SELECT revision FROM workspaces WHERE id = ?`, workspaceId).toArray()[0];
       const currentRevision = wsRow ? wsRow.revision : 1;
 
+      let opsCount = 0;
+      try {
+        const parsedOps = operations || JSON.parse(proposal.operations);
+        opsCount = Array.isArray(parsedOps) ? parsedOps.length : 0;
+      } catch {}
+
       // 1. Record Apply Attempt BEFORE state checks
       this.recordMutationAudit({
         id: 'audit_' + crypto.randomUUID().replace(/-/g, '').slice(0, 12),
@@ -565,7 +567,7 @@ export class DetectiveMapWorkspace {
         userAgent,
         result: 'attempt',
         httpStatus: null,
-        metadata: JSON.stringify({ proposalStatus: proposal.status, summary: proposal.summary })
+        metadata: JSON.stringify({ proposalStatus: proposal.status, operationCount: opsCount })
       });
 
       // 2. Check Stale Proposal Conflict

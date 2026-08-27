@@ -50,11 +50,11 @@ Side Panel / Canvas UI (Interactive Map + Apply All / Review + Durable Stale Rec
   - Master PIN: `KIRA-2026` (permanent, case-insensitive, repeatable).
   - Auto-pairing fallback: Extension automatically pairs with `KIRA-2026` if token is missing.
   - One-time PINs (`PIN-XXXXXX`) supported for pairing iPad devices with atomic single-use consumption.
-- **Server-Side Mutation Audit Trail ("AI Proposes; Human Commits" Verifiable Guarantee)**:
+- **Server-Side Mutation Audit Trail ("AI Proposes; Human Commits" Durable Attribution)**:
   - **SQLite table `mutation_audit`**: Durably logs every attempt, conflict, error, and success for proposal applications.
-  - **Captured Fields**: `id`, `timestamp`, `workspaceId`, `action` (`proposal_apply_attempt`, `proposal_apply_stale_409`, `proposal_apply_success`, `proposal_apply_error`), `proposalId`, `sourceId`, `baseRevision`, `revisionBefore`, `revisionAfter`, `requestId`, `clientActionId`, `surface` (`sidepanel` | `canvas`), `deviceFingerprint` (SHA-256 one-way hash `fp_...`), `userAgent`, `result`, `httpStatus`, `metadata` (created concept/edge IDs and counts).
-  - **Privacy & Security Invariant**: Zero raw authentication tokens, pairing codes, source texts, or secrets are ever recorded.
-  - **Authenticated Read-Only Endpoint (`GET /api/audit?workspaceId=...`)**: Allows instant, tamper-evident verification of who/what/when/how a concept was committed to the authoritative map.
+  - **Captured Fields**: `id`, `timestamp`, `workspaceId`, `action` (`proposal_apply_attempt`, `proposal_apply_stale_409`, `proposal_apply_success`, `proposal_apply_error`), `proposalId`, `sourceId`, `baseRevision`, `revisionBefore`, `revisionAfter`, `requestId`, `clientActionId` (must be `act_sp_...` or `act_cv_...` from explicit clicks, else `unknown`), `surface` (`sidepanel` | `canvas` | `unknown`), `deviceFingerprint` (SHA-256 one-way hash `fp_...`), `userAgent`, `result`, `httpStatus`, `metadata` (structural operation counts and created concept/edge IDs).
+  - **Privacy & Security Invariant**: Zero raw authentication tokens, pairing codes, source texts, concept content bodies, or secrets are ever recorded.
+  - **Authenticated Read-Only Endpoint (`GET /api/audit?workspaceId=...`)**: Allows durable verification of who/what/when/how a concept was committed to the authoritative map.
   - **Client Headers**: Side Panel and Canvas pass unique `clientActionId` and `X-Detective-Surface` on explicit user click events only; startup/reload/fetch routines never call apply or attach mutation headers.
 - **Dual-Canvas Ink Layer (iPad & Desktop)**:
   - World coordinate invariance, zoom anchor invariance, resting palm protection (`pointerType === 'touch'` does not cancel active stylus pen stroke).

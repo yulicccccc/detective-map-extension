@@ -553,9 +553,10 @@ async function runSuite() {
     const canvasCode = fs.readFileSync(path.join(__dirname, '../canvas.js'), 'utf-8');
     const storageCode = fs.readFileSync(path.join(__dirname, '../shared/storage.js'), 'utf-8');
 
-    // 16.1 Verify storage.js propagates audit headers
+    // 16.1 Verify storage.js propagates audit headers and NEVER fabricates action ID
     assert(storageCode.includes("'X-Detective-Surface': surface"), 'storage.js must attach X-Detective-Surface header');
     assert(storageCode.includes("'X-Detective-Action-Id': clientActionId"), 'storage.js must attach X-Detective-Action-Id header');
+    assert(storageCode.includes("const clientActionId = options.clientActionId || 'unknown';"), "storage.js must default clientActionId to 'unknown' without fabricating false action IDs");
 
     // 16.2 Verify sidepanel.js sends surface: 'sidepanel' and unique action ID on explicit Apply click
     assert(sidepanelCode.includes("surface: 'sidepanel'"), "sidepanel.js must pass surface: 'sidepanel' on apply");
