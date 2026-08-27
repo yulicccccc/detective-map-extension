@@ -170,6 +170,53 @@ const CanvasCore = {
   },
 
   /**
+   * Compute bounding box for dirty rect clearing
+   */
+  computeStrokeBBox(pt1, pt2, width = 6) {
+    const pad = Math.max(20, width * 2.5);
+    if (!pt2) {
+      return {
+        x: pt1.x - pad,
+        y: pt1.y - pad,
+        width: pad * 2,
+        height: pad * 2
+      };
+    }
+    const minX = Math.min(pt1.x, pt2.x) - pad;
+    const minY = Math.min(pt1.y, pt2.y) - pad;
+    const maxX = Math.max(pt1.x, pt2.x) + pad;
+    const maxY = Math.max(pt1.y, pt2.y) + pad;
+    return {
+      x: minX,
+      y: minY,
+      width: maxX - minX,
+      height: maxY - minY
+    };
+  },
+
+  /**
+   * Draw a single quadratic curve segment
+   */
+  drawSegment(targetCtx, from, cp, to, width) {
+    targetCtx.lineWidth = width;
+    targetCtx.beginPath();
+    targetCtx.moveTo(from.x, from.y);
+    targetCtx.quadraticCurveTo(cp.x, cp.y, to.x, to.y);
+    targetCtx.stroke();
+  },
+
+  /**
+   * Draw a straight line segment
+   */
+  drawLineSegment(targetCtx, from, to, width) {
+    targetCtx.lineWidth = width;
+    targetCtx.beginPath();
+    targetCtx.moveTo(from.x, from.y);
+    targetCtx.lineTo(to.x, to.y);
+    targetCtx.stroke();
+  },
+
+  /**
    * Render a complete stroke deterministically on a 2D canvas context.
    * Supports variable-width pen strokes and smooth quadratic curve interpolation.
    */
@@ -182,105 +229,57 @@ const CanvasCore = {
 
     const pts = stroke.points;
     const baseWidth = stroke.width || (stroke.tool === 'highlighter' ? 20 : 3);
+    const isPen = stroke.tool !== 'highlighter';
 
-    if (stroke.tool === 'highlighter') {
-      targetCtx.strokeStyle = stroke.color || '#f59e0b';
-      targetCtx.lineWidth = baseWidth;
-      targetCtx.globalAlpha = stroke.opacity || 0.35;
+    targetCtx.strokeStyle = stroke.color || (isPen ? '#38bdf8' : '#f59e0b');
+    targetCtx.fillStyle = targetCtx.strokeStyle;
+    targetCtx.globalAlpha = stroke.opacity || (isPen ? 1.0 : 0.35);
 
-      if (pts.length === 1) {
-        targetCtx.beginPath();
-        targetCtx.arc(pts[0].x, pts[0].y, baseWidth / 2, 0, Math.PI * 2);
-        targetCtx.fillStyle = targetCtx.strokeStyle;
-        targetCtx.fill();
-      } else {
-        targetCtx.beginPath();
-        targetCtx.moveTo(pts[0].x, pts[0].y);
-        for (let i = 1; i < pts.length; i++) {
-          if (i < pts.length - 1) {
-            const midX = (pts[i].x + pts[i + 1].x) / 2;
-            const midY = (pts[i].y + pts[i + 1].y) / 2;
-            targetCtx.quadraticCurveTo(pts[i].x, pts[i].y, midX, midY);
-          } else {
-            targetCtx.lineTo(pts[i].x, pts[i].y);
-          }
-        }
-        targetCtx.stroke();
-      }
+    if (pts.length === 1) {
+      const w0 = isPen ? this.computePointWidth(baseWidth, pts[0].pressure, 'pen') : baseWidth;
+      targetCtx.beginPath();
+      targetCtx.arc(pts[0].x, pts[0].y, w0 / 2, 0, Math.PI * 2);
+      targetCtx.fill();
+    } else if (pts.length === 2) {
+      const w0 = isPen ? this.computePointWidth(baseWidth, pts[0].pressure, 'pen') : baseWidth;
+      const w1 = isPen ? this.computePointWidth(baseWidth, pts[1].pressure, 'pen') : baseWidth;
+      this.drawLineSegment(targetCtx, pts[0], pts[1], (w0 + w1) / 2);
     } else {
-      // Pen Stroke: Pressure-aware variable width rendering
-      targetCtx.strokeStyle = stroke.color || '#38bdf8';
-      targetCtx.fillStyle = stroke.color || '#38bdf8';
-      targetCtx.globalAlpha = stroke.opacity || 1.0;
+      // Segment 0: P0 to M1 via P1
+      const mid1 = { x: (pts[1].x + pts[2].x) / 2, y: (pts[1].y + pts[2].y) / 2 };
+      const w1 = isPen ? this.computePointWidth(baseWidth, pts[1].pressure, 'pen') : baseWidth;
+      this.drawSegment(targetCtx, pts[0], pts[1], mid1, w1);
 
-      if (pts.length === 1) {
-        const w0 = this.computePointWidth(baseWidth, pts[0].pressure, 'pen');
-        targetCtx.beginPath();
-        targetCtx.arc(pts[0].x, pts[0].y, w0 / 2, 0, Math.PI * 2);
-        targetCtx.fill();
-      } else if (pts.length === 2) {
-        const w0 = this.computePointWidth(baseWidth, pts[0].pressure, 'pen');
-        const w1 = this.computePointWidth(baseWidth, pts[1].pressure, 'pen');
-        targetCtx.lineWidth = (w0 + w1) / 2;
-        targetCtx.beginPath();
-        targetCtx.moveTo(pts[0].x, pts[0].y);
-        targetCtx.lineTo(pts[1].x, pts[1].y);
-        targetCtx.stroke();
-      } else {
-        // Multi-point smooth variable-width quadratic bezier ribbon
-        // Segment 0: From P0 to M1 (midpoint of P1 and P2) via P1
-        const mid1X = (pts[1].x + pts[2].x) / 2;
-        const mid1Y = (pts[1].y + pts[2].y) / 2;
-        const w1 = this.computePointWidth(baseWidth, pts[1].pressure, 'pen');
-
-        targetCtx.lineWidth = w1;
-        targetCtx.beginPath();
-        targetCtx.moveTo(pts[0].x, pts[0].y);
-        targetCtx.quadraticCurveTo(pts[1].x, pts[1].y, mid1X, mid1Y);
-        targetCtx.stroke();
-
-        // Middle segments: From M(i-1) to M(i) via Pi
-        for (let i = 2; i < pts.length - 1; i++) {
-          const prevMidX = (pts[i - 1].x + pts[i].x) / 2;
-          const prevMidY = (pts[i - 1].y + pts[i].y) / 2;
-          const currMidX = (pts[i].x + pts[i + 1].x) / 2;
-          const currMidY = (pts[i].y + pts[i + 1].y) / 2;
-          const wi = this.computePointWidth(baseWidth, pts[i].pressure, 'pen');
-
-          targetCtx.lineWidth = wi;
-          targetCtx.beginPath();
-          targetCtx.moveTo(prevMidX, prevMidY);
-          targetCtx.quadraticCurveTo(pts[i].x, pts[i].y, currMidX, currMidY);
-          targetCtx.stroke();
-        }
-
-        // Tail segment: From M(N-2) to P(N-1)
-        const lastIdx = pts.length - 1;
-        const lastMidX = (pts[lastIdx - 1].x + pts[lastIdx].x) / 2;
-        const lastMidY = (pts[lastIdx - 1].y + pts[lastIdx].y) / 2;
-        const wTail = this.computePointWidth(baseWidth, pts[lastIdx].pressure, 'pen');
-
-        targetCtx.lineWidth = wTail;
-        targetCtx.beginPath();
-        targetCtx.moveTo(lastMidX, lastMidY);
-        targetCtx.lineTo(pts[lastIdx].x, pts[lastIdx].y);
-        targetCtx.stroke();
+      // Middle segments
+      let prevMid = mid1;
+      for (let i = 2; i < pts.length - 1; i++) {
+        const currMid = { x: (pts[i].x + pts[i + 1].x) / 2, y: (pts[i].y + pts[i + 1].y) / 2 };
+        const wi = isPen ? this.computePointWidth(baseWidth, pts[i].pressure, 'pen') : baseWidth;
+        this.drawSegment(targetCtx, prevMid, pts[i], currMid, wi);
+        prevMid = currMid;
       }
+
+      // Tail segment: from prevMid to P(N-1)
+      const lastIdx = pts.length - 1;
+      const wTail = isPen ? this.computePointWidth(baseWidth, pts[lastIdx].pressure, 'pen') : baseWidth;
+      this.drawLineSegment(targetCtx, prevMid, pts[lastIdx], wTail);
     }
 
     targetCtx.restore();
   },
 
   /**
-   * Incrementally render only newly appended stroke segments on an active scratch context.
-   * Runs in O(new_points) without clearing or redrawing historical points.
+   * Incrementally render active stroke preview: FINALIZED SEGMENTS + REPLACEABLE LIVE TAIL.
+   * Only redraws a constant-size recent tail window without replaying historical points.
    * @param {CanvasRenderingContext2D} targetCtx
    * @param {Object} stroke Active stroke object
-   * @param {number} drawnSegmentCount Number of segments previously drawn
-   * @returns {number} Updated drawnSegmentCount
+   * @param {Object} state { finalizedCount: number, prevTail: { bbox: {...} } | null }
+   * @returns {Object} Updated state { finalizedCount, prevTail }
    */
-  renderIncrementalSegment(targetCtx, stroke, drawnSegmentCount = 0) {
-    if (!stroke || !stroke.points || stroke.points.length < 2) return drawnSegmentCount;
+  renderIncrementalStroke(targetCtx, stroke, state = { finalizedCount: 0, prevTail: null }) {
+    if (!stroke || !stroke.points || stroke.points.length === 0) {
+      return state || { finalizedCount: 0, prevTail: null };
+    }
 
     const pts = stroke.points;
     const baseWidth = stroke.width || (stroke.tool === 'highlighter' ? 20 : 3);
@@ -293,52 +292,75 @@ const CanvasCore = {
     targetCtx.fillStyle = targetCtx.strokeStyle;
     targetCtx.globalAlpha = stroke.opacity || (isPen ? 1.0 : 0.35);
 
-    let count = drawnSegmentCount;
+    // 1. Clear previous replaceable live tail dirty rect
+    if (state && state.prevTail && state.prevTail.bbox) {
+      targetCtx.clearRect(
+        state.prevTail.bbox.x,
+        state.prevTail.bbox.y,
+        state.prevTail.bbox.width,
+        state.prevTail.bbox.height
+      );
+    }
 
-    if (pts.length === 2 && count === 0) {
+    let finalizedCount = (state && state.finalizedCount) || 0;
+    let prevTail = null;
+
+    if (pts.length === 1) {
+      const w0 = isPen ? this.computePointWidth(baseWidth, pts[0].pressure, 'pen') : baseWidth;
+      targetCtx.beginPath();
+      targetCtx.arc(pts[0].x, pts[0].y, w0 / 2, 0, Math.PI * 2);
+      targetCtx.fill();
+      prevTail = { bbox: this.computeStrokeBBox(pts[0], null, w0) };
+    } else if (pts.length === 2) {
       const w0 = isPen ? this.computePointWidth(baseWidth, pts[0].pressure, 'pen') : baseWidth;
       const w1 = isPen ? this.computePointWidth(baseWidth, pts[1].pressure, 'pen') : baseWidth;
-      targetCtx.lineWidth = (w0 + w1) / 2;
-      targetCtx.beginPath();
-      targetCtx.moveTo(pts[0].x, pts[0].y);
-      targetCtx.lineTo(pts[1].x, pts[1].y);
-      targetCtx.stroke();
-      count = 1;
-    } else if (pts.length >= 3) {
-      // If segment 0 has not been drawn yet
-      if (count === 0) {
-        const mid1X = (pts[1].x + pts[2].x) / 2;
-        const mid1Y = (pts[1].y + pts[2].y) / 2;
-        const w1 = isPen ? this.computePointWidth(baseWidth, pts[1].pressure, 'pen') : baseWidth;
+      const lineW = (w0 + w1) / 2;
+      this.drawLineSegment(targetCtx, pts[0], pts[1], lineW);
+      prevTail = { bbox: this.computeStrokeBBox(pts[0], pts[1], lineW) };
+    } else {
+      // pts.length >= 3
 
-        targetCtx.lineWidth = w1;
-        targetCtx.beginPath();
-        targetCtx.moveTo(pts[0].x, pts[0].y);
-        targetCtx.quadraticCurveTo(pts[1].x, pts[1].y, mid1X, mid1Y);
-        targetCtx.stroke();
-        count = 1;
+      // If we cleared a tail and have previously finalized segments, repair the last finalized segment
+      if (finalizedCount > 0) {
+        const lastFinalIdx = finalizedCount - 1;
+        if (lastFinalIdx === 0) {
+          const mid1 = { x: (pts[1].x + pts[2].x) / 2, y: (pts[1].y + pts[2].y) / 2 };
+          const w1 = isPen ? this.computePointWidth(baseWidth, pts[1].pressure, 'pen') : baseWidth;
+          this.drawSegment(targetCtx, pts[0], pts[1], mid1, w1);
+        } else {
+          const prevMid = { x: (pts[lastFinalIdx].x + pts[lastFinalIdx + 1].x) / 2, y: (pts[lastFinalIdx].y + pts[lastFinalIdx + 1].y) / 2 };
+          const currMid = { x: (pts[lastFinalIdx + 1].x + pts[lastFinalIdx + 2].x) / 2, y: (pts[lastFinalIdx + 1].y + pts[lastFinalIdx + 2].y) / 2 };
+          const wi = isPen ? this.computePointWidth(baseWidth, pts[lastFinalIdx + 1].pressure, 'pen') : baseWidth;
+          this.drawSegment(targetCtx, prevMid, pts[lastFinalIdx + 1], currMid, wi);
+        }
       }
 
-      // Draw all newly available middle segments
-      while (count < pts.length - 2) {
-        const i = count + 1;
-        const prevMidX = (pts[i - 1].x + pts[i].x) / 2;
-        const prevMidY = (pts[i - 1].y + pts[i].y) / 2;
-        const currMidX = (pts[i].x + pts[i + 1].x) / 2;
-        const currMidY = (pts[i].y + pts[i + 1].y) / 2;
-        const wi = isPen ? this.computePointWidth(baseWidth, pts[i].pressure, 'pen') : baseWidth;
-
-        targetCtx.lineWidth = wi;
-        targetCtx.beginPath();
-        targetCtx.moveTo(prevMidX, prevMidY);
-        targetCtx.quadraticCurveTo(pts[i].x, pts[i].y, currMidX, currMidY);
-        targetCtx.stroke();
-        count++;
+      // Draw all newly finalized segments: from finalizedCount up to pts.length - 3
+      while (finalizedCount <= pts.length - 3) {
+        const j = finalizedCount;
+        if (j === 0) {
+          const mid1 = { x: (pts[1].x + pts[2].x) / 2, y: (pts[1].y + pts[2].y) / 2 };
+          const w1 = isPen ? this.computePointWidth(baseWidth, pts[1].pressure, 'pen') : baseWidth;
+          this.drawSegment(targetCtx, pts[0], pts[1], mid1, w1);
+        } else {
+          const prevMid = { x: (pts[j].x + pts[j + 1].x) / 2, y: (pts[j].y + pts[j + 1].y) / 2 };
+          const currMid = { x: (pts[j + 1].x + pts[j + 2].x) / 2, y: (pts[j + 1].y + pts[j + 2].y) / 2 };
+          const wi = isPen ? this.computePointWidth(baseWidth, pts[j + 1].pressure, 'pen') : baseWidth;
+          this.drawSegment(targetCtx, prevMid, pts[j + 1], currMid, wi);
+        }
+        finalizedCount++;
       }
+
+      // Draw the new live tail from M_{N-2} to P_{N-1}
+      const lastIdx = pts.length - 1;
+      const lastMid = { x: (pts[lastIdx - 1].x + pts[lastIdx].x) / 2, y: (pts[lastIdx - 1].y + pts[lastIdx].y) / 2 };
+      const wTail = isPen ? this.computePointWidth(baseWidth, pts[lastIdx].pressure, 'pen') : baseWidth;
+      this.drawLineSegment(targetCtx, lastMid, pts[lastIdx], wTail);
+      prevTail = { bbox: this.computeStrokeBBox(lastMid, pts[lastIdx], wTail) };
     }
 
     targetCtx.restore();
-    return count;
+    return { finalizedCount, prevTail };
   }
 };
 

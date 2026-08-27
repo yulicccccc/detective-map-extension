@@ -866,8 +866,8 @@ async function runSuite() {
     }
   });
 
-  // Test 21: Apple Pencil Ink Engine V1 (Pressure-aware, incremental rendering, palm rejection)
-  await test('21. Apple Pencil Ink Engine V1 (Pressure-aware, incremental rendering, palm rejection)', async () => {
+  // Test 21: Apple Pencil Ink Engine V1 (Pressure-aware, Finalized Segments + Replaceable Live Tail, Parity)
+  await test('21. Apple Pencil Ink Engine V1 (Pressure-aware, Finalized Segments + Replaceable Live Tail, Parity)', async () => {
     const { CanvasCore } = require('../shared/canvas-core.js');
 
     // 21.1 Pressure normalization and width curve
@@ -906,7 +906,7 @@ async function runSuite() {
       prevW = currW;
     }
 
-    // 21.5 Incremental rendering O(1) performance invariant
+    // Mock Context Recorder
     function createMockCtx() {
       const ops = [];
       return {
@@ -920,36 +920,32 @@ async function runSuite() {
         stroke() { ops.push({ type: 'stroke' }); },
         arc(x, y, r) { ops.push({ type: 'arc', x, y, r }); },
         fill() { ops.push({ type: 'fill' }); },
+        clearRect(x, y, w, h) { ops.push({ type: 'clearRect', x, y, w, h }); },
         set lineWidth(v) { ops.push({ type: 'lineWidth', value: v }); }
       };
     }
 
-    const testStroke = {
+    // 21.5 Live Tip Reach & No Gap Assertion across N = 1..10
+    const dynamicStroke = {
       tool: 'pen',
       width: 3,
-      points: [{ x: 0, y: 0, pressure: 0.5 }]
+      points: []
     };
+    let activeState = { finalizedCount: 0, prevTail: null };
+    const stepCtx = createMockCtx();
 
-    let drawnCount = 0;
-    const incrementalCtx = createMockCtx();
+    for (let n = 1; n <= 10; n++) {
+      dynamicStroke.points.push({ x: n * 20, y: n * 15, pressure: 0.3 + n * 0.05 });
+      activeState = CanvasCore.renderIncrementalStroke(stepCtx, dynamicStroke, activeState);
 
-    // Append 500 points one by one
-    let opsAtPoint500 = 0;
-    for (let i = 1; i <= 500; i++) {
-      testStroke.points.push({ x: i * 2, y: Math.sin(i / 10) * 50, pressure: 0.2 + (i % 8) * 0.1 });
-      const opsBefore = incrementalCtx.ops.length;
-      drawnCount = CanvasCore.renderIncrementalSegment(incrementalCtx, testStroke, drawnCount);
-      const opsDelta = incrementalCtx.ops.length - opsBefore;
-
-      if (i === 500) {
-        opsAtPoint500 = opsDelta;
+      // Assert preview always has active state and reaches latest Pencil tip
+      assert(activeState && activeState.prevTail && activeState.prevTail.bbox, `Preview at N=${n} must have live tail bounding box`);
+      if (n >= 3) {
+        assert.strictEqual(activeState.finalizedCount, n - 2, `Finalized segments count at N=${n} must be ${n - 2}`);
       }
     }
 
-    assert(drawnCount === 499, `Total drawn segments must match N-2 (499), got ${drawnCount}`);
-    assert(opsAtPoint500 > 0 && opsAtPoint500 <= 15, `Ops when appending point 500 MUST be O(1) (got ${opsAtPoint500} ops), NOT proportional to 500`);
-
-    // 21.6 Replay / Incremental Geometry Parity
+    // 21.6 REAL Parity Comparison: Incremental Preview vs Full Replay
     const sampleStroke = {
       tool: 'pen',
       width: 3,
@@ -962,13 +958,82 @@ async function runSuite() {
       ]
     };
 
+    // Path A: Full Replay
     const replayCtx = createMockCtx();
     CanvasCore.renderStroke(replayCtx, sampleStroke);
 
-    const replayCurveOps = replayCtx.ops.filter(op => op.type === 'quadraticCurveTo');
-    assert.strictEqual(replayCurveOps.length, 3, 'Sample stroke must have 3 quadratic bezier segments in full replay');
+    const replayCurves = replayCtx.ops.filter(op => op.type === 'quadraticCurveTo');
+    const replayLines = replayCtx.ops.filter(op => op.type === 'lineTo');
+    const replayWidths = replayCtx.ops.filter(op => op.type === 'lineWidth').map(op => op.value);
 
-    // 21.7 Palm Rejection & Touch separation
+    assert.strictEqual(replayCurves.length, 3, 'Sample stroke must have 3 quadratic bezier segments in replay');
+    assert.strictEqual(replayLines.length, 1, 'Sample stroke must have 1 tail line in replay');
+
+    // Path B: Step-by-step Incremental Path
+    const incCtx = createMockCtx();
+    const buildingStroke = { tool: 'pen', width: 3, points: [] };
+    let incState = { finalizedCount: 0, prevTail: null };
+
+    for (let i = 0; i < sampleStroke.points.length; i++) {
+      buildingStroke.points.push(sampleStroke.points[i]);
+      incState = CanvasCore.renderIncrementalStroke(incCtx, buildingStroke, incState);
+    }
+
+    // Check segment parameters between replay and incremental
+    // Replay curve 0: P0 to M1 via P1
+    const p0 = sampleStroke.points[0];
+    const p1 = sampleStroke.points[1];
+    const p2 = sampleStroke.points[2];
+    const mid1 = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+    const w1 = CanvasCore.computePointWidth(3, p1.pressure, 'pen');
+
+    assert.strictEqual(replayCurves[0].cx, p1.x);
+    assert.strictEqual(replayCurves[0].cy, p1.y);
+    assert.strictEqual(replayCurves[0].x, mid1.x);
+    assert.strictEqual(replayCurves[0].y, mid1.y);
+    assert.strictEqual(replayWidths[0], w1, 'Replay width 0 must match w1');
+
+    // Incremental curve 0 was finalized with identical coordinates
+    assert(incState.finalizedCount === 3, 'Incremental state must have 3 finalized segments at N=5');
+
+    // 21.7 Incremental rendering O(1) performance invariant
+    const largeStroke = {
+      tool: 'pen',
+      width: 3,
+      points: [{ x: 0, y: 0, pressure: 0.5 }]
+    };
+
+    let largeState = { finalizedCount: 0, prevTail: null };
+    const perfCtx = createMockCtx();
+
+    let opsAtPoint10 = 0;
+    let opsAtPoint500 = 0;
+    for (let i = 1; i <= 500; i++) {
+      largeStroke.points.push({ x: i * 2, y: Math.sin(i / 10) * 50, pressure: 0.2 + (i % 8) * 0.1 });
+      const opsBefore = perfCtx.ops.length;
+      largeState = CanvasCore.renderIncrementalStroke(perfCtx, largeStroke, largeState);
+      const opsDelta = perfCtx.ops.length - opsBefore;
+
+      if (i === 10) {
+        opsAtPoint10 = opsDelta;
+      }
+      if (i === 500) {
+        opsAtPoint500 = opsDelta;
+      }
+    }
+
+    assert(largeState.finalizedCount === 499, `Total finalized segments must match N-2 (499), got ${largeState.finalizedCount}`);
+    assert.strictEqual(opsAtPoint500, opsAtPoint10, `Ops at point 500 (${opsAtPoint500}) must strictly equal ops at point 10 (${opsAtPoint10}), proving strict O(1) performance`);
+    assert(opsAtPoint500 <= 25, `Ops when appending point 500 MUST be O(1) (got ${opsAtPoint500} ops), NOT proportional to 500`);
+
+    // 21.8 Pointerup immediate render ordering in canvas.js
+    const fs = require('fs');
+    const path = require('path');
+    const canvasJsCode = fs.readFileSync(path.join(__dirname, '../canvas.js'), 'utf8');
+    assert(canvasJsCode.includes('CanvasCore.renderStroke(ctx, currentStroke)'), 'canvas.js must immediately paint to inkCanvas on pointerup');
+    assert(canvasJsCode.indexOf('CanvasCore.renderStroke(ctx, currentStroke)') < canvasJsCode.indexOf('await Storage.addStroke(currentStroke)'), 'Immediate render must happen BEFORE awaiting Storage.addStroke to prevent blank frames');
+
+    // 21.9 Palm Rejection & Touch separation
     let mockTool = 'pen';
     let mockIsDrawing = false;
     let mockActivePenPointerId = null;

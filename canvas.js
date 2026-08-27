@@ -108,7 +108,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let isDrawing = false;
   let activePenPointerId = null;
   let currentStroke = null;
-  let strokeDrawnSegments = 0;
+  let activeStrokeState = { finalizedCount: 0, prevTail: null };
   let isPanning = false;
   let isSpacePressed = false;
   let panStart = { x: 0, y: 0 };
@@ -462,7 +462,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if ((e.pointerType === 'pen' || e.pointerType === 'mouse') && (activeTool === 'pen' || activeTool === 'highlighter')) {
       isDrawing = true;
       activePenPointerId = e.pointerId;
-      strokeDrawnSegments = 0;
+      activeStrokeState = { finalizedCount: 0, prevTail: null };
       inkCanvas.setPointerCapture(e.pointerId);
 
       currentStroke = {
@@ -485,6 +485,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         0, viewport.zoom * dpr,
         viewport.panX * dpr, viewport.panY * dpr
       );
+
+      // Render initial live preview (dot)
+      activeStrokeState = CanvasCore.renderIncrementalStroke(scratchCtx, currentStroke, activeStrokeState);
       return;
     }
 
@@ -555,8 +558,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
       }
 
-      // Low-latency incremental rendering: Draw only new segments without clearing or redrawing historical points
-      strokeDrawnSegments = CanvasCore.renderIncrementalSegment(scratchCtx, currentStroke, strokeDrawnSegments);
+      // Low-latency incremental rendering: Finalized Segments + Replaceable Live Tail
+      activeStrokeState = CanvasCore.renderIncrementalStroke(scratchCtx, currentStroke, activeStrokeState);
       return;
     }
 
@@ -595,16 +598,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (isDrawing && currentStroke && e.pointerId === activePenPointerId) {
       isDrawing = false;
       activePenPointerId = null;
-      scratchCtx.clearRect(-100000, -100000, 200000, 200000);
 
       if (currentStroke.points.length > 0) {
+        // Immediate paint to permanent inkCanvas (no blank frame / no disappearing ink!)
+        CanvasCore.renderStroke(ctx, currentStroke);
+        scratchCtx.clearRect(-100000, -100000, 200000, 200000);
+
         strokes.push(currentStroke);
         await Storage.addStroke(currentStroke);
-        renderAllStrokes();
         updateStatusPills();
+      } else {
+        scratchCtx.clearRect(-100000, -100000, 200000, 200000);
       }
       currentStroke = null;
-      strokeDrawnSegments = 0;
+      activeStrokeState = { finalizedCount: 0, prevTail: null };
     }
   }
 
