@@ -650,23 +650,24 @@ async function runSuite() {
     assert.strictEqual(state.audit.find(a => a.action === 'proposal_apply_success').revisionAfter, 2);
   });
 
-  // Test 18: Concept Boundary Gate & Incremental Merge Invariant
-  await test('18. Concept Boundary Gate & Incremental Merge Invariant', async () => {
+  // Test 18: Two-Sided Concept Boundary Gate & Incremental Merge Invariant
+  await test('18. Two-Sided Concept Boundary Gate & Incremental Merge Invariant', async () => {
     const fs = require('fs');
     const path = require('path');
     const workerCode = fs.readFileSync(path.join(__dirname, '../src/worker.js'), 'utf-8');
 
-    // 18.1 Verify system prompt includes Concept Boundary Gate
-    assert(workerCode.includes('PRODUCT RULE: CONCEPT BOUNDARY GATE'), 'worker.js must include CONCEPT BOUNDARY GATE in systemPrompt');
-    assert(workerCode.includes('How does existing concept X work?'), 'worker.js must include 7-question heuristic');
-    assert(workerCode.includes('INDEPENDENCE:'), 'worker.js must include INDEPENDENCE criterion');
-    assert(workerCode.includes('REUSE:'), 'worker.js must include REUSE criterion');
+    // 18.1 Verify system prompt includes Two-Sided Concept Boundary Gate
+    assert(workerCode.includes('PRODUCT RULE: TWO-SIDED CONCEPT BOUNDARY GATE'), 'worker.js must include TWO-SIDED CONCEPT BOUNDARY GATE in systemPrompt');
+    assert(workerCode.includes('ATTACHMENT TEST -> ENRICH EXISTING CONCEPT'), 'worker.js must include ATTACHMENT TEST');
+    assert(workerCode.includes('INDEPENDENCE ESCAPE HATCH -> ADD NEW CONCEPT'), 'worker.js must include INDEPENDENCE ESCAPE HATCH');
+    assert(workerCode.includes('COUNTERFACTUAL INDEPENDENCE:'), 'worker.js must include COUNTERFACTUAL INDEPENDENCE criterion');
+    assert(workerCode.includes('SCOPE / GENERALITY:'), 'worker.js must include SCOPE / GENERALITY criterion');
 
-    // 18.2 Verify explicit negative & positive examples exist
-    assert(workerCode.includes('add_concept: "Scheduled Reviews"'), 'worker.js must explicitly forbid Scheduled Reviews satellite node');
-    assert(workerCode.includes('Enriched Spaced Repetition'), 'worker.js must provide Spaced Repetition enrichment positive example');
-    assert(workerCode.includes('add_concept: "Retrieving Before Seeing"'), 'worker.js must forbid Active Recall fragmentation');
-    assert(workerCode.includes('add_concept: "Heating and Cooling Cycles"'), 'worker.js must forbid PCR thermal cycling fragmentation');
+    // 18.2 Verify balanced decision examples exist
+    assert(workerCode.includes('Testing Effect'), 'worker.js must provide Testing Effect independent concept example');
+    assert(workerCode.includes('Primer Design'), 'worker.js must provide Primer Design independent concept example');
+    assert(workerCode.includes('Enriched Active Recall'), 'worker.js must provide Active Recall enrichment example');
+    assert(workerCode.includes('Enriched PCR'), 'worker.js must provide PCR enrichment example');
   });
 
   assert.strictEqual(networkCallsAttempted, 0, 'verify-v2.js MUST execute with ZERO network calls');

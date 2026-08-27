@@ -1040,107 +1040,79 @@ export class DetectiveMapWorkspace {
 Your goal: Analyze new learning material against an existing map of concepts and output an INCREMENTAL JSON PATCH.
 
 --------------------------------------------------
-PRODUCT RULE: CONCEPT BOUNDARY GATE
+PRODUCT RULE: TWO-SIDED CONCEPT BOUNDARY GATE
 --------------------------------------------------
-Before generating ANY "add_concept" operation, you MUST strictly evaluate:
-"Is this genuinely an independent reusable concept, or is it an attribute / mechanism / explanation / example / condition / consequence / implementation detail of an existing concept?"
+Evaluate BOTH directions (Attachment vs Independence) before choosing between "enrich_concept" and "add_concept":
 
-If the new information primarily answers questions such as:
-- How does existing concept X work? (e.g. scheduling repeated reviews across time)
-- Why does X work? (e.g. spacing effect, preventing cognitive decay)
-- When does X work?
-- What property does X have?
-- What is one example of X?
-- What condition makes X effective?
-- What is one consequence of X?
+A. ATTACHMENT TEST -> ENRICH EXISTING CONCEPT
+Use "enrich_concept" when the new information primarily represents:
+- A mechanism, inner working, or step of an existing concept X
+- A property, attribute, or parameter of X
+- An implementation detail, rule of thumb, or variation of X
+- A condition, constraint, example, or direct consequence of X
+- An explanation of how/why X works
+AND the statement substantially DEPENDS on X for its meaning and context.
 
-YOU MUST DEFAULT TO:
-"enrich_concept" targeting existing concept X.
+B. INDEPENDENCE ESCAPE HATCH -> ADD NEW CONCEPT
+A candidate MUST NOT be absorbed into existing concept X when evidence shows it has independent identity. Use "add_concept" when:
+1. COUNTERFACTUAL INDEPENDENCE: "If concept X did not exist, would this idea still be meaningful and true on its own?"
+   (Semantic indicators: the text states the phenomenon occurs "even without X", "independent of X", "outside X", or "is not limited to X").
+2. SCOPE / GENERALITY: The candidate is broader than X (e.g., an overarching principle where X is merely one application), parallel to X, or represents an independent theory/framework.
+3. REUSE: The candidate could plausibly connect to multiple distinct concepts across diverse fields.
+4. STANDALONE IDENTITY: The candidate can be defined, researched, or taught independently of X.
 
-DO NOT create a new node merely because a noun phrase can be extracted from the sentence.
-
-A new Concept should normally satisfy BOTH criteria:
-1. INDEPENDENCE: It can be meaningfully understood and discussed independently of the current parent concept in a general knowledge context.
-2. REUSE: It could plausibly connect to multiple distinct concepts or appear again across different sources/contexts.
-
-If EITHER Independence or Reuse is weak, you MUST PREFER "enrich_concept".
+CORE DECISION PRINCIPLE:
+- If the idea DEPENDS on an existing concept for its identity -> enrich that concept.
+- If the idea HAS INDEPENDENT IDENTITY and broader/parallel scope beyond the existing concept -> add_concept (and link with add_edge).
+- When evidence is genuinely ambiguous, prefer preserving the correct conceptual scope rather than minimizing node count.
 
 --------------------------------------------------
-EXPLICIT DECISION EXAMPLES
+BALANCED DECISION EXAMPLES
 --------------------------------------------------
 
-Example 1 (Mechanism of existing concept -> ENRICH ONLY):
-Existing Concepts: [{"id": "c_1", "label": "Spaced Repetition", "description": "Improves long-term retention by increasing the interval between successful reviews."}]
-Input: "Spaced repetition works by scheduling repeated reviews of the same material across time, rather than massing those reviews together in one session."
-WRONG:
-  add_concept: "Scheduled Reviews"
-  add_edge: Spaced Repetition -> Scheduled Reviews
-RIGHT:
+[Example 1: Specific detail -> ENRICH]
+Existing Concepts: [{"id": "c_1", "label": "Active Recall", "description": "Testing memory retrieval directly."}]
+Input: "Active recall is harder when retrieval cues are removed."
+Output:
 {
-  "summary": "Enriched Spaced Repetition with distributed scheduling mechanism.",
+  "summary": "Enriched Active Recall with cue removal difficulty factor.",
   "operations": [
-    {
-      "op": "enrich_concept",
-      "conceptId": "c_1",
-      "addition": "Works by distributing repeated reviews of the same material across time rather than massing them within one session."
-    }
+    { "op": "enrich_concept", "conceptId": "c_1", "addition": "Retrieval practice becomes significantly harder when contextual cues are removed." }
   ]
 }
 
-Example 2 (Implementation detail of existing concept -> ENRICH ONLY):
-Existing Concepts: [{"id": "c_2", "label": "Active Recall", "description": "Active retrieval of information from memory."}]
-Input: "Active recall requires retrieving an answer before seeing it."
-WRONG:
-  add_concept: "Retrieving Before Seeing"
-RIGHT:
+[Example 2: Broader independent phenomenon -> ADD + EDGE]
+Existing Concepts: [{"id": "c_1", "label": "Active Recall", "description": "Testing memory retrieval directly."}]
+Input: "The testing effect is a broader memory phenomenon where the act of retrieving information strengthens retention across many testing formats, even without formal study techniques."
+Output:
 {
-  "summary": "Enriched Active Recall with retrieval sequence requirement.",
+  "summary": "Added Testing Effect as an independent memory phenomenon linked to Active Recall.",
   "operations": [
-    {
-      "op": "enrich_concept",
-      "conceptId": "c_2",
-      "addition": "Requires retrieving an answer from memory before seeing the reference solution."
-    }
+    { "op": "add_concept", "tempId": "tmp_1", "label": "Testing Effect", "description": "Broad memory phenomenon where information retrieval strengthens retention across varied formats." },
+    { "op": "add_edge", "from": "c_1", "to": "tmp_1", "relation": "is an application of", "label": "practical study application" }
   ]
 }
 
-Example 3 (Process mechanism of existing concept -> ENRICH ONLY):
-Existing Concepts: [{"id": "c_3", "label": "PCR", "description": "Polymerase chain reaction for DNA amplification."}]
-Input: "PCR uses repeated heating and cooling cycles to amplify DNA."
-WRONG:
-  add_concept: "Heating and Cooling Cycles"
-RIGHT:
+[Example 3: Dependent requirement -> ENRICH]
+Existing Concepts: [{"id": "c_2", "label": "PCR", "description": "Polymerase chain reaction for DNA amplification."}]
+Input: "PCR requires specific primers that flank the target sequence to initiate synthesis."
+Output:
 {
-  "summary": "Enriched PCR with thermal cycling amplification mechanism.",
+  "summary": "Enriched PCR with primer sequence flanking requirement.",
   "operations": [
-    {
-      "op": "enrich_concept",
-      "conceptId": "c_3",
-      "addition": "Uses repeated heating and cooling thermal cycles to amplify DNA sequences."
-    }
+    { "op": "enrich_concept", "conceptId": "c_2", "addition": "Requires specific forward and reverse primers that flank the target DNA sequence." }
   ]
 }
 
-Example 4 (Independent Standalone Concept -> ADD + EDGE):
-Existing Concepts: [{"id": "c_1", "label": "Spaced Repetition", "description": "Improves retention."}]
-Input: "The spacing effect is a broader psychological phenomenon where learning distributed across time improves retention compared with massed practice."
-RIGHT:
+[Example 4: General independent methodology -> ADD + EDGE]
+Existing Concepts: [{"id": "c_2", "label": "PCR", "description": "Polymerase chain reaction for DNA amplification."}]
+Input: "Primer design is a general molecular biology task used across PCR, sequencing, cloning, and diagnostic workflows."
+Output:
 {
-  "summary": "Added Spacing Effect as an independent psychological phenomenon and linked to Spaced Repetition.",
+  "summary": "Added Primer Design as an independent molecular biology discipline.",
   "operations": [
-    {
-      "op": "add_concept",
-      "tempId": "tmp_1",
-      "label": "Spacing Effect",
-      "description": "Broader psychological phenomenon where learning distributed across time improves retention compared with massed practice."
-    },
-    {
-      "op": "add_edge",
-      "from": "c_1",
-      "to": "tmp_1",
-      "relation": "exploits",
-      "label": "practical application of spacing effect"
-    }
+    { "op": "add_concept", "tempId": "tmp_1", "label": "Primer Design", "description": "General molecular biology methodology for creating oligonucleotide sequences for PCR, sequencing, and cloning." },
+    { "op": "add_edge", "from": "tmp_1", "to": "c_2", "relation": "used in", "label": "essential prerequisite" }
   ]
 }
 
@@ -1157,7 +1129,7 @@ SCHEMA:
 
 OUTPUT RULES:
 1. Pure valid JSON only matching the schema. No markdown commentary or codeblocks.
-2. EXACT GROUNDING: conceptId in "enrich_concept" MUST be an exact "id" from the "Existing Concepts" list below. NEVER copy IDs from the examples above (like c_1, c_2, c_3).
+2. EXACT GROUNDING: conceptId in "enrich_concept" MUST be an exact "id" from the "Existing Concepts" list below. NEVER copy example IDs (e.g. c_1, c_2).
 3. COLD START RULE: When "Existing Concepts" is empty ([]), there are NO existing nodes to enrich. You MUST use "add_concept" for the key concept(s) introduced in the content.
 4. Every operation must be strictly grounded in the new content.`;
 

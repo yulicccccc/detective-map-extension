@@ -34,10 +34,13 @@ Side Panel / Canvas UI (Interactive Map + Apply All / Review + Durable Stale Rec
   - Full pan/zoom viewport in narrow Side Panel with responsive card widths.
   - Live concept node dragging, inline title/description editing, evidence drawer, and connection edges.
   - `↗ Expand` button in header opens full standalone dual-canvas workspace.
-- **Workers AI Ingestion Engine & Concept Boundary Policy**:
+- **Workers AI Ingestion Engine & Two-Sided Concept Boundary Policy**:
   - Model: `@cf/meta/llama-3.1-8b-instruct-fast` (with automatic fallback to `@cf/meta/llama-3.3-70b-instruct-fp8-fast`, `@cf/meta/llama-3-8b-instruct`).
   - Structured JSON Mode: `response_format: { type: 'json_object' }`.
-  - **Concept Boundary & Incremental Merge Policy**: High cognitive density principle (prefer enrichment over node fragmentation). Mechanisms, definitions, schedule rules, implementation details, and properties of existing concepts MUST generate `enrich_concept` on target concept ID rather than spawning fragmented satellite nodes (e.g. "Scheduled Reviews" merged into "Spaced Repetition").
+  - **Two-Sided Concept Boundary Policy**:
+    - *Attachment Test (Anti-Fragmentation)*: Mechanisms, parameters, implementation steps, conditions, and explanations that depend on an existing concept $X$ MUST generate `enrich_concept` on $X$.
+    - *Independence Escape Hatch (Anti-Over-Merging)*: Claims that have independent identity (counterfactually true even without $X$, broader/parallel conceptual scope, or general reusable methodology) MUST generate `add_concept` (e.g. `Distributed Learning` as a broader phenomenon, `Testing Effect`, `Primer Design`, `Cellular Respiration`).
+    - *Decision Principle*: Replaced naive "if uncertain -> enrich" with scope-preserving dual evaluation (Attachment vs Independence).
   - Zero mock AI: Live end-to-end verified with real text ingestion and proposal extraction in 1.5–2.0s.
 - **Durable Proposal Lifecycle & Stale Recovery Across Reloads**:
   - Automatic `fetchRemoteState()` on startup and workspace switch.

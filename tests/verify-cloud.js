@@ -566,70 +566,182 @@ async function runCloudVerification() {
 
   console.log('  ✓ PASS: Live server-side Mutation Audit Trail fully verified (provenance guard, atomic enrich_concept, 0 reload mutations, 0 content leaks)');
 
-  // Test 14: Real Browser Failure Regression Fixture — Concept Boundary Gate (Spaced Repetition Mechanism)
-  console.log('\n[Test 14] Real Browser Failure Regression Fixture — Concept Boundary Gate (Spaced Repetition)...');
-  const resWsBoundary = await fetch(`${WORKER_BASE}/api/workspaces`, {
+  // Test 14: Two-Sided Concept Boundary — Anti-Over-Merging Real Browser Regression
+  console.log('\n[Test 14] Two-Sided Concept Boundary — Anti-Over-Merging Regression (Distributed Learning)...');
+  const resWsOverMerge = await fetch(`${WORKER_BASE}/api/workspaces`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
-    body: JSON.stringify({ title: `__TEST__ CONCEPT_BOUNDARY_${Date.now()}` })
+    body: JSON.stringify({ title: `__TEST__ OVER_MERGE_${Date.now()}` })
   });
-  const { workspace: wsBoundary } = await resWsBoundary.json();
-  assert(wsBoundary && wsBoundary.id, 'Must create temp test workspace');
-  createdTestWsIds.push(wsBoundary.id);
+  const { workspace: wsOverMerge } = await resWsOverMerge.json();
+  assert(wsOverMerge && wsOverMerge.id, 'Must create temp test workspace');
+  createdTestWsIds.push(wsOverMerge.id);
 
   // 14.1 Create base Spaced Repetition concept
-  const resBaseConcept = await fetch(`${WORKER_BASE}/api/concepts`, {
+  const resBaseSpaced = await fetch(`${WORKER_BASE}/api/concepts`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
     body: JSON.stringify({
-      workspaceId: wsBoundary.id,
+      workspaceId: wsOverMerge.id,
       label: 'Spaced Repetition',
       description: 'Improves long-term retention by increasing the interval between successful reviews.'
     })
   });
-  const { concept: baseSpacedConcept } = await resBaseConcept.json();
-  assert(baseSpacedConcept && baseSpacedConcept.id, 'Must create base concept');
+  const { concept: baseSpacedConcept } = await resBaseSpaced.json();
 
-  // 14.2 Ingest the exact real-browser failure sentence
-  const exactBrowserFailureText = 'Spaced repetition works by scheduling repeated reviews of the same material across time, rather than massing those reviews together in one session.';
-  const resSrcBoundary = await fetch(`${WORKER_BASE}/api/sources`, {
+  // 14.2 Ingest the real browser failure sentence (independent broader concept)
+  const realBrowserOverMergeSentence = 'Distributed learning tends to produce better long-term retention than completing the same amount of study in one concentrated session, even when no spaced-repetition algorithm is used.';
+  const resSrcOverMerge = await fetch(`${WORKER_BASE}/api/sources`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
     body: JSON.stringify({
-      workspaceId: wsBoundary.id,
-      title: 'Spaced Repetition Mechanism',
-      text: exactBrowserFailureText
+      workspaceId: wsOverMerge.id,
+      title: 'Distributed Learning Article',
+      text: realBrowserOverMergeSentence
     })
   });
-  assert.strictEqual(resSrcBoundary.status, 200);
+  assert.strictEqual(resSrcOverMerge.status, 200);
 
   // 14.3 Poll for AI proposal
-  let boundaryProp = null;
-  const startBoundaryPoll = Date.now();
-  while (Date.now() - startBoundaryPoll < 60000) {
+  let overMergeProp = null;
+  const startOverMergePoll = Date.now();
+  while (Date.now() - startOverMergePoll < 60000) {
     await new Promise(r => setTimeout(r, 2000));
-    const resState = await fetch(`${WORKER_BASE}/api/state?workspaceId=${wsBoundary.id}`, {
+    const resState = await fetch(`${WORKER_BASE}/api/state?workspaceId=${wsOverMerge.id}`, {
       headers: { 'Authorization': `Bearer ${aiToken}` }
     });
     const stateData = await resState.json();
     if (stateData.proposals && stateData.proposals.length > 0) {
-      boundaryProp = stateData.proposals[0];
+      overMergeProp = stateData.proposals[0];
       break;
     }
   }
-  assert(boundaryProp, 'AI must generate a proposal for boundary test');
+  assert(overMergeProp, 'AI must generate a proposal for over-merge test');
 
-  // 14.4 Assertions: MUST contain enrich_concept on baseSpacedConcept, MUST NOT contain add_concept "Scheduled Reviews"
-  const ops = boundaryProp.operations;
-  const hasTargetEnrich = ops.some(op => op.op === 'enrich_concept' && op.conceptId === baseSpacedConcept.id);
-  const hasScheduledReviewsConcept = ops.some(op => op.op === 'add_concept' && (op.label || '').toLowerCase().includes('scheduled reviews'));
-  const addConceptOps = ops.filter(op => op.op === 'add_concept');
+  // 14.4 Assertions: MUST contain add_concept for Distributed Learning/Practice, MUST NOT be sole enrich_concept on Spaced Repetition
+  const overMergeOps = overMergeProp.operations;
+  const hasDistributedConcept = overMergeOps.some(op => op.op === 'add_concept' && /distributed\s*(learning|practice)/i.test(op.label || ''));
+  const onlyEnrichSpaced = overMergeOps.length === 1 && overMergeOps[0].op === 'enrich_concept' && overMergeOps[0].conceptId === baseSpacedConcept.id;
 
-  assert(hasTargetEnrich, 'Proposal MUST contain enrich_concept targeting existing Spaced Repetition concept');
-  assert(!hasScheduledReviewsConcept, 'Proposal MUST NOT contain add_concept for "Scheduled Reviews"');
-  assert.strictEqual(addConceptOps.length, 0, 'Proposal MUST NOT create any new concept for pure mechanism input (expected 0 add_concept)');
+  assert(hasDistributedConcept, 'Proposal MUST contain add_concept for Distributed Learning / Practice (Counterfactual Independence)');
+  assert(!onlyEnrichSpaced, 'Proposal MUST NOT solely enrich Spaced Repetition for independent concept');
+  console.log('  ✓ PASS: Two-Sided Boundary Anti-Over-Merging verified — Distributed Learning created as independent concept (+1 Concept)');
 
-  console.log('  ✓ PASS: Concept Boundary Gate verified — Mechanism merged into existing concept (+0 Concepts, ~1 Enrichment)');
+  // Test 15: Cross-Domain Generalization Independence Test (Photosynthesis vs Cellular Respiration)
+  console.log('\n[Test 15] Cross-Domain Generalization Independence Test (Biology: Cellular Respiration vs Photosynthesis)...');
+  const resWsBio = await fetch(`${WORKER_BASE}/api/workspaces`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({ title: `__TEST__ BIO_INDEPENDENCE_${Date.now()}` })
+  });
+  const { workspace: wsBio } = await resWsBio.json();
+  assert(wsBio && wsBio.id, 'Must create temp test workspace');
+  createdTestWsIds.push(wsBio.id);
+
+  // 15.1 Create base Photosynthesis concept
+  const resBasePhoto = await fetch(`${WORKER_BASE}/api/concepts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({
+      workspaceId: wsBio.id,
+      label: 'Photosynthesis',
+      description: 'Process by which green plants and some organisms use sunlight to synthesize nutrients from carbon dioxide and water.'
+    })
+  });
+  const { concept: basePhotoConcept } = await resBasePhoto.json();
+
+  // 15.2 Ingest Cellular Respiration text (independent process)
+  const bioSentence = 'Cellular respiration releases usable energy from organic molecules and also occurs in organisms that do not perform photosynthesis.';
+  const resSrcBio = await fetch(`${WORKER_BASE}/api/sources`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({
+      workspaceId: wsBio.id,
+      title: 'Cellular Energetics',
+      text: bioSentence
+    })
+  });
+  assert.strictEqual(resSrcBio.status, 200);
+
+  // 15.3 Poll for AI proposal
+  let bioProp = null;
+  const startBioPoll = Date.now();
+  while (Date.now() - startBioPoll < 60000) {
+    await new Promise(r => setTimeout(r, 2000));
+    const resState = await fetch(`${WORKER_BASE}/api/state?workspaceId=${wsBio.id}`, {
+      headers: { 'Authorization': `Bearer ${aiToken}` }
+    });
+    const stateData = await resState.json();
+    if (stateData.proposals && stateData.proposals.length > 0) {
+      bioProp = stateData.proposals[0];
+      break;
+    }
+  }
+  assert(bioProp, 'AI must generate a proposal for bio independence test');
+
+  // 15.4 Assertions: MUST contain add_concept for Cellular Respiration, MUST NOT solely enrich Photosynthesis
+  const bioOps = bioProp.operations;
+  const hasRespirationConcept = bioOps.some(op => op.op === 'add_concept' && /cellular\s*respiration|respiration/i.test(op.label || ''));
+  const onlyEnrichPhoto = bioOps.length === 1 && bioOps[0].op === 'enrich_concept' && bioOps[0].conceptId === basePhotoConcept.id;
+
+  assert(hasRespirationConcept, 'Proposal MUST contain add_concept for Cellular Respiration');
+  assert(!onlyEnrichPhoto, 'Proposal MUST NOT solely enrich Photosynthesis for independent metabolic process');
+  console.log('  ✓ PASS: Cross-Domain Generalization verified — Cellular Respiration created as independent concept (+1 Concept)');
+
+  // Test 16: Anti-Fragmentation Regression — Spaced Repetition Mechanism
+  console.log('\n[Test 16] Anti-Fragmentation Regression (Mechanism input MUST enrich and NOT create satellite nodes)...');
+  const resWsFrag = await fetch(`${WORKER_BASE}/api/workspaces`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({ title: `__TEST__ FRAG_GUARD_${Date.now()}` })
+  });
+  const { workspace: wsFrag } = await resWsFrag.json();
+  assert(wsFrag && wsFrag.id, 'Must create temp test workspace');
+  createdTestWsIds.push(wsFrag.id);
+
+  const resBaseFrag = await fetch(`${WORKER_BASE}/api/concepts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({
+      workspaceId: wsFrag.id,
+      label: 'Spaced Repetition',
+      description: 'Improves long-term retention by increasing the interval between successful reviews.'
+    })
+  });
+  const { concept: baseFragConcept } = await resBaseFrag.json();
+
+  const fragText = 'Spaced repetition works by scheduling repeated reviews across time, rather than massing those reviews together in one session.';
+  await fetch(`${WORKER_BASE}/api/sources`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({
+      workspaceId: wsFrag.id,
+      title: 'Mechanism Input',
+      text: fragText
+    })
+  });
+
+  let fragProp = null;
+  const startFragPoll = Date.now();
+  while (Date.now() - startFragPoll < 60000) {
+    await new Promise(r => setTimeout(r, 2000));
+    const resState = await fetch(`${WORKER_BASE}/api/state?workspaceId=${wsFrag.id}`, {
+      headers: { 'Authorization': `Bearer ${aiToken}` }
+    });
+    const stateData = await resState.json();
+    if (stateData.proposals && stateData.proposals.length > 0) {
+      fragProp = stateData.proposals[0];
+      break;
+    }
+  }
+  assert(fragProp, 'AI must generate a proposal for fragmentation test');
+  const fragOps = fragProp.operations;
+  const hasFragEnrich = fragOps.some(op => op.op === 'enrich_concept' && op.conceptId === baseFragConcept.id);
+  const fragAddOps = fragOps.filter(op => op.op === 'add_concept');
+
+  assert(hasFragEnrich, 'Mechanism proposal MUST contain enrich_concept targeting Spaced Repetition');
+  assert.strictEqual(fragAddOps.length, 0, 'Mechanism proposal MUST NOT create any new satellite concept nodes');
+  console.log('  ✓ PASS: Anti-Fragmentation verified — Mechanism correctly enriched existing concept (+0 Concepts, ~1 Enrichment)');
   } finally {
     // GUARANTEED CLEANUP OF ALL TEMPORARY TEST RESOURCES WITH POST-DELETION VERIFICATION
     if (createdTestWsIds.length > 0 && aiToken) {

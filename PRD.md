@@ -225,11 +225,11 @@ AI returns a **structured patch**, not a whole replacement map.
 
 AI must not directly emit destructive `delete_concept` operations as automatic actions.
 
-## 6.4 Concept Boundary & Incremental Merge Policy
+## 6.4 Two-Sided Concept Boundary & Merge Policy
 
-Before proposing a new concept, AI strictly evaluates whether incoming information represents a new standalone subject or an incremental refinement of an existing node:
-- **Prefer Enrichment over Fragmentation (High Cognitive Density)**: Mechanisms, definitions, schedule rules, implementation steps, examples, or properties of an existing concept MUST generate `enrich_concept` targeting the parent concept ID. AI is strictly forbidden from creating fragmented satellite nodes (e.g. creating "Scheduled Reviews", "Review Timing", or "Increasing Intervals" when "Spaced Repetition" already exists).
-- **Standalone Concept Threshold**: `add_concept` is reserved exclusively for distinct, independent mental models or theories that have their own identity outside existing concepts (e.g. "Active Recall", "Forgetting Curve").
+Before proposing an operation, AI evaluates both directions (Attachment vs Independence) to balance cognitive density with conceptual accuracy:
+- **Attachment Test (Anti-Fragmentation)**: Mechanisms, definitions, schedule rules, implementation steps, examples, or properties that depend on an existing concept $X$ MUST generate `enrich_concept` targeting $X$. AI is strictly forbidden from creating fragmented satellite nodes for sub-mechanisms.
+- **Independence Escape Hatch (Anti-Over-Merging)**: Claims that have independent identity (counterfactually true without $X$, broader/parallel conceptual scope, or general reusable methodology across domains) MUST generate `add_concept` (and link via `add_edge`) rather than being improperly absorbed into $X$ (e.g. `Distributed Learning` as a broader phenomenon, `Testing Effect`, `Primer Design`, `Cellular Respiration`).
 - **Deduplication**: Semantic equivalents enrich existing concepts or create merge suggestions rather than duplicating nodes.
 
 ## 6.5 Long Source Processing
