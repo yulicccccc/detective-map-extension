@@ -1039,60 +1039,107 @@ export class DetectiveMapWorkspace {
         const systemPrompt = `You are the core knowledge graph extraction engine of Detective Map (Living Map).
 Your goal: Analyze new learning material against an existing map of concepts and output an INCREMENTAL JSON PATCH.
 
-CORE PRINCIPLE: PREFER ENRICHMENT OVER NODE FRAGMENTATION (HIGH COGNITIVE DENSITY)
-A Concept Node represents a major, standalone mental model or independent subject (e.g. "Spaced Repetition", "Active Recall", "Forgetting Curve").
-A Concept Node is NEVER a single clause, action, sub-mechanism, schedule rule, or definition of an existing concept.
+--------------------------------------------------
+PRODUCT RULE: CONCEPT BOUNDARY GATE
+--------------------------------------------------
+Before generating ANY "add_concept" operation, you MUST strictly evaluate:
+"Is this genuinely an independent reusable concept, or is it an attribute / mechanism / explanation / example / condition / consequence / implementation detail of an existing concept?"
 
-CONCEPT BOUNDARY & MERGE POLICY:
-1. ALWAYS USE "enrich_concept" (NEVER "add_concept") IF:
-   - The text explains HOW an existing concept works (mechanism, schedule, timing, algorithm).
-   - The text explains WHY an existing concept works (benefits, rationale, properties).
-   - The text gives implementation details, rules, examples, or variations of an existing concept.
-   - Example: If "Spaced Repetition" already exists, DO NOT create nodes like "Scheduled Reviews", "Distributed Practice", "Review Timing", or "Increasing Intervals". These are MECHANISMS of Spaced Repetition and MUST be merged as an "enrich_concept" operation targeting the Spaced Repetition concept ID.
+If the new information primarily answers questions such as:
+- How does existing concept X work? (e.g. scheduling repeated reviews across time)
+- Why does X work? (e.g. spacing effect, preventing cognitive decay)
+- When does X work?
+- What property does X have?
+- What is one example of X?
+- What condition makes X effective?
+- What is one consequence of X?
 
-2. ONLY USE "add_concept" IF:
-   - The text introduces a genuinely DISTINCT, STANDALONE concept or independent theory that has its own identity outside existing concepts.
-   - If in doubt between "add_concept" and "enrich_concept" for a related idea, ALWAYS CHOOSE "enrich_concept".
+YOU MUST DEFAULT TO:
+"enrich_concept" targeting existing concept X.
 
-3. USE "add_edge" TO:
-   - Connect a newly added concept to related concepts, or express an explicit causal/functional link stated in the text.
+DO NOT create a new node merely because a noun phrase can be extracted from the sentence.
 
-EXAMPLES:
+A new Concept should normally satisfy BOTH criteria:
+1. INDEPENDENCE: It can be meaningfully understood and discussed independently of the current parent concept in a general knowledge context.
+2. REUSE: It could plausibly connect to multiple distinct concepts or appear again across different sources/contexts.
 
-Case 1 (Mechanism/Definition of Existing Concept -> ENRICH ONLY):
-Existing Concepts: [{"id": "c_1", "label": "Spaced Repetition", "description": "Increases retention."}]
+If EITHER Independence or Reuse is weak, you MUST PREFER "enrich_concept".
+
+--------------------------------------------------
+EXPLICIT DECISION EXAMPLES
+--------------------------------------------------
+
+Example 1 (Mechanism of existing concept -> ENRICH ONLY):
+Existing Concepts: [{"id": "c_1", "label": "Spaced Repetition", "description": "Improves long-term retention by increasing the interval between successful reviews."}]
 Input: "Spaced repetition works by scheduling repeated reviews of the same material across time, rather than massing those reviews together in one session."
-Correct Output:
+WRONG:
+  add_concept: "Scheduled Reviews"
+  add_edge: Spaced Repetition -> Scheduled Reviews
+RIGHT:
 {
   "summary": "Enriched Spaced Repetition with distributed scheduling mechanism.",
   "operations": [
     {
       "op": "enrich_concept",
       "conceptId": "c_1",
-      "addition": "Works by scheduling repeated reviews across time rather than massing them in a single session."
+      "addition": "Works by distributing repeated reviews of the same material across time rather than massing them within one session."
     }
   ]
 }
 
-Case 2 (Independent New Concept -> ADD + EDGE):
-Existing Concepts: [{"id": "c_1", "label": "Spaced Repetition", "description": "Increases retention."}]
-Input: "Active recall is the practice of retrieving information from memory without looking at notes, stimulating neural plasticity."
-Correct Output:
+Example 2 (Implementation detail of existing concept -> ENRICH ONLY):
+Existing Concepts: [{"id": "c_2", "label": "Active Recall", "description": "Active retrieval of information from memory."}]
+Input: "Active recall requires retrieving an answer before seeing it."
+WRONG:
+  add_concept: "Retrieving Before Seeing"
+RIGHT:
 {
-  "summary": "Added Active Recall as a standalone learning method.",
+  "summary": "Enriched Active Recall with retrieval sequence requirement.",
+  "operations": [
+    {
+      "op": "enrich_concept",
+      "conceptId": "c_2",
+      "addition": "Requires retrieving an answer from memory before seeing the reference solution."
+    }
+  ]
+}
+
+Example 3 (Process mechanism of existing concept -> ENRICH ONLY):
+Existing Concepts: [{"id": "c_3", "label": "PCR", "description": "Polymerase chain reaction for DNA amplification."}]
+Input: "PCR uses repeated heating and cooling cycles to amplify DNA."
+WRONG:
+  add_concept: "Heating and Cooling Cycles"
+RIGHT:
+{
+  "summary": "Enriched PCR with thermal cycling amplification mechanism.",
+  "operations": [
+    {
+      "op": "enrich_concept",
+      "conceptId": "c_3",
+      "addition": "Uses repeated heating and cooling thermal cycles to amplify DNA sequences."
+    }
+  ]
+}
+
+Example 4 (Independent Standalone Concept -> ADD + EDGE):
+Existing Concepts: [{"id": "c_1", "label": "Spaced Repetition", "description": "Improves retention."}]
+Input: "The spacing effect is a broader psychological phenomenon where learning distributed across time improves retention compared with massed practice."
+RIGHT:
+{
+  "summary": "Added Spacing Effect as an independent psychological phenomenon and linked to Spaced Repetition.",
   "operations": [
     {
       "op": "add_concept",
       "tempId": "tmp_1",
-      "label": "Active Recall",
-      "description": "Testing memory retrieval directly without looking at reference material."
+      "label": "Spacing Effect",
+      "description": "Broader psychological phenomenon where learning distributed across time improves retention compared with massed practice."
     },
     {
       "op": "add_edge",
-      "from": "tmp_1",
-      "to": "c_1",
-      "relation": "synergizes with",
-      "label": "combined in optimal study systems"
+      "from": "c_1",
+      "to": "tmp_1",
+      "relation": "exploits",
+      "label": "practical application of spacing effect"
     }
   ]
 }
@@ -1109,9 +1156,10 @@ SCHEMA:
 }
 
 OUTPUT RULES:
-1. Pure valid JSON only matching the schema. No markdown codeblocks or commentary.
-2. conceptId in enrich_concept must be the EXACT ID from Existing Concepts list.
-3. Every operation must be strictly grounded in the new content.`;
+1. Pure valid JSON only matching the schema. No markdown commentary or codeblocks.
+2. EXACT GROUNDING: conceptId in "enrich_concept" MUST be an exact "id" from the "Existing Concepts" list below. NEVER copy IDs from the examples above (like c_1, c_2, c_3).
+3. COLD START RULE: When "Existing Concepts" is empty ([]), there are NO existing nodes to enrich. You MUST use "add_concept" for the key concept(s) introduced in the content.
+4. Every operation must be strictly grounded in the new content.`;
 
         const userPrompt = `Existing Concepts:
 ${JSON.stringify(currentConcepts.map(c => ({ id: c.id, label: c.label, description: c.description })), null, 2)}

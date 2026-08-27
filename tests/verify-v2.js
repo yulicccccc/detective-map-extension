@@ -650,6 +650,25 @@ async function runSuite() {
     assert.strictEqual(state.audit.find(a => a.action === 'proposal_apply_success').revisionAfter, 2);
   });
 
+  // Test 18: Concept Boundary Gate & Incremental Merge Invariant
+  await test('18. Concept Boundary Gate & Incremental Merge Invariant', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const workerCode = fs.readFileSync(path.join(__dirname, '../src/worker.js'), 'utf-8');
+
+    // 18.1 Verify system prompt includes Concept Boundary Gate
+    assert(workerCode.includes('PRODUCT RULE: CONCEPT BOUNDARY GATE'), 'worker.js must include CONCEPT BOUNDARY GATE in systemPrompt');
+    assert(workerCode.includes('How does existing concept X work?'), 'worker.js must include 7-question heuristic');
+    assert(workerCode.includes('INDEPENDENCE:'), 'worker.js must include INDEPENDENCE criterion');
+    assert(workerCode.includes('REUSE:'), 'worker.js must include REUSE criterion');
+
+    // 18.2 Verify explicit negative & positive examples exist
+    assert(workerCode.includes('add_concept: "Scheduled Reviews"'), 'worker.js must explicitly forbid Scheduled Reviews satellite node');
+    assert(workerCode.includes('Enriched Spaced Repetition'), 'worker.js must provide Spaced Repetition enrichment positive example');
+    assert(workerCode.includes('add_concept: "Retrieving Before Seeing"'), 'worker.js must forbid Active Recall fragmentation');
+    assert(workerCode.includes('add_concept: "Heating and Cooling Cycles"'), 'worker.js must forbid PCR thermal cycling fragmentation');
+  });
+
   assert.strictEqual(networkCallsAttempted, 0, 'verify-v2.js MUST execute with ZERO network calls');
   console.log(`  ✓ VERIFIED: Zero (0) network calls attempted during verify-v2 execution.`);
 

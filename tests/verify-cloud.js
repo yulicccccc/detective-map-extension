@@ -565,6 +565,71 @@ async function runCloudVerification() {
   }
 
   console.log('  ✓ PASS: Live server-side Mutation Audit Trail fully verified (provenance guard, atomic enrich_concept, 0 reload mutations, 0 content leaks)');
+
+  // Test 14: Real Browser Failure Regression Fixture — Concept Boundary Gate (Spaced Repetition Mechanism)
+  console.log('\n[Test 14] Real Browser Failure Regression Fixture — Concept Boundary Gate (Spaced Repetition)...');
+  const resWsBoundary = await fetch(`${WORKER_BASE}/api/workspaces`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({ title: `__TEST__ CONCEPT_BOUNDARY_${Date.now()}` })
+  });
+  const { workspace: wsBoundary } = await resWsBoundary.json();
+  assert(wsBoundary && wsBoundary.id, 'Must create temp test workspace');
+  createdTestWsIds.push(wsBoundary.id);
+
+  // 14.1 Create base Spaced Repetition concept
+  const resBaseConcept = await fetch(`${WORKER_BASE}/api/concepts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({
+      workspaceId: wsBoundary.id,
+      label: 'Spaced Repetition',
+      description: 'Improves long-term retention by increasing the interval between successful reviews.'
+    })
+  });
+  const { concept: baseSpacedConcept } = await resBaseConcept.json();
+  assert(baseSpacedConcept && baseSpacedConcept.id, 'Must create base concept');
+
+  // 14.2 Ingest the exact real-browser failure sentence
+  const exactBrowserFailureText = 'Spaced repetition works by scheduling repeated reviews of the same material across time, rather than massing those reviews together in one session.';
+  const resSrcBoundary = await fetch(`${WORKER_BASE}/api/sources`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({
+      workspaceId: wsBoundary.id,
+      title: 'Spaced Repetition Mechanism',
+      text: exactBrowserFailureText
+    })
+  });
+  assert.strictEqual(resSrcBoundary.status, 200);
+
+  // 14.3 Poll for AI proposal
+  let boundaryProp = null;
+  const startBoundaryPoll = Date.now();
+  while (Date.now() - startBoundaryPoll < 60000) {
+    await new Promise(r => setTimeout(r, 2000));
+    const resState = await fetch(`${WORKER_BASE}/api/state?workspaceId=${wsBoundary.id}`, {
+      headers: { 'Authorization': `Bearer ${aiToken}` }
+    });
+    const stateData = await resState.json();
+    if (stateData.proposals && stateData.proposals.length > 0) {
+      boundaryProp = stateData.proposals[0];
+      break;
+    }
+  }
+  assert(boundaryProp, 'AI must generate a proposal for boundary test');
+
+  // 14.4 Assertions: MUST contain enrich_concept on baseSpacedConcept, MUST NOT contain add_concept "Scheduled Reviews"
+  const ops = boundaryProp.operations;
+  const hasTargetEnrich = ops.some(op => op.op === 'enrich_concept' && op.conceptId === baseSpacedConcept.id);
+  const hasScheduledReviewsConcept = ops.some(op => op.op === 'add_concept' && (op.label || '').toLowerCase().includes('scheduled reviews'));
+  const addConceptOps = ops.filter(op => op.op === 'add_concept');
+
+  assert(hasTargetEnrich, 'Proposal MUST contain enrich_concept targeting existing Spaced Repetition concept');
+  assert(!hasScheduledReviewsConcept, 'Proposal MUST NOT contain add_concept for "Scheduled Reviews"');
+  assert.strictEqual(addConceptOps.length, 0, 'Proposal MUST NOT create any new concept for pure mechanism input (expected 0 add_concept)');
+
+  console.log('  ✓ PASS: Concept Boundary Gate verified — Mechanism merged into existing concept (+0 Concepts, ~1 Enrichment)');
   } finally {
     // GUARANTEED CLEANUP OF ALL TEMPORARY TEST RESOURCES WITH POST-DELETION VERIFICATION
     if (createdTestWsIds.length > 0 && aiToken) {
