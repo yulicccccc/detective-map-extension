@@ -2,7 +2,7 @@
 
 **Document status:** Living Source of Truth  
 **PRD version:** 2.0  
-**Last updated:** 2026-08-25  
+**Last updated:** 2026-08-27  
 **Product:** Detective Map / 侦探外脑  
 **Primary concept:** Living Learning Map  
 **Core principle:** *Minimum manual effort, maximum cognitive ownership.*
@@ -271,13 +271,127 @@ The user receives one proposal, not chunk-level result spam.
 - **Protected Contenteditable**: Clicking editable titles or descriptions preserves text editing and never triggers dragging.
 - **Edge Label Readability**: SVG edge labels feature a protective high-contrast halo (`paint-order: stroke fill; stroke: #0f172a; stroke-width: 4px;`) ensuring text remains legible when crossing grid lines and ink strokes.
 
-## 6.8 Apple Pencil Ink Engine V1 (Pressure-Aware & Low-Latency Incremental Rendering)
+## 6.8 Concept Map Information Hierarchy & Progressive Disclosure — Locked
+
+The primary canvas is a **Concept Map**, not a wall of note cards. The default visual hierarchy must prioritize **Concept identity + Concept-to-Concept relationships** over descriptive prose.
+
+### 6.8.1 Default Concept Node = Collapsed Structure View
+
+Every Concept renders **collapsed by default**. The collapsed node shows only information required to read the map structurally:
+
+```text
+┌────────────────────────┐
+│ Spaced Repetition   📚2 │
+└────────────────────────┘
+           │
+    increases effectiveness
+           ↓
+┌────────────────────────┐
+│ Optimized Interval     │
+└────────────────────────┘
+```
+
+Default collapsed nodes:
+- show the complete Concept label,
+- may show a compact source/evidence count or status badge,
+- do **not** show the full Concept description,
+- do **not** contain internal body scrollbars,
+- keep relationship edges and edge labels visually prominent.
+
+A learner should be able to glance at the canvas and answer: **What are the concepts, and how are they related?** without reading paragraphs inside nodes.
+
+### 6.8.2 Concept Labels Must Never Be Silently Truncated
+
+Concept identity is semantic data and must remain readable.
+
+Rules:
+- no default ellipsis such as `Elaborative Rehe...`,
+- node width may adapt within bounded limits,
+- longer titles wrap to a second line when necessary,
+- target sizing: approximately `min-width: 160px`, adaptive preferred width, `max-width: 260px` unless later usability testing changes these values,
+- title wrapping changes node height but must not hide part of the label.
+
+### 6.8.3 Quick Expand = Temporary Summary View
+
+A collapsed Concept can be temporarily expanded to inspect its short description without leaving the map.
+
+Desktop interactions:
+- double-click Concept → expand/collapse,
+- explicit chevron/details control → expand/collapse.
+
+iPad/touch interactions:
+- explicit chevron/details control must be available; double-click is a convenience, not the only affordance.
+
+Quick Expand:
+- reveals a concise description/summary,
+- must not introduce an internal scrollbar for ordinary content,
+- is temporary by default,
+- should collapse when focus moves away unless the learner explicitly pins/keeps it expanded.
+
+Expansion is a **view state**, not a structural map mutation, and must not change the Concept's semantic identity.
+
+### 6.8.4 Full Detail Belongs in a Detail Drawer, Not a Giant Node
+
+Full Concept knowledge must be presented in a dedicated Detail Drawer / Inspector rather than indefinitely enlarging the spatial node.
+
+The Detail Drawer may contain:
+- full description,
+- supporting Sources,
+- evidence excerpts / provenance,
+- source links,
+- annotations,
+- future history/conflict information.
+
+Principle:
+
+```text
+Card / Node = Concept identity in the graph
+Drawer      = Concept knowledge and evidence
+```
+
+Opening full details must not force neighboring nodes to move or destroy the user's spatial mental model.
+
+### 6.8.5 Expansion Must Preserve Spatial Stability
+
+Temporary expansion must not silently rewrite stored layout coordinates. The spatial graph remains stable while the learner inspects details.
+
+If a node is temporarily expanded:
+- neighboring Concepts are not automatically rearranged by default,
+- its saved `(x, y)` position remains unchanged,
+- closing the expansion returns to the same collapsed structural footprint,
+- permanent/pinned expansion, if supported later, must be an explicit user decision.
+
+### 6.8.6 Visual Priority Order
+
+The canvas visual hierarchy is locked to:
+
+1. **Concept Name** — highest priority,
+2. **Relationship / Edge semantics** — directional/type/label information,
+3. **Evidence/source count or compact status**,
+4. **Concept description** — hidden by default; available via Quick Expand,
+5. **Full Sources / evidence / history** — Detail Drawer.
+
+Descriptive prose must never visually dominate the graph in its default state.
+
+### 6.8.7 Non-Map Status UI Must Be Non-Intrusive
+
+Operational notifications such as `AI analysis failed`, sync warnings, retries, or stale-source notices must not consume a large permanent strip of the Concept Map canvas.
+
+Preferred behavior:
+- compact corner toast/status chip,
+- dismissible notification center entry,
+- clear Retry action when relevant.
+
+The majority of canvas real estate must remain dedicated to **Concepts + Relationships + learner annotations**.
+
+## 6.9 Apple Pencil Ink Engine V1 (Pressure-Aware & Low-Latency Incremental Rendering)
 
 - **Pressure-Aware Stroke Scaling**: Smooth, bounded width mapping curve (`0.4 + 1.2*p + 0.1*p^2`, bounded in `[1.0, 2.2 * baseWidth]`) allowing light strokes to render thin (~1.5px) and heavy strokes to render thick (~5.1px).
 - **Missing-Pressure Fallback**: Strokes with missing or standard pressure safely default to normal weight (3.0px).
-- **Incremental Active Rendering**: During `pointermove` on `scratchCanvas`, only newly arrived coalesced segments are drawn without clearing or redrawing historical points ($O(1)$ per event), eliminating latency and lag on long strokes.
-- **Dual-Canvas Replay Parity**: Replaying persisted strokes on `inkCanvas` via `renderStroke` produces identical quadratic bezier segment geometry and smooth width interpolation.
-- **Palm & Gesture Separation**: Touch is strictly reserved for panning and pinch-to-zoom; palm touch while Apple Pencil is drawing is completely ignored and cannot interrupt active pen strokes.
+- **Incremental Active Rendering**: During active Apple Pencil input, newly stable segments are rendered incrementally without replaying the full stroke history on each pointer event.
+- **Tri-Layer Active Ink Rendering**: `inkCanvas` holds committed strokes; `activeStrokeCanvas` holds finalized segments of the current stroke; `scratchCanvas` holds only the replaceable live tail. Replacing the live tail must never erase finalized active ink.
+- **Replay Parity**: Incremental finalized segments + live tail use the same canonical geometry/width rules as persisted `renderStroke()` replay so pointer-up does not visibly change the final stroke shape.
+- **Palm & Gesture Separation**: Touch is strictly reserved for navigation; palm touch while Apple Pencil is drawing cannot interrupt the active pen stroke, and pinch-to-zoom is disabled while an active pen stroke is in progress.
 
 ---
 
@@ -389,11 +503,21 @@ Infinite World Space
 
 All spatial content uses the same pan/zoom/world-coordinate model.
 
+The **default Concept Layer is structure-first**: Concept labels and relationship edges are visible; descriptions are progressively disclosed through temporary expansion or the Detail Drawer.
+
 ---
 
 # 9. Desktop Map Editing Requirements
 
 V2.0 must support drag Concept, edit label, edit description, delete Concept with confirmation, manually create Edge, delete Edge, edit relationship label, pin/unpin Concept, pan, zoom, Undo, fit map, select Concept, view supporting Sources, open original source URL, and apply/reject AI proposals.
+
+Concept-map view requirements additionally include:
+- collapsed Concept nodes by default,
+- complete non-truncated labels,
+- double-click or explicit control for Quick Expand,
+- a full Detail Drawer for long descriptions and evidence,
+- no default internal body scrollbar on Concept nodes,
+- temporary expansion that does not mutate saved layout coordinates.
 
 Manual structural edits synchronize to iPad.
 
@@ -415,6 +539,8 @@ Apple Pencil (`pointerType === "pen"`) creates ink. Pen/Highlighter should ignor
 
 Pressure may be stored; fixed-width drawing is acceptable in V2.0.
 
+Touch users must have an explicit tap target for Concept Quick Expand / Details; desktop-only double-click interactions may not be the sole way to reveal Concept information.
+
 ---
 
 # 11. Cross-Device Synchronization
@@ -424,6 +550,8 @@ Synchronize Concepts, Concept positions, Concept edits, Edges, Sources, AI propo
 A Windows capture should appear on an already-open iPad without refresh. An iPad ink stroke should persist and reappear after reopening.
 
 Use revision-aware updates to avoid silent overwrites.
+
+Temporary UI-only view state such as a non-pinned Quick Expand does not need to be synchronized unless later product testing shows value.
 
 ---
 
@@ -506,6 +634,8 @@ AI update pending / unavailable
 
 Existing map remains untouched.
 
+UI presentation must follow §6.8.7: failure state is compact and non-intrusive and must not permanently cover a large portion of the Concept Map.
+
 ## Cloud unavailable
 
 ```text
@@ -548,6 +678,10 @@ Open the same Workspace on iPad Safari. Use Apple Pencil to circle, write, highl
 ## Scenario 6 — Continuous Growth
 
 Capture five additional Sources over multiple sessions. The same Workspace keeps evolving with no duplicate maps and no loss of prior manual structure or ink.
+
+## Scenario 7 — Structure-First Concept Map Reading
+
+Open a mature Workspace containing many Concepts with long descriptions. By default, the canvas shows compact Concept identities and readable relationship labels rather than paragraph-heavy cards. No Concept title is truncated. Double-clicking or activating the expand control temporarily reveals a concise description; opening Details shows full description and Sources in a drawer without permanently changing the map layout. Closing details returns the learner to the same spatial structure.
 
 ---
 
