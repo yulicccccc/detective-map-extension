@@ -135,6 +135,72 @@ function validateProposalSubset(selectedOps, existingConcepts) {
   return validOps;
 }
 
+// Resolves a concept ID or tempId to a human-readable concept label
+function resolveConceptLabel(id, existingConcepts = [], proposalOps = []) {
+  if (!id || typeof id !== 'string') return 'Unknown Concept';
+  const cleanId = id.trim();
+
+  // 1. Check if it's a tempId from an add_concept operation in the same proposal
+  if (Array.isArray(proposalOps)) {
+    const addOp = proposalOps.find(op => op && op.op === 'add_concept' && op.tempId === cleanId);
+    if (addOp && typeof addOp.label === 'string' && addOp.label.trim().length > 0) {
+      return addOp.label.trim();
+    }
+  }
+
+  // 2. Check if it's an existing concept ID in the current workspace
+  if (Array.isArray(existingConcepts)) {
+    const existing = existingConcepts.find(c => c && c.id === cleanId);
+    if (existing && typeof existing.label === 'string' && existing.label.trim().length > 0) {
+      return existing.label.trim();
+    }
+  }
+
+  // 3. Fallback: return raw ID if unresolved
+  return cleanId;
+}
+
+// Resolves human-readable labels and formatted description for an add_edge operation in Review UI
+function formatEdgeReview(edgeOp, existingConcepts = [], proposalOps = []) {
+  if (!edgeOp || typeof edgeOp !== 'object') {
+    return {
+      fromLabel: 'Unknown',
+      toLabel: 'Unknown',
+      displayTitle: 'Unknown → Unknown',
+      relationText: 'relates',
+      labelText: '',
+      descText: 'Relation: relates'
+    };
+  }
+
+  const fromLabel = resolveConceptLabel(edgeOp.from, existingConcepts, proposalOps);
+  const toLabel = resolveConceptLabel(edgeOp.to, existingConcepts, proposalOps);
+  const relationText = (typeof edgeOp.relation === 'string' && edgeOp.relation.trim().length > 0) ? edgeOp.relation.trim() : 'relates';
+  const labelText = (typeof edgeOp.label === 'string' && edgeOp.label.trim().length > 0) ? edgeOp.label.trim() : '';
+
+  const displayTitle = `${fromLabel} → ${toLabel}`;
+  
+  let descText = `Relation: ${relationText}`;
+  if (labelText) {
+    descText += ` — "${labelText}"`;
+  }
+
+  return {
+    fromLabel,
+    toLabel,
+    displayTitle,
+    relationText,
+    labelText,
+    descText
+  };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { chunkSourceText, validateAndSanitizeOperations, validateProposalSubset };
+  module.exports = {
+    chunkSourceText,
+    validateAndSanitizeOperations,
+    validateProposalSubset,
+    resolveConceptLabel,
+    formatEdgeReview
+  };
 }

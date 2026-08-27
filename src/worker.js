@@ -1,8 +1,5 @@
-// src/worker.js - Detective Map V2.0 Living Learning Map Backend
-// Cloudflare Worker + SQLite Durable Objects + Workers AI + Realtime WebSockets
-
 import { ASSETS_MANIFEST } from "./assets-bundle.js";
-import { chunkSourceText, validateAndSanitizeOperations, validateProposalSubset } from "../shared/engine-core.js";
+import { chunkSourceText, validateAndSanitizeOperations, validateProposalSubset, resolveConceptLabel, formatEdgeReview } from "../shared/engine-core.js";
 
 export class DetectiveMapWorkspace {
   constructor(ctx, env) {
@@ -1056,10 +1053,14 @@ AND the statement substantially DEPENDS on X for its meaning and context.
 B. INDEPENDENCE ESCAPE HATCH -> ADD NEW CONCEPT
 A candidate MUST NOT be absorbed into existing concept X when evidence shows it has independent identity. Use "add_concept" when:
 1. COUNTERFACTUAL INDEPENDENCE: "If concept X did not exist, would this idea still be meaningful and true on its own?"
-   (Semantic indicators: the text states the phenomenon occurs "even without X", "independent of X", "outside X", or "is not limited to X").
-2. SCOPE / GENERALITY: The candidate is broader than X (e.g., an overarching principle where X is merely one application), parallel to X, or represents an independent theory/framework.
+   - Whenever the text introduces a subject Y and states it applies/works "even without X", "even when no X is used", "independent of X", or "outside X", Y is an independent concept. You MUST NOT enrich X; you MUST emit "add_concept" for Y.
+2. SCOPE / GENERALITY: The candidate Y is broader than X (e.g., an overarching principle where X is merely one application), parallel to X, or represents an independent theory/framework.
 3. REUSE: The candidate could plausibly connect to multiple distinct concepts across diverse fields.
 4. STANDALONE IDENTITY: The candidate can be defined, researched, or taught independently of X.
+
+CRITICAL SUBJECT DISTINCTION:
+- If the text explains or refines existing concept X itself (e.g. "X works by...", "X requires...", "X uses repeated...", "X schedule rules..."), this is Attachment -> emit "enrich_concept" for X.
+- If the text introduces a distinct subject Y (e.g. "Y is a...", "Y tends to produce...", "Y improves retention across...") and explains Y as a standalone or broader idea, Y is an independent concept -> emit "add_concept" for Y (and link with "add_edge" to X).
 
 CORE DECISION PRINCIPLE:
 - If the idea DEPENDS on an existing concept for its identity -> enrich that concept.

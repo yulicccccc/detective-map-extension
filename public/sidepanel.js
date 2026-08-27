@@ -728,23 +728,39 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         let tagText = '+ Concept';
         let labelText = op.label || 'Concept';
+        let descText = op.description || '';
+
         if (op.op === 'enrich_concept') {
           tagText = '~ Enrich';
           const target = concepts.find(c => c.id === op.conceptId);
           labelText = target ? target.label : op.conceptId;
+          descText = op.addition || '';
         } else if (op.op === 'add_edge') {
           tagText = '🔗 Edge';
-          labelText = `${op.from} → ${op.to}`;
+          const edgeInfo = formatEdgeReview(op, concepts, ops);
+          labelText = edgeInfo.displayTitle;
+          descText = edgeInfo.descText;
+        } else if (op.op === 'flag_conflict') {
+          tagText = '⚠️ Conflict';
+          const target = concepts.find(c => c.id === op.conceptId);
+          labelText = target ? target.label : 'Concept Conflict';
+          descText = op.note || 'Potential contradiction';
+        } else if (op.op === 'suggest_merge') {
+          tagText = '🔀 Merge';
+          const labelA = resolveConceptLabel(op.conceptA, concepts, ops);
+          const labelB = resolveConceptLabel(op.conceptB, concepts, ops);
+          labelText = `Merge ${labelA} & ${labelB}`;
+          descText = `Reason: ${op.reason || 'Semantic overlap'}`;
         }
 
         item.innerHTML = `
           <input type="checkbox" class="sp-op-cb" data-index="${index}" checked />
-          <div style="flex:1;">
-            <div style="display:flex;align-items:center;gap:4px;margin-bottom:2px;">
-              <span class="sp-op-tag">${tagText}</span>
-              <strong style="color:#fff;">${escapeHtml(labelText)}</strong>
+          <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:4px;margin-bottom:2px;flex-wrap:wrap;">
+              <span class="sp-op-tag">${escapeHtml(tagText)}</span>
+              <strong style="color:#fff;word-break:break-word;">${escapeHtml(labelText)}</strong>
             </div>
-            <div style="color:var(--text-muted);">${escapeHtml(op.description || op.addition || '')}</div>
+            <div style="color:var(--text-muted);word-break:break-word;line-height:1.4;">${escapeHtml(descText)}</div>
           </div>
         `;
         reviewOpsList.appendChild(item);

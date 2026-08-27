@@ -857,12 +857,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         tagText = '~ Enrich';
         const target = concepts.find(c => c.id === op.conceptId);
         titleText = target ? target.label : `Concept (${op.conceptId})`;
-        descText = `Addition: ${op.addition}`;
+        descText = `Addition: ${op.addition || ''}`;
       } else if (op.op === 'add_edge') {
         tagClass = 'tag-add-edge';
         tagText = '🔗 Edge';
-        titleText = `${op.from} → ${op.to}`;
-        descText = `Relation: ${op.relation || 'relates'} ${op.label ? `("${op.label}")` : ''}`;
+        const edgeInfo = typeof formatEdgeReview === 'function'
+          ? formatEdgeReview(op, concepts, ops)
+          : { displayTitle: `${op.from} → ${op.to}`, descText: `Relation: ${op.relation || 'relates'} ${op.label ? `("${op.label}")` : ''}` };
+        titleText = edgeInfo.displayTitle;
+        descText = edgeInfo.descText;
       } else if (op.op === 'flag_conflict') {
         tagClass = 'tag-flag-conflict';
         tagText = '⚠️ Conflict';
@@ -872,7 +875,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else if (op.op === 'suggest_merge') {
         tagClass = 'tag-suggest-merge';
         tagText = '🔀 Merge';
-        titleText = `Merge ${op.conceptA} & ${op.conceptB}`;
+        const labelA = typeof resolveConceptLabel === 'function' ? resolveConceptLabel(op.conceptA, concepts, ops) : op.conceptA;
+        const labelB = typeof resolveConceptLabel === 'function' ? resolveConceptLabel(op.conceptB, concepts, ops) : op.conceptB;
+        titleText = `Merge ${labelA} & ${labelB}`;
         descText = `Reason: ${op.reason || 'Semantic overlap'}`;
       }
 

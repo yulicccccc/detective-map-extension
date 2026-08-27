@@ -34,6 +34,10 @@ Side Panel / Canvas UI (Interactive Map + Apply All / Review + Durable Stale Rec
   - Full pan/zoom viewport in narrow Side Panel with responsive card widths.
   - Live concept node dragging, inline title/description editing, evidence drawer, and connection edges.
   - `↗ Expand` button in header opens full standalone dual-canvas workspace.
+  - **Human-Readable Proposal Review UI ("AI Proposes; Human Commits")**:
+    - Automatic resolution of `add_edge` and `suggest_merge` operations from raw IDs (`tmp_1`, `c_5d6601f0d6`) to human-readable concept labels (`Distributed Practice → Spaced Repetition`).
+    - Full visual clarity preserving direction (`From → To`), relation type badge (`Relation: is a type of`), and semantic label explanation (`"specialized application"`).
+    - Preserves subset selection semantics (`validateProposalSubset`) without exposing raw opaque IDs to users.
 - **Workers AI Ingestion Engine & Two-Sided Concept Boundary Policy**:
   - Model: `@cf/meta/llama-3.1-8b-instruct-fast` (with automatic fallback to `@cf/meta/llama-3.3-70b-instruct-fp8-fast`, `@cf/meta/llama-3-8b-instruct`).
   - Structured JSON Mode: `response_format: { type: 'json_object' }`.

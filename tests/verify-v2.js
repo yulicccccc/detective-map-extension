@@ -670,6 +670,80 @@ async function runSuite() {
     assert(workerCode.includes('Enriched PCR'), 'worker.js must provide PCR enrichment example');
   });
 
+  // Test 19: Human-Readable Edge Review UI Resolution Invariant
+  await test('19. Human-Readable Edge Review UI Resolution Invariant', async () => {
+    const { resolveConceptLabel, formatEdgeReview } = require('../shared/engine-core.js');
+
+    // 19.1: Resolve tempId to add_concept label within same proposal
+    const existingConcepts = [
+      { id: 'c_5d6601f0d6', label: 'Spaced Repetition', description: 'Initial retention method.' },
+      { id: 'c_active_recall', label: 'Active Recall', description: 'Testing retrieval.' }
+    ];
+
+    const proposalOps = [
+      {
+        op: 'add_concept',
+        tempId: 'tmp_1',
+        label: 'Distributed Practice',
+        description: 'General learning methodology.'
+      },
+      {
+        op: 'add_edge',
+        from: 'tmp_1',
+        to: 'c_5d6601f0d6',
+        relation: 'is a type of',
+        label: 'specialized application'
+      }
+    ];
+
+    // Verify resolveConceptLabel on tempId
+    const resolvedTemp = resolveConceptLabel('tmp_1', existingConcepts, proposalOps);
+    assert.strictEqual(resolvedTemp, 'Distributed Practice', 'tempId tmp_1 must resolve to Distributed Practice');
+
+    // Verify resolveConceptLabel on existing concept ID
+    const resolvedExisting = resolveConceptLabel('c_5d6601f0d6', existingConcepts, proposalOps);
+    assert.strictEqual(resolvedExisting, 'Spaced Repetition', 'Existing concept ID c_5d6601f0d6 must resolve to Spaced Repetition');
+
+    // Verify formatEdgeReview resolves tempId -> existing concept
+    const edgeReview = formatEdgeReview(proposalOps[1], existingConcepts, proposalOps);
+    assert.strictEqual(edgeReview.fromLabel, 'Distributed Practice');
+    assert.strictEqual(edgeReview.toLabel, 'Spaced Repetition');
+    assert.strictEqual(edgeReview.displayTitle, 'Distributed Practice → Spaced Repetition');
+    assert.strictEqual(edgeReview.relationText, 'is a type of');
+    assert.strictEqual(edgeReview.labelText, 'specialized application');
+    assert(edgeReview.descText.includes('is a type of'));
+    assert(edgeReview.descText.includes('specialized application'));
+    assert(!edgeReview.displayTitle.includes('tmp_1'), 'displayTitle MUST NOT expose raw tmp_1 ID');
+    assert(!edgeReview.displayTitle.includes('c_5d6601f0d6'), 'displayTitle MUST NOT expose raw c_5d6601f0d6 ID');
+
+    // 19.2: Verify existing concept -> existing concept edge resolution
+    const existingToExistingEdge = {
+      op: 'add_edge',
+      from: 'c_5d6601f0d6',
+      to: 'c_active_recall',
+      relation: 'synergizes with',
+      label: 'combined in flashcards'
+    };
+    const edgeReview2 = formatEdgeReview(existingToExistingEdge, existingConcepts, []);
+    assert.strictEqual(edgeReview2.fromLabel, 'Spaced Repetition');
+    assert.strictEqual(edgeReview2.toLabel, 'Active Recall');
+    assert.strictEqual(edgeReview2.displayTitle, 'Spaced Repetition → Active Recall');
+    assert.strictEqual(edgeReview2.relationText, 'synergizes with');
+    assert.strictEqual(edgeReview2.labelText, 'combined in flashcards');
+    assert(!edgeReview2.displayTitle.includes('c_'), 'displayTitle MUST NOT expose raw IDs');
+
+    // 19.3: Verify sidepanel.js and canvas.js call formatEdgeReview and resolveConceptLabel
+    const fs = require('fs');
+    const path = require('path');
+    const sidepanelCode = fs.readFileSync(path.join(__dirname, '../sidepanel.js'), 'utf-8');
+    const canvasCode = fs.readFileSync(path.join(__dirname, '../canvas.js'), 'utf-8');
+
+    assert(sidepanelCode.includes('formatEdgeReview('), 'sidepanel.js must call formatEdgeReview');
+    assert(canvasCode.includes('formatEdgeReview('), 'canvas.js must call formatEdgeReview');
+    assert(!sidepanelCode.includes('labelText = `${op.from} → ${op.to}`'), 'sidepanel.js must not render raw op.from -> op.to');
+    assert(!canvasCode.includes('titleText = `${op.from} → ${op.to}`'), 'canvas.js must not render raw op.from -> op.to');
+  });
+
   assert.strictEqual(networkCallsAttempted, 0, 'verify-v2.js MUST execute with ZERO network calls');
   console.log(`  ✓ VERIFIED: Zero (0) network calls attempted during verify-v2 execution.`);
 

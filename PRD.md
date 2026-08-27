@@ -245,6 +245,12 @@ Source
 
 The user receives one proposal, not chunk-level result spam.
 
+## 6.6 Human-Readable Proposal Review UI ("AI Proposes; Human Commits")
+
+- **ID Resolution**: All `tempId` and `conceptId` references in `add_edge` and `suggest_merge` are automatically resolved to human-readable concept titles before rendering the review card.
+- **Direction & Relation Clarity**: Review modal displays explicit `From → To` directional flow, semantic `relation` badges, and proposed explanatory labels.
+- **Subset Preservation**: Users can selectively check/uncheck individual concepts, enrichments, or edges without dangling references.
+
 ---
 
 # 7. Map Data Model
