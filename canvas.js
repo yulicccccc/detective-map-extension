@@ -103,6 +103,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let strokes = [];
   let pendingProposals = [];
   let staleProposals = [];
+  const expandedConceptIds = new Set();
   let viewport = { panX: 100, panY: 100, zoom: 1.0 };
   let activeTool = 'select'; // 'select' | 'connect' | 'pen' | 'highlighter' | 'eraser'
 
@@ -219,8 +220,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // View State for Concept Cards (in-memory UI only)
-  const expandedConceptIds = new Set();
-
   function toggleConceptExpansion(conceptId) {
     const isExpanded = expandedConceptIds.has(conceptId);
     if (isExpanded) {

@@ -237,9 +237,9 @@ html, body {
   user-select: text;
   -webkit-user-select: text;
   transition: box-shadow 0.15s ease, border-color 0.15s ease;
-  min-width: 160px;
+  min-width: 180px;
   max-width: 260px;
-  width: auto;
+  width: max-content;
   box-sizing: border-box;
 }
 
@@ -261,6 +261,7 @@ html, body {
 }
 
 .concept-node.expanded {
+  width: 300px;
   max-width: 320px;
 }
 
@@ -270,9 +271,11 @@ html, body {
   border-radius: inherit;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   cursor: grab;
   user-select: none;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .concept-node.expanded .concept-header {
@@ -292,6 +295,7 @@ html, body {
   align-items: center;
   letter-spacing: -1px;
   touch-action: none;
+  flex-shrink: 0;
   transition: color 0.15s ease;
 }
 
@@ -310,12 +314,11 @@ html, body {
   font-weight: 700;
   color: #fff;
   outline: none;
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 auto;
   cursor: text;
   user-select: text;
   white-space: normal;
-  word-break: break-word;
+  word-break: normal;
   overflow-wrap: break-word;
   line-height: 1.35;
   display: -webkit-box;
@@ -328,6 +331,7 @@ html, body {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
 }
 
 .btn-toggle-expand {
