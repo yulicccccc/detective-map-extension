@@ -86,9 +86,11 @@ The low-friction default is **Apply All**. Review allows per-operation accept/re
 
 ### 3.2.1 Durable Server-Side Mutation Audit Trail
 To provide a durable, attributable server-side mutation audit trail ensuring "AI Proposes; Human Commits" is verifiable and traceable:
-- **Server Mutation Audit Table (`mutation_audit`)**: Every proposal apply attempt, stale conflict (409), error, and successful application is durably recorded in SQLite.
-- **Traceable Invariants**: Every client UI click on `Apply All` / `Apply Selected` transmits `X-Detective-Surface` (`sidepanel` | `canvas`) and a unique `X-Detective-Action-Id`.
-- **Zero-Secret & Zero-Content Logging**: Device tokens are SHA-256 fingerprinted (`fp_...`). Raw auth tokens, pairing codes, source bodies, and concept content text are strictly excluded from audit records.
+- **Server Mutation Audit Table (`mutation_audit`)**: Every proposal apply attempt, stale conflict (409), unprovenanced block (403), error, and successful application is durably recorded in SQLite.
+- **Provenance Guard**: Calls without valid human UI action headers (`X-Detective-Surface` and `X-Detective-Action-Id`) are blocked with HTTP 403 `PROVENANCE_REQUIRED`, recorded as `proposal_apply_blocked`, and produce zero map mutation.
+- **Atomic Transaction Guarantee**: Map mutation, revision increment, proposal status update (`applied`), and `proposal_apply_success` audit recording execute inside a single atomic SQLite transaction (`executeTransaction`). Any failure inside the transaction triggers a complete rollback to the prior state.
+- **Enrichment Audit (`enrich_concept`)**: Tracks structural `enrichedConceptIds` and `enrichedConceptCount` in success audit metadata for complete attribution of incremental knowledge updates.
+- **Zero-Secret & Zero-Content Logging**: Device tokens are SHA-256 fingerprinted (`fp_...`). Raw auth tokens, pairing codes, source bodies, summaries, and concept content text are strictly excluded from audit records.
 - **Authenticated Audit Endpoint**: `GET /api/audit?workspaceId=...` exposes recent mutation events for auditability without data leakage.
 
 ## 3.3 Source ≠ Concept

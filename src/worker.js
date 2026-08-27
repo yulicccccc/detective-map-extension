@@ -188,6 +188,23 @@ export class DetectiveMapWorkspace {
     );
   }
 
+  executeTransaction(callback) {
+    if (this.ctx && this.ctx.storage && typeof this.ctx.storage.transactionSync === 'function') {
+      return this.ctx.storage.transactionSync(callback);
+    }
+    const spName = 'sp_' + crypto.randomUUID().replace(/-/g, '').slice(0, 8);
+    this.sql.exec(`SAVEPOINT ${spName}`);
+    try {
+      const res = callback();
+      this.sql.exec(`RELEASE SAVEPOINT ${spName}`);
+      return res;
+    } catch (err) {
+      try { this.sql.exec(`ROLLBACK TO SAVEPOINT ${spName}`); } catch {}
+      try { this.sql.exec(`RELEASE SAVEPOINT ${spName}`); } catch {}
+      throw err;
+    }
+  }
+
   async fetch(request) {
     const url = new URL(request.url);
 
@@ -549,7 +566,39 @@ export class DetectiveMapWorkspace {
         opsCount = Array.isArray(parsedOps) ? parsedOps.length : 0;
       } catch {}
 
-      // 1. Record Apply Attempt BEFORE state checks
+      // 1. Enforce Provenance Guard ("AI Proposes; Human Commits")
+      if (!isValidApplyProvenance(surface, clientActionId)) {
+        try {
+          this.recordMutationAudit({
+            id: 'audit_' + crypto.randomUUID().replace(/-/g, '').slice(0, 12),
+            timestamp: now,
+            workspaceId,
+            action: 'proposal_apply_blocked',
+            proposalId,
+            sourceId: proposal.sourceId,
+            baseRevision: proposal.baseRevision,
+            revisionBefore: currentRevision,
+            revisionAfter: currentRevision,
+            requestId,
+            clientActionId,
+            surface,
+            deviceFingerprint,
+            userAgent,
+            result: 'blocked_unprovenanced',
+            httpStatus: 403,
+            metadata: JSON.stringify({
+              error: 'PROVENANCE_REQUIRED',
+              reason: 'Unprovenanced or missing human UI action header'
+            })
+          });
+        } catch {}
+        return jsonResponse({
+          error: 'PROVENANCE_REQUIRED',
+          message: 'Explicit human commit provenance required (valid surface and clientActionId)'
+        }, 403);
+      }
+
+      // 2. Record Apply Attempt BEFORE state checks
       this.recordMutationAudit({
         id: 'audit_' + crypto.randomUUID().replace(/-/g, '').slice(0, 12),
         timestamp: now,
@@ -570,7 +619,7 @@ export class DetectiveMapWorkspace {
         metadata: JSON.stringify({ proposalStatus: proposal.status, operationCount: opsCount })
       });
 
-      // 2. Check Stale Proposal Conflict
+      // 3. Check Stale Proposal Conflict
       if (proposal.baseRevision !== currentRevision) {
         this.sql.exec(`UPDATE proposals SET status = 'stale' WHERE id = ?`, proposalId);
         this.broadcast({
@@ -612,36 +661,45 @@ export class DetectiveMapWorkspace {
         }, 409);
       }
 
-      // 3. Execute Operations & Apply
+      // 4. Atomic Execution of Map Mutation + Proposal Status + Success Audit
       try {
         const opsToApply = operations || JSON.parse(proposal.operations);
-        const applyResult = this.applyProposalOperations(workspaceId, opsToApply, proposal.sourceId);
+        const successAuditId = 'audit_' + crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+        const successNow = new Date().toISOString();
 
-        this.sql.exec(`UPDATE proposals SET status = 'applied' WHERE id = ?`, proposalId);
+        const applyResult = this.executeTransaction(() => {
+          const res = this.applyProposalOperations(workspaceId, opsToApply, proposal.sourceId);
 
-        this.recordMutationAudit({
-          id: 'audit_' + crypto.randomUUID().replace(/-/g, '').slice(0, 12),
-          timestamp: new Date().toISOString(),
-          workspaceId,
-          action: 'proposal_apply_success',
-          proposalId,
-          sourceId: proposal.sourceId,
-          baseRevision: proposal.baseRevision,
-          revisionBefore: currentRevision,
-          revisionAfter: applyResult.revision,
-          requestId,
-          clientActionId,
-          surface,
-          deviceFingerprint,
-          userAgent,
-          result: 'success',
-          httpStatus: 200,
-          metadata: JSON.stringify({
-            createdConceptCount: applyResult.concepts.length,
-            createdEdgeCount: applyResult.edges.length,
-            createdConceptIds: applyResult.concepts.map(c => c.id),
-            createdEdgeIds: applyResult.edges.map(e => e.id)
-          })
+          this.sql.exec(`UPDATE proposals SET status = 'applied' WHERE id = ?`, proposalId);
+
+          this.recordMutationAudit({
+            id: successAuditId,
+            timestamp: successNow,
+            workspaceId,
+            action: 'proposal_apply_success',
+            proposalId,
+            sourceId: proposal.sourceId,
+            baseRevision: proposal.baseRevision,
+            revisionBefore: currentRevision,
+            revisionAfter: res.revision,
+            requestId,
+            clientActionId,
+            surface,
+            deviceFingerprint,
+            userAgent,
+            result: 'success',
+            httpStatus: 200,
+            metadata: JSON.stringify({
+              createdConceptCount: res.concepts.length,
+              enrichedConceptCount: res.enrichedConceptIds.length,
+              createdEdgeCount: res.edges.length,
+              createdConceptIds: res.concepts.map(c => c.id),
+              enrichedConceptIds: res.enrichedConceptIds,
+              createdEdgeIds: res.edges.map(e => e.id)
+            })
+          });
+
+          return res;
         });
 
         this.broadcast({
@@ -650,30 +708,38 @@ export class DetectiveMapWorkspace {
           workspaceId,
           revision: applyResult.revision,
           appliedConcepts: applyResult.concepts,
+          enrichedConceptIds: applyResult.enrichedConceptIds,
           appliedEdges: applyResult.edges
         });
 
         return jsonResponse({ success: true, ...applyResult });
       } catch (applyErr) {
-        this.recordMutationAudit({
-          id: 'audit_' + crypto.randomUUID().replace(/-/g, '').slice(0, 12),
-          timestamp: new Date().toISOString(),
-          workspaceId,
-          action: 'proposal_apply_error',
-          proposalId,
-          sourceId: proposal.sourceId,
-          baseRevision: proposal.baseRevision,
-          revisionBefore: currentRevision,
-          revisionAfter: currentRevision,
-          requestId,
-          clientActionId,
-          surface,
-          deviceFingerprint,
-          userAgent,
-          result: 'error',
-          httpStatus: 500,
-          metadata: JSON.stringify({ error: applyErr.message })
-        });
+        // Rollback is guaranteed by executeTransaction.
+        // Query post-rollback revision to report true state in audit:
+        const wsRowAfter = this.sql.exec(`SELECT revision FROM workspaces WHERE id = ?`, workspaceId).toArray()[0];
+        const actualRevisionAfter = wsRowAfter ? wsRowAfter.revision : currentRevision;
+
+        try {
+          this.recordMutationAudit({
+            id: 'audit_' + crypto.randomUUID().replace(/-/g, '').slice(0, 12),
+            timestamp: new Date().toISOString(),
+            workspaceId,
+            action: 'proposal_apply_error',
+            proposalId,
+            sourceId: proposal.sourceId,
+            baseRevision: proposal.baseRevision,
+            revisionBefore: currentRevision,
+            revisionAfter: actualRevisionAfter,
+            requestId,
+            clientActionId,
+            surface,
+            deviceFingerprint,
+            userAgent,
+            result: 'error',
+            httpStatus: 500,
+            metadata: JSON.stringify({ error: applyErr.message })
+          });
+        } catch {}
 
         return jsonResponse({ error: applyErr.message }, 500);
       }
@@ -1122,6 +1188,7 @@ ${chunk}
 
     const tempIdMap = new Map();
     const createdConcepts = [];
+    const enrichedConceptIds = [];
     const createdEdges = [];
     const now = new Date().toISOString();
     const existingConceptIdSet = new Set(existingConcepts.map(c => c.id));
@@ -1157,6 +1224,10 @@ ${chunk}
             this.sql.exec(`
               UPDATE concepts SET description = ?, sourceRefs = ?, updatedAt = ? WHERE id = ?
             `, newDesc, JSON.stringify(refs), now, op.conceptId);
+
+            if (!enrichedConceptIds.includes(op.conceptId)) {
+              enrichedConceptIds.push(op.conceptId);
+            }
           }
         }
       }
@@ -1186,6 +1257,7 @@ ${chunk}
     return {
       revision: wsRow ? wsRow.revision : 1,
       concepts: createdConcepts,
+      enrichedConceptIds,
       edges: createdEdges
     };
   }
@@ -1234,6 +1306,19 @@ async function hashFingerprint(str) {
   } catch {
     return 'fp_generic';
   }
+}
+
+function isValidApplyProvenance(surface, clientActionId) {
+  if (surface === 'sidepanel' && typeof clientActionId === 'string' && clientActionId.startsWith('act_sp_')) {
+    return true;
+  }
+  if (surface === 'canvas' && typeof clientActionId === 'string' && clientActionId.startsWith('act_cv_')) {
+    return true;
+  }
+  if (surface === 'ipad' && typeof clientActionId === 'string' && clientActionId.startsWith('act_ipad_')) {
+    return true;
+  }
+  return false;
 }
 
 export default {

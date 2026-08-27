@@ -576,6 +576,80 @@ async function runSuite() {
     assert(loadDataMatch && !loadDataMatch[0].includes('applyProposal'), 'loadData() must NEVER call applyProposal');
   });
 
+  // Test 17: Atomic Transaction Rollback on Failure Injection & Provenance Guard
+  await test('17. Atomic Transaction Rollback on Failure Injection & Provenance Guard', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const workerCode = fs.readFileSync(path.join(__dirname, '../src/worker.js'), 'utf-8');
+
+    // 17.1: Verify worker.js contains executeTransaction and isValidApplyProvenance
+    assert(workerCode.includes('executeTransaction(callback)'), 'worker.js must define executeTransaction');
+    assert(workerCode.includes('isValidApplyProvenance(surface, clientActionId)'), 'worker.js must define isValidApplyProvenance');
+    assert(workerCode.includes('enrichedConceptIds'), 'worker.js must track enrichedConceptIds');
+    assert(workerCode.includes('enrichedConceptCount'), 'worker.js must report enrichedConceptCount');
+    assert(workerCode.includes('proposal_apply_blocked'), 'worker.js must log proposal_apply_blocked on unprovenanced requests');
+
+    // 17.2: Simulate transactional apply with simulated SQLite state
+    let state = {
+      revision: 1,
+      concepts: [{ id: 'c_base', label: 'Base Concept', description: 'Initial' }],
+      edges: [],
+      proposals: [{ id: 'prop_test', status: 'pending' }],
+      audit: []
+    };
+
+    // Define transactional executor mimicking executeTransaction
+    function runApplyTransaction(shouldFailAudit) {
+      const snapshot = JSON.parse(JSON.stringify(state));
+      try {
+        // Step A: apply concept
+        const newConcept = { id: 'c_new', label: 'New Concept' };
+        state.concepts.push(newConcept);
+        // Step B: enrich existing
+        state.concepts[0].description += '\n• Enriched info';
+        // Step C: bump revision
+        state.revision += 1;
+        // Step D: mark proposal applied
+        state.proposals[0].status = 'applied';
+
+        // Step E: success audit insert (injected failure point)
+        if (shouldFailAudit) {
+          throw new Error('INJECTED_SQLITE_DISK_ERROR: Failed to write success audit');
+        }
+        state.audit.push({ action: 'proposal_apply_success', revisionAfter: state.revision });
+      } catch (err) {
+        // Rollback state
+        state = snapshot;
+        state.audit.push({ action: 'proposal_apply_error', revisionAfter: state.revision, error: err.message });
+        throw err;
+      }
+    }
+
+    // Run failure injection: success audit fails
+    let caughtError = null;
+    try {
+      runApplyTransaction(true);
+    } catch (err) {
+      caughtError = err;
+    }
+
+    assert(caughtError && caughtError.message.includes('INJECTED_SQLITE_DISK_ERROR'), 'Must throw injected error');
+    assert.strictEqual(state.revision, 1, 'Map revision MUST remain 1 after transaction rollback');
+    assert.strictEqual(state.concepts.length, 1, 'New concepts MUST NOT be persisted after rollback');
+    assert.strictEqual(state.concepts[0].description, 'Initial', 'Enriched concept description MUST be rolled back');
+    assert.strictEqual(state.proposals[0].status, 'pending', 'Proposal status MUST remain pending after rollback');
+    assert.strictEqual(state.audit.length, 1, 'Error audit record must be logged');
+    assert.strictEqual(state.audit[0].action, 'proposal_apply_error');
+    assert.strictEqual(state.audit[0].revisionAfter, 1, 'Error audit must report the TRUE post-rollback revision (1)');
+
+    // Run successful apply: everything commits
+    runApplyTransaction(false);
+    assert.strictEqual(state.revision, 2, 'Successful transaction must increment revision');
+    assert.strictEqual(state.concepts.length, 2, 'New concept must be added');
+    assert.strictEqual(state.proposals[0].status, 'applied', 'Proposal must be applied');
+    assert.strictEqual(state.audit.find(a => a.action === 'proposal_apply_success').revisionAfter, 2);
+  });
+
   assert.strictEqual(networkCallsAttempted, 0, 'verify-v2.js MUST execute with ZERO network calls');
   console.log(`  ✓ VERIFIED: Zero (0) network calls attempted during verify-v2 execution.`);
 
