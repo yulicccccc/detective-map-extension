@@ -225,11 +225,12 @@ AI returns a **structured patch**, not a whole replacement map.
 
 AI must not directly emit destructive `delete_concept` operations as automatic actions.
 
-## 6.4 Two-Sided Concept Boundary & Merge Policy
+## 6.4 Three-Pillar Concept Boundary & Merge Policy
 
-Before proposing an operation, AI evaluates both directions (Attachment vs Independence) to balance cognitive density with conceptual accuracy:
-- **Attachment Test (Anti-Fragmentation)**: Mechanisms, definitions, schedule rules, implementation steps, examples, or properties that depend on an existing concept $X$ MUST generate `enrich_concept` targeting $X$. AI is strictly forbidden from creating fragmented satellite nodes for sub-mechanisms.
-- **Independence Escape Hatch (Anti-Over-Merging)**: Claims that have independent identity (counterfactually true without $X$, broader/parallel conceptual scope, or general reusable methodology across domains) MUST generate `add_concept` (and link via `add_edge`) rather than being improperly absorbed into $X$ (e.g. `Distributed Learning` as a broader phenomenon, `Testing Effect`, `Primer Design`, `Cellular Respiration`).
+Before proposing an operation, AI evaluates all three pillars to balance cognitive density, conceptual accuracy, and relationship topology:
+- **1. Attachment Test (Anti-Fragmentation)**: Mechanisms, definitions, schedule rules, implementation steps, examples, or properties that describe an internal attribute of an existing concept $X$ MUST generate `enrich_concept` targeting $X$.
+- **2. Independence Test (Anti-Over-Merging)**: Claims that have independent identity (counterfactually true without $X$, broader/parallel conceptual scope, or general reusable methodology across domains) MUST generate `add_concept` (e.g. `Distributed Learning`, `Cellular Respiration`).
+- **3. Relational / Composability Signal (Composability Guard)**: When new material relates $A$ to existing $X$ via composability, combination, complementarity, causality, or contrast (e.g. "A can be combined with X", "A complements X", "A works alongside X"), $A$ and $X$ are recognized as two distinct interacting entities, generating `add_concept A` + `add_edge (A <-> X)` instead of absorbing $A$ into $X$.
 - **Deduplication**: Semantic equivalents enrich existing concepts or create merge suggestions rather than duplicating nodes.
 
 ## 6.5 Long Source Processing

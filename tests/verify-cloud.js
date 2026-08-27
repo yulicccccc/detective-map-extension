@@ -742,6 +742,116 @@ async function runCloudVerification() {
   assert(hasFragEnrich, 'Mechanism proposal MUST contain enrich_concept targeting Spaced Repetition');
   assert.strictEqual(fragAddOps.length, 0, 'Mechanism proposal MUST NOT create any new satellite concept nodes');
   console.log('  ✓ PASS: Anti-Fragmentation verified — Mechanism correctly enriched existing concept (+0 Concepts, ~1 Enrichment)');
+
+  // Test 17: Relational & Composability Signal — Interleaved Practice + Distributed Practice
+  console.log('\n[Test 17] Relational & Composability Signal (Interleaved Practice combined with Distributed Practice)...');
+  const resWsInterleaved = await fetch(`${WORKER_BASE}/api/workspaces`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({ title: `__TEST__ INTERLEAVED_${Date.now()}` })
+  });
+  const { workspace: wsInterleaved } = await resWsInterleaved.json();
+  assert(wsInterleaved && wsInterleaved.id, 'Must create temp test workspace');
+  createdTestWsIds.push(wsInterleaved.id);
+
+  const resBaseDist = await fetch(`${WORKER_BASE}/api/concepts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({
+      workspaceId: wsInterleaved.id,
+      label: 'Distributed Practice',
+      description: 'Learning strategy that spreads study sessions over time.'
+    })
+  });
+  const { concept: baseDistConcept } = await resBaseDist.json();
+
+  const interleavedSentence = 'Interleaved practice alternates different types of problems during practice and can be combined with distributed practice across separate learning sessions.';
+  await fetch(`${WORKER_BASE}/api/sources`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({
+      workspaceId: wsInterleaved.id,
+      title: 'Interleaving Study',
+      text: interleavedSentence
+    })
+  });
+
+  let interleavedProp = null;
+  const startInterleavedPoll = Date.now();
+  while (Date.now() - startInterleavedPoll < 60000) {
+    await new Promise(r => setTimeout(r, 2000));
+    const resState = await fetch(`${WORKER_BASE}/api/state?workspaceId=${wsInterleaved.id}`, {
+      headers: { 'Authorization': `Bearer ${aiToken}` }
+    });
+    const stateData = await resState.json();
+    if (stateData.proposals && stateData.proposals.length > 0) {
+      interleavedProp = stateData.proposals[0];
+      break;
+    }
+  }
+  assert(interleavedProp, 'AI must generate a proposal for composability test');
+  const interleavedOps = interleavedProp.operations;
+  const hasInterleavedConcept = interleavedOps.some(op => op.op === 'add_concept' && /interleaved\s*practice|interleaving/i.test(op.label || ''));
+  const onlyEnrichDist = interleavedOps.length === 1 && interleavedOps[0].op === 'enrich_concept' && interleavedOps[0].conceptId === baseDistConcept.id;
+
+  assert(hasInterleavedConcept, 'Proposal MUST contain add_concept for Interleaved Practice');
+  assert(!onlyEnrichDist, 'Proposal MUST NOT solely enrich Distributed Practice when composability relation is stated');
+  console.log('  ✓ PASS: Relational & Composability Signal verified — Interleaved Practice created as independent concept (+1 Concept)');
+
+  // Test 18: Cross-Domain Composability Generalization (Mobility Training + Strength Training)
+  console.log('\n[Test 18] Cross-Domain Composability Generalization (Mobility Training combined with Strength Training)...');
+  const resWsMobility = await fetch(`${WORKER_BASE}/api/workspaces`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({ title: `__TEST__ MOBILITY_${Date.now()}` })
+  });
+  const { workspace: wsMobility } = await resWsMobility.json();
+  assert(wsMobility && wsMobility.id, 'Must create temp test workspace');
+  createdTestWsIds.push(wsMobility.id);
+
+  const resBaseStrength = await fetch(`${WORKER_BASE}/api/concepts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({
+      workspaceId: wsMobility.id,
+      label: 'Strength Training',
+      description: 'Physical exercise specializing in the use of resistance to induce muscular contraction.'
+    })
+  });
+  const { concept: baseStrengthConcept } = await resBaseStrength.json();
+
+  const mobilitySentence = 'Mobility training can be combined with strength training to improve movement quality while addressing different physical capacities.';
+  await fetch(`${WORKER_BASE}/api/sources`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({
+      workspaceId: wsMobility.id,
+      title: 'Mobility & Strength Protocol',
+      text: mobilitySentence
+    })
+  });
+
+  let mobilityProp = null;
+  const startMobilityPoll = Date.now();
+  while (Date.now() - startMobilityPoll < 60000) {
+    await new Promise(r => setTimeout(r, 2000));
+    const resState = await fetch(`${WORKER_BASE}/api/state?workspaceId=${wsMobility.id}`, {
+      headers: { 'Authorization': `Bearer ${aiToken}` }
+    });
+    const stateData = await resState.json();
+    if (stateData.proposals && stateData.proposals.length > 0) {
+      mobilityProp = stateData.proposals[0];
+      break;
+    }
+  }
+  assert(mobilityProp, 'AI must generate a proposal for cross-domain composability test');
+  const mobilityOps = mobilityProp.operations;
+  const hasMobilityConcept = mobilityOps.some(op => op.op === 'add_concept' && /mobility\s*training|mobility/i.test(op.label || ''));
+  const onlyEnrichStrength = mobilityOps.length === 1 && mobilityOps[0].op === 'enrich_concept' && mobilityOps[0].conceptId === baseStrengthConcept.id;
+
+  assert(hasMobilityConcept, 'Proposal MUST contain add_concept for Mobility Training');
+  assert(!onlyEnrichStrength, 'Proposal MUST NOT solely enrich Strength Training when composability relation is stated');
+  console.log('  ✓ PASS: Cross-Domain Composability Generalization verified — Mobility Training created as independent concept (+1 Concept)');
   } finally {
     // GUARANTEED CLEANUP OF ALL TEMPORARY TEST RESOURCES WITH POST-DELETION VERIFICATION
     if (createdTestWsIds.length > 0 && aiToken) {

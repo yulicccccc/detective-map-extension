@@ -1037,41 +1037,44 @@ export class DetectiveMapWorkspace {
 Your goal: Analyze new learning material against an existing map of concepts and output an INCREMENTAL JSON PATCH.
 
 --------------------------------------------------
-PRODUCT RULE: TWO-SIDED CONCEPT BOUNDARY GATE
+PRODUCT RULE: THREE-PILLAR CONCEPT BOUNDARY GATE
 --------------------------------------------------
-Evaluate BOTH directions (Attachment vs Independence) before choosing between "enrich_concept" and "add_concept":
+Before selecting operations, determine which of the three categories the input represents:
 
-A. ATTACHMENT TEST -> ENRICH EXISTING CONCEPT
-Use "enrich_concept" when the new information primarily represents:
-- A mechanism, inner working, or step of an existing concept X
-- A property, attribute, or parameter of X
-- An implementation detail, rule of thumb, or variation of X
-- A condition, constraint, example, or direct consequence of X
-- An explanation of how/why X works
-AND the statement substantially DEPENDS on X for its meaning and context.
+1. ATTACHMENT TEST -> ENRICH EXISTING CONCEPT X
+Use "enrich_concept" when the new information describes an INTERNAL property, mechanism, or detail of an existing concept X:
+- An inner mechanism, operation, step, or formula of X
+- An attribute, parameter, schedule rule, or condition of X
+- An explanation of how/why X works or practical tip for applying X
+-> Key test: The text describes a property OF X itself (e.g. "X works by...", "X requires...", "X uses...").
 
-B. INDEPENDENCE ESCAPE HATCH -> ADD NEW CONCEPT
-A candidate MUST NOT be absorbed into existing concept X when evidence shows it has independent identity. Use "add_concept" when:
-1. COUNTERFACTUAL INDEPENDENCE: "If concept X did not exist, would this idea still be meaningful and true on its own?"
-   - Whenever the text introduces a subject Y and states it applies/works "even without X", "even when no X is used", "independent of X", or "outside X", Y is an independent concept. You MUST NOT enrich X; you MUST emit "add_concept" for Y.
-2. SCOPE / GENERALITY: The candidate Y is broader than X (e.g., an overarching principle where X is merely one application), parallel to X, or represents an independent theory/framework.
-3. REUSE: The candidate could plausibly connect to multiple distinct concepts across diverse fields.
-4. STANDALONE IDENTITY: The candidate can be defined, researched, or taught independently of X.
+2. INDEPENDENCE TEST -> ADD NEW CONCEPT A
+Use "add_concept" when the input introduces a standalone mental model, theory, or methodology A that exists outside X:
+- Counterfactual Independence: "If concept X did not exist, would concept A still be meaningful and true on its own?" (e.g. holds "even without X", "outside X", "independent of X").
+- Scope / Generality: Concept A is broader than X, parallel to X, or represents an independent discipline.
+- Multi-domain Reuse: Concept A can connect to multiple distinct concepts across diverse fields.
 
-CRITICAL SUBJECT DISTINCTION:
-- If the text explains or refines existing concept X itself (e.g. "X works by...", "X requires...", "X uses repeated...", "X schedule rules..."), this is Attachment -> emit "enrich_concept" for X.
-- If the text introduces a distinct subject Y (e.g. "Y is a...", "Y tends to produce...", "Y improves retention across...") and explains Y as a standalone or broader idea, Y is an independent concept -> emit "add_concept" for Y (and link with "add_edge" to X).
+3. RELATIONAL / COMPOSABILITY SIGNAL -> ADD NEW CONCEPT A + ADD_EDGE (A <-> X)
+When the text explicitly describes a relationship, interaction, or combination BETWEEN a candidate subject A and existing concept X, such as:
+- A can be combined with / used alongside X (composability / synergy)
+- A complements, enhances, or supports X
+- A contrasts with, competes with, or is an alternative to X
+- A causes, influences, regulates, or triggers X
+- A is an overarching framework for X or specialized implementation of X
+-> Key test: "Does the sentence describe a property OF X, or an external relationship BETWEEN A and X?"
+-> If it describes a relationship BETWEEN A and X, they are TWO distinct conceptual entities. You MUST NOT absorb A into X via enrichment. You MUST emit "add_concept" for A and "add_edge" linking A and X.
 
 CORE DECISION PRINCIPLE:
-- If the idea DEPENDS on an existing concept for its identity -> enrich that concept.
-- If the idea HAS INDEPENDENT IDENTITY and broader/parallel scope beyond the existing concept -> add_concept (and link with add_edge).
-- When evidence is genuinely ambiguous, prefer preserving the correct conceptual scope rather than minimizing node count.
+- Internal property/mechanism of X -> enrich_concept X.
+- Standalone or broader concept A -> add_concept A.
+- Relationship/combination between A and X -> add_concept A + add_edge (A <-> X).
+- Never absorb an independent concept A into X merely because they are related or combined in practice.
 
 --------------------------------------------------
 BALANCED DECISION EXAMPLES
 --------------------------------------------------
 
-[Example 1: Specific detail -> ENRICH]
+[Example 1: Internal property/detail of X -> ENRICH X]
 Existing Concepts: [{"id": "c_1", "label": "Active Recall", "description": "Testing memory retrieval directly."}]
 Input: "Active recall is harder when retrieval cues are removed."
 Output:
@@ -1094,26 +1097,27 @@ Output:
   ]
 }
 
-[Example 3: Dependent requirement -> ENRICH]
-Existing Concepts: [{"id": "c_2", "label": "PCR", "description": "Polymerase chain reaction for DNA amplification."}]
-Input: "PCR requires specific primers that flank the target sequence to initiate synthesis."
+[Example 3: Relational composability between two methods -> ADD + EDGE]
+Existing Concepts: [{"id": "c_2", "label": "Pomodoro Technique", "description": "Time management method using 25-minute focused work intervals."}]
+Input: "Timeboxing is a distinct scheduling method that allocates fixed maximum time blocks to activities and can be combined with the Pomodoro technique for daily planning."
 Output:
 {
-  "summary": "Enriched PCR with primer sequence flanking requirement.",
+  "summary": "Added Timeboxing as a distinct scheduling method that can be combined with the Pomodoro Technique.",
   "operations": [
-    { "op": "enrich_concept", "conceptId": "c_2", "addition": "Requires specific forward and reverse primers that flank the target DNA sequence." }
+    { "op": "add_concept", "tempId": "tmp_1", "label": "Timeboxing", "description": "Scheduling method that allocates fixed maximum time blocks to activities." },
+    { "op": "add_edge", "from": "tmp_1", "to": "c_2", "relation": "can be combined with", "label": "complementary scheduling method" }
   ]
 }
 
 [Example 4: General independent methodology -> ADD + EDGE]
-Existing Concepts: [{"id": "c_2", "label": "PCR", "description": "Polymerase chain reaction for DNA amplification."}]
+Existing Concepts: [{"id": "c_3", "label": "PCR", "description": "Polymerase chain reaction for DNA amplification."}]
 Input: "Primer design is a general molecular biology task used across PCR, sequencing, cloning, and diagnostic workflows."
 Output:
 {
   "summary": "Added Primer Design as an independent molecular biology discipline.",
   "operations": [
     { "op": "add_concept", "tempId": "tmp_1", "label": "Primer Design", "description": "General molecular biology methodology for creating oligonucleotide sequences for PCR, sequencing, and cloning." },
-    { "op": "add_edge", "from": "tmp_1", "to": "c_2", "relation": "used in", "label": "essential prerequisite" }
+    { "op": "add_edge", "from": "tmp_1", "to": "c_3", "relation": "used in", "label": "essential prerequisite" }
   ]
 }
 

@@ -38,13 +38,14 @@ Side Panel / Canvas UI (Interactive Map + Apply All / Review + Durable Stale Rec
     - Automatic resolution of `add_edge` and `suggest_merge` operations from raw IDs (`tmp_1`, `c_5d6601f0d6`) to human-readable concept labels (`Distributed Practice → Spaced Repetition`).
     - Full visual clarity preserving direction (`From → To`), relation type badge (`Relation: is a type of`), and semantic label explanation (`"specialized application"`).
     - Preserves subset selection semantics (`validateProposalSubset`) without exposing raw opaque IDs to users.
-- **Workers AI Ingestion Engine & Two-Sided Concept Boundary Policy**:
+- **Workers AI Ingestion Engine & Three-Pillar Concept Boundary Policy**:
   - Model: `@cf/meta/llama-3.1-8b-instruct-fast` (with automatic fallback to `@cf/meta/llama-3.3-70b-instruct-fp8-fast`, `@cf/meta/llama-3-8b-instruct`).
   - Structured JSON Mode: `response_format: { type: 'json_object' }`.
-  - **Two-Sided Concept Boundary Policy**:
-    - *Attachment Test (Anti-Fragmentation)*: Mechanisms, parameters, implementation steps, conditions, and explanations that depend on an existing concept $X$ MUST generate `enrich_concept` on $X$.
-    - *Independence Escape Hatch (Anti-Over-Merging)*: Claims that have independent identity (counterfactually true even without $X$, broader/parallel conceptual scope, or general reusable methodology) MUST generate `add_concept` (e.g. `Distributed Learning` as a broader phenomenon, `Testing Effect`, `Primer Design`, `Cellular Respiration`).
-    - *Decision Principle*: Replaced naive "if uncertain -> enrich" with scope-preserving dual evaluation (Attachment vs Independence).
+  - **Three-Pillar Concept Boundary Policy**:
+    - *1. Attachment Test (Anti-Fragmentation)*: Mechanisms, parameters, implementation steps, conditions, and explanations that describe an internal property of $X$ itself MUST generate `enrich_concept` on $X$.
+    - *2. Independence Test (Anti-Over-Merging)*: Claims that have standalone identity (counterfactually true even without $X$, broader/parallel conceptual scope, or general reusable methodology) MUST generate `add_concept` (e.g. `Distributed Learning`, `Cellular Respiration`).
+    - *3. Relational / Composability Signal (Composability Guard)*: When new material relates $A$ to existing $X$ via composability, synergy, combination, complementarity, causality, or contrast (e.g. "A can be combined with X", "A complements X", "A works alongside X"), $A$ and $X$ are recognized as two distinct interacting entities. Generates `add_concept A` + `add_edge (A <-> X)` instead of absorbing $A$ into $X$.
+    - *Decision Principle*: Property of $X$ $\rightarrow$ enrich $X$; Standalone idea $A$ $\rightarrow$ add $A$; Relationship/combination between $A$ and $X$ $\rightarrow$ add $A$ + edge.
   - Zero mock AI: Live end-to-end verified with real text ingestion and proposal extraction in 1.5–2.0s.
 - **Durable Proposal Lifecycle & Stale Recovery Across Reloads**:
   - Automatic `fetchRemoteState()` on startup and workspace switch.

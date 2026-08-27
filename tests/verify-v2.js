@@ -650,24 +650,25 @@ async function runSuite() {
     assert.strictEqual(state.audit.find(a => a.action === 'proposal_apply_success').revisionAfter, 2);
   });
 
-  // Test 18: Two-Sided Concept Boundary Gate & Incremental Merge Invariant
-  await test('18. Two-Sided Concept Boundary Gate & Incremental Merge Invariant', async () => {
+  // Test 18: Three-Pillar Concept Boundary Gate & Incremental Merge Invariant
+  await test('18. Three-Pillar Concept Boundary Gate & Incremental Merge Invariant', async () => {
     const fs = require('fs');
     const path = require('path');
     const workerCode = fs.readFileSync(path.join(__dirname, '../src/worker.js'), 'utf-8');
 
-    // 18.1 Verify system prompt includes Two-Sided Concept Boundary Gate
-    assert(workerCode.includes('PRODUCT RULE: TWO-SIDED CONCEPT BOUNDARY GATE'), 'worker.js must include TWO-SIDED CONCEPT BOUNDARY GATE in systemPrompt');
+    // 18.1 Verify system prompt includes Three-Pillar Concept Boundary Gate
+    assert(workerCode.includes('PRODUCT RULE: THREE-PILLAR CONCEPT BOUNDARY GATE'), 'worker.js must include THREE-PILLAR CONCEPT BOUNDARY GATE in systemPrompt');
     assert(workerCode.includes('ATTACHMENT TEST -> ENRICH EXISTING CONCEPT'), 'worker.js must include ATTACHMENT TEST');
-    assert(workerCode.includes('INDEPENDENCE ESCAPE HATCH -> ADD NEW CONCEPT'), 'worker.js must include INDEPENDENCE ESCAPE HATCH');
-    assert(workerCode.includes('COUNTERFACTUAL INDEPENDENCE:'), 'worker.js must include COUNTERFACTUAL INDEPENDENCE criterion');
-    assert(workerCode.includes('SCOPE / GENERALITY:'), 'worker.js must include SCOPE / GENERALITY criterion');
+    assert(workerCode.includes('INDEPENDENCE TEST -> ADD NEW CONCEPT'), 'worker.js must include INDEPENDENCE TEST');
+    assert(workerCode.includes('RELATIONAL / COMPOSABILITY SIGNAL -> ADD NEW CONCEPT A + ADD_EDGE'), 'worker.js must include RELATIONAL / COMPOSABILITY SIGNAL');
+    assert(workerCode.includes('Counterfactual Independence:'), 'worker.js must include Counterfactual Independence criterion');
+    assert(workerCode.includes('Scope / Generality:'), 'worker.js must include Scope / Generality criterion');
 
     // 18.2 Verify balanced decision examples exist
     assert(workerCode.includes('Testing Effect'), 'worker.js must provide Testing Effect independent concept example');
+    assert(workerCode.includes('Timeboxing'), 'worker.js must provide Timeboxing composability example');
     assert(workerCode.includes('Primer Design'), 'worker.js must provide Primer Design independent concept example');
     assert(workerCode.includes('Enriched Active Recall'), 'worker.js must provide Active Recall enrichment example');
-    assert(workerCode.includes('Enriched PCR'), 'worker.js must provide PCR enrichment example');
   });
 
   // Test 19: Human-Readable Edge Review UI Resolution Invariant
