@@ -232,6 +232,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       node.innerHTML = `
         <div class="concept-header" data-id="${c.id}">
+          <div class="concept-drag-handle" data-id="${c.id}" title="Drag to reposition card">⋮⋮</div>
           <span class="concept-title" contenteditable="true" data-id="${c.id}">${escapeHtml(c.label)}</span>
           <div class="concept-actions">
             ${badgeHtml}
@@ -563,6 +564,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         node.style.left = `${newX}px`;
         node.style.top = `${newY}px`;
       }
+      const c = concepts.find(item => item.id === draggedConceptId);
+      if (c) {
+        c.x = newX;
+        c.y = newY;
+      }
       renderEdges();
       return;
     }
@@ -607,7 +613,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         node.classList.remove('dragging');
         const finalX = parseFloat(node.style.left);
         const finalY = parseFloat(node.style.top);
+        const c = concepts.find(item => item.id === draggedConceptId);
+        if (c) {
+          c.x = finalX;
+          c.y = finalY;
+        }
         await Storage.updateConcept(draggedConceptId, { x: finalX, y: finalY });
+        renderEdges();
       }
       isDraggingConcept = false;
       draggedConceptId = null;
@@ -629,7 +641,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function handleConceptPointerDown(e, concept) {
-    if (e.target.closest('.btn-card-close') || e.target.closest('.badge-sources') || e.target.getAttribute('contenteditable') === 'true') return;
+    if (activeTool !== 'select') return;
+    if (e.target.closest('.btn-card-close') || e.target.closest('.badge-sources') || e.target.getAttribute('contenteditable') === 'true' || e.target.closest('[contenteditable="true"]')) return;
 
     e.stopPropagation();
     isDraggingConcept = true;

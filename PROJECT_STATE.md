@@ -32,8 +32,14 @@ Side Panel / Canvas UI (Interactive Map + Apply All / Review + Durable Stale Rec
 - **Side Panel Interactive Living Map**:
   - Two Tabs: `[ 🗺️ Map ]` (Default) and `[ 📚 Sources ]`.
   - Full pan/zoom viewport in narrow Side Panel with responsive card widths.
-  - Live concept node dragging, inline title/description editing, evidence drawer, and connection edges.
+  - Live concept node dragging with dedicated grab handles (`⋮⋮`), inline title/description editing, evidence drawer, and connection edges.
   - `↗ Expand` button in header opens full standalone dual-canvas workspace.
+  - **Concept Card Drag Handles & Edge Visual Clarity**:
+    - Dedicated `.concept-drag-handle` (`⋮⋮`) in Concept headers with `cursor: grab` / `cursor: grabbing`.
+    - Strict `activeTool === 'select'` gating prevents accidental node drags in Pen, Highlighter, Eraser, and Connect modes.
+    - Protected `contenteditable="true"` title and description editing so text clicks never accidentally trigger card movement.
+    - Real-time SVG edge rerendering during drag and persistent cloud/local storage on pointerup.
+    - SVG text stroke halo (`paint-order: stroke fill; stroke: #0f172a; stroke-width: 4px;`) ensures edge labels remain legible over grid lines and canvas background.
   - **Human-Readable Proposal Review UI ("AI Proposes; Human Commits")**:
     - Automatic resolution of `add_edge` and `suggest_merge` operations from raw IDs (`tmp_1`, `c_5d6601f0d6`) to human-readable concept labels (`Distributed Practice → Spaced Repetition`).
     - Full visual clarity preserving direction (`From → To`), relation type badge (`Relation: is a type of`), and semantic label explanation (`"specialized application"`).

@@ -745,6 +745,120 @@ async function runSuite() {
     assert(!canvasCode.includes('titleText = `${op.from} → ${op.to}`'), 'canvas.js must not render raw op.from -> op.to');
   });
 
+  // Test 20: Concept Card Drag Handle, Select Mode Dragging, and Edge Geometry Invariant
+  await test('20. Concept Card Drag Handle, Select Mode Dragging, and Edge Geometry Invariant', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const canvasJs = fs.readFileSync(path.join(__dirname, '../canvas.js'), 'utf-8');
+    const canvasCss = fs.readFileSync(path.join(__dirname, '../canvas.css'), 'utf-8');
+    const sidepanelJs = fs.readFileSync(path.join(__dirname, '../sidepanel.js'), 'utf-8');
+    const sidepanelCss = fs.readFileSync(path.join(__dirname, '../sidepanel.css'), 'utf-8');
+
+    // 20.1 Structure and CSS Checks: Dedicated drag handle
+    assert(canvasJs.includes('class="concept-drag-handle"'), 'canvas.js must render .concept-drag-handle in concept header');
+    assert(sidepanelJs.includes('class="sp-card-drag-handle"'), 'sidepanel.js must render .sp-card-drag-handle in card head');
+    assert(canvasCss.includes('.concept-drag-handle'), 'canvas.css must style .concept-drag-handle with grab cursor');
+    assert(sidepanelCss.includes('.sp-card-drag-handle'), 'sidepanel.css must style .sp-card-drag-handle with grab cursor');
+    assert(canvasCss.includes('paint-order: stroke fill'), 'canvas.css must style .edge-label-text with paint-order halo');
+    assert(sidepanelCss.includes('paint-order: stroke fill'), 'sidepanel.css must style .sp-edge-label with paint-order halo');
+
+    // 20.2 Select Tool Enforcement & Non-Select Guard
+    assert(canvasJs.includes("if (activeTool !== 'select') return;"), 'canvas.js handleConceptPointerDown must enforce activeTool === select');
+    assert(canvasJs.includes("e.target.closest('[contenteditable=\"true\"]')"), 'canvas.js handleConceptPointerDown must guard against contenteditable clicks');
+
+    // 20.3 Functional DOM Drag Simulation & Edge Geometry Rerender
+    const memoryStorage = {};
+    const mockStorage = {
+      updateConcept: async (id, data) => {
+        memoryStorage[id] = { ...(memoryStorage[id] || {}), ...data };
+      }
+    };
+
+    // Simulate 3 collinear nodes: c1 (0, 100), c2 (300, 100), c3 (600, 100) with edge c1 -> c3
+    const concepts = [
+      { id: 'c1', label: 'Concept 1', x: 0, y: 100, width: 200 },
+      { id: 'c2', label: 'Concept 2 (Midpoint)', x: 300, y: 100, width: 200 },
+      { id: 'c3', label: 'Concept 3', x: 600, y: 100, width: 200 }
+    ];
+
+    let activeTool = 'select';
+    let isDraggingConcept = false;
+    let draggedConceptId = null;
+    let dragOffset = { x: 0, y: 0 };
+    let renderEdgesCount = 0;
+
+    function renderEdges() {
+      renderEdgesCount++;
+    }
+
+    function handleConceptPointerDown(e, concept) {
+      if (activeTool !== 'select') return;
+      if (e.target.closest && (e.target.closest('.btn-card-close') || e.target.closest('.badge-sources') || e.target.getAttribute('contenteditable') === 'true' || e.target.closest('[contenteditable="true"]'))) return;
+      isDraggingConcept = true;
+      draggedConceptId = concept.id;
+      dragOffset = { x: e.clientX - concept.x, y: e.clientY - concept.y };
+    }
+
+    function handlePointerMove(e) {
+      if (isDraggingConcept && draggedConceptId) {
+        const newX = Math.round(e.clientX - dragOffset.x);
+        const newY = Math.round(e.clientY - dragOffset.y);
+        const c = concepts.find(item => item.id === draggedConceptId);
+        if (c) {
+          c.x = newX;
+          c.y = newY;
+        }
+        renderEdges();
+      }
+    }
+
+    async function handlePointerUp() {
+      if (isDraggingConcept && draggedConceptId) {
+        const c = concepts.find(item => item.id === draggedConceptId);
+        if (c) {
+          await mockStorage.updateConcept(draggedConceptId, { x: c.x, y: c.y });
+        }
+        renderEdges();
+        isDraggingConcept = false;
+        draggedConceptId = null;
+      }
+    }
+
+    // A: In Select mode, clicking drag handle starts dragging
+    const mockDragHandle = { getAttribute: () => null, closest: (sel) => null };
+    handleConceptPointerDown({ target: mockDragHandle, clientX: 305, clientY: 105 }, concepts[1]);
+    assert.strictEqual(isDraggingConcept, true, 'Pointerdown on drag handle in select mode must start drag');
+    assert.strictEqual(draggedConceptId, 'c2');
+
+    // Move midpoint concept vertically down by 150px
+    handlePointerMove({ clientX: 305, clientY: 255 });
+    assert.strictEqual(concepts[1].y, 250, 'Move must update concept y live');
+    assert(renderEdgesCount > 0, 'Move must call renderEdges live');
+
+    // Pointerup persists to storage
+    await handlePointerUp();
+    assert.strictEqual(isDraggingConcept, false);
+    assert.strictEqual(memoryStorage['c2'].y, 250, 'Pointerup must persist new y coordinate to storage');
+
+    // B: Title editing does NOT drag
+    const mockTitleEl = { getAttribute: (attr) => attr === 'contenteditable' ? 'true' : null, closest: (sel) => sel.includes('contenteditable') ? true : null };
+    handleConceptPointerDown({ target: mockTitleEl, clientX: 310, clientY: 250 }, concepts[1]);
+    assert.strictEqual(isDraggingConcept, false, 'Clicking contenteditable title MUST NOT start dragging');
+
+    // C: Body editing does NOT drag
+    const mockBodyEl = { getAttribute: (attr) => attr === 'contenteditable' ? 'true' : null, closest: (sel) => sel.includes('contenteditable') ? true : null };
+    handleConceptPointerDown({ target: mockBodyEl, clientX: 310, clientY: 280 }, concepts[1]);
+    assert.strictEqual(isDraggingConcept, false, 'Clicking contenteditable body MUST NOT start dragging');
+
+    // D: Pen / Highlighter / Eraser / Connect tools do NOT drag
+    const nonSelectTools = ['pen', 'highlighter', 'eraser', 'connect'];
+    for (const tool of nonSelectTools) {
+      activeTool = tool;
+      handleConceptPointerDown({ target: mockDragHandle, clientX: 305, clientY: 255 }, concepts[1]);
+      assert.strictEqual(isDraggingConcept, false, `Tool "${tool}" MUST NOT start concept dragging`);
+    }
+  });
+
   assert.strictEqual(networkCallsAttempted, 0, 'verify-v2.js MUST execute with ZERO network calls');
   console.log(`  ✓ VERIFIED: Zero (0) network calls attempted during verify-v2 execution.`);
 

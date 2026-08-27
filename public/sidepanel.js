@@ -294,6 +294,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         card.style.left = `${newX}px`;
         card.style.top = `${newY}px`;
       }
+      const c = concepts.find(item => item.id === draggedCardId);
+      if (c) {
+        c.x = newX;
+        c.y = newY;
+      }
       renderEdges();
     }
   }
@@ -310,7 +315,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         card.classList.remove('dragging');
         const finalX = parseFloat(card.style.left);
         const finalY = parseFloat(card.style.top);
+        const c = concepts.find(item => item.id === draggedCardId);
+        if (c) {
+          c.x = finalX;
+          c.y = finalY;
+        }
         await Storage.updateConcept(draggedCardId, { x: finalX, y: finalY });
+        renderEdges();
       }
       isDraggingCard = false;
       draggedCardId = null;
@@ -408,6 +419,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       card.innerHTML = `
         <div class="sp-card-head" data-id="${c.id}">
+          <div class="sp-card-drag-handle" data-id="${c.id}" title="Drag to reposition card">⋮⋮</div>
           <span class="sp-card-title" contenteditable="true" data-id="${c.id}">${escapeHtml(c.label)}</span>
           <div style="display:flex;align-items:center;">
             ${badgeHtml}
@@ -420,7 +432,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Dragging
       const headEl = card.querySelector('.sp-card-head');
       headEl.addEventListener('pointerdown', (e) => {
-        if (e.target.closest('.sp-card-close') || e.target.closest('.sp-card-badge') || e.target.getAttribute('contenteditable') === 'true') return;
+        if (e.target.closest('.sp-card-close') || e.target.closest('.sp-card-badge') || e.target.getAttribute('contenteditable') === 'true' || e.target.closest('[contenteditable="true"]')) return;
         e.stopPropagation();
         isDraggingCard = true;
         draggedCardId = c.id;

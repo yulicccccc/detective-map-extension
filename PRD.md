@@ -252,6 +252,13 @@ The user receives one proposal, not chunk-level result spam.
 - **Direction & Relation Clarity**: Review modal displays explicit `From → To` directional flow, semantic `relation` badges, and proposed explanatory labels.
 - **Subset Preservation**: Users can selectively check/uncheck individual concepts, enrichments, or edges without dangling references.
 
+## 6.7 Concept Card Dragging & Edge Label Readability
+
+- **Dedicated Grab Handle**: Every concept card features a dedicated `.concept-drag-handle` (`⋮⋮`) with `cursor: grab` / `cursor: grabbing` to ensure reliable repositioning on the spatial canvas.
+- **Select Mode Enforcement**: Node dragging is strictly bound to `activeTool === 'select'`, preventing accidental node repositioning during pen drawing, highlighting, erasing, or connecting.
+- **Protected Contenteditable**: Clicking editable titles or descriptions preserves text editing and never triggers dragging.
+- **Edge Label Readability**: SVG edge labels feature a protective high-contrast halo (`paint-order: stroke fill; stroke: #0f172a; stroke-width: 4px;`) ensuring text remains legible when crossing grid lines and ink strokes.
+
 ---
 
 # 7. Map Data Model
