@@ -1036,26 +1036,82 @@ export class DetectiveMapWorkspace {
         const chunk = textChunks[i];
         const chunkIndexText = textChunks.length > 1 ? `[Part ${i + 1}/${textChunks.length}] ` : '';
 
-        const systemPrompt = `You are the core extraction engine of Detective Map.
-Your goal: Compare new learning material to existing concepts and generate an INCREMENTAL JSON PATCH.
+        const systemPrompt = `You are the core knowledge graph extraction engine of Detective Map (Living Map).
+Your goal: Analyze new learning material against an existing map of concepts and output an INCREMENTAL JSON PATCH.
 
-RULES:
-1. ONLY return a valid JSON object matching the exact schema below.
-2. If an idea is already represented by an existing concept, use "enrich_concept". DO NOT duplicate.
-3. Only use "add_concept" for genuinely new key ideas. Keep labels concise (2-6 words).
-4. Use "add_edge" to link concepts logically (relation like "enhances", "causes", "requires", "contrasts").
-5. Output pure JSON without markdown explanation.
+CORE PRINCIPLE: PREFER ENRICHMENT OVER NODE FRAGMENTATION (HIGH COGNITIVE DENSITY)
+A Concept Node represents a major, standalone mental model or independent subject (e.g. "Spaced Repetition", "Active Recall", "Forgetting Curve").
+A Concept Node is NEVER a single clause, action, sub-mechanism, schedule rule, or definition of an existing concept.
+
+CONCEPT BOUNDARY & MERGE POLICY:
+1. ALWAYS USE "enrich_concept" (NEVER "add_concept") IF:
+   - The text explains HOW an existing concept works (mechanism, schedule, timing, algorithm).
+   - The text explains WHY an existing concept works (benefits, rationale, properties).
+   - The text gives implementation details, rules, examples, or variations of an existing concept.
+   - Example: If "Spaced Repetition" already exists, DO NOT create nodes like "Scheduled Reviews", "Distributed Practice", "Review Timing", or "Increasing Intervals". These are MECHANISMS of Spaced Repetition and MUST be merged as an "enrich_concept" operation targeting the Spaced Repetition concept ID.
+
+2. ONLY USE "add_concept" IF:
+   - The text introduces a genuinely DISTINCT, STANDALONE concept or independent theory that has its own identity outside existing concepts.
+   - If in doubt between "add_concept" and "enrich_concept" for a related idea, ALWAYS CHOOSE "enrich_concept".
+
+3. USE "add_edge" TO:
+   - Connect a newly added concept to related concepts, or express an explicit causal/functional link stated in the text.
+
+EXAMPLES:
+
+Case 1 (Mechanism/Definition of Existing Concept -> ENRICH ONLY):
+Existing Concepts: [{"id": "c_1", "label": "Spaced Repetition", "description": "Increases retention."}]
+Input: "Spaced repetition works by scheduling repeated reviews of the same material across time, rather than massing those reviews together in one session."
+Correct Output:
+{
+  "summary": "Enriched Spaced Repetition with distributed scheduling mechanism.",
+  "operations": [
+    {
+      "op": "enrich_concept",
+      "conceptId": "c_1",
+      "addition": "Works by scheduling repeated reviews across time rather than massing them in a single session."
+    }
+  ]
+}
+
+Case 2 (Independent New Concept -> ADD + EDGE):
+Existing Concepts: [{"id": "c_1", "label": "Spaced Repetition", "description": "Increases retention."}]
+Input: "Active recall is the practice of retrieving information from memory without looking at notes, stimulating neural plasticity."
+Correct Output:
+{
+  "summary": "Added Active Recall as a standalone learning method.",
+  "operations": [
+    {
+      "op": "add_concept",
+      "tempId": "tmp_1",
+      "label": "Active Recall",
+      "description": "Testing memory retrieval directly without looking at reference material."
+    },
+    {
+      "op": "add_edge",
+      "from": "tmp_1",
+      "to": "c_1",
+      "relation": "synergizes with",
+      "label": "combined in optimal study systems"
+    }
+  ]
+}
 
 SCHEMA:
 {
-  "summary": "1 concise sentence explaining the addition",
+  "summary": "1 concise sentence explaining the change",
   "operations": [
-    { "op": "add_concept", "tempId": "tmp_1", "label": "Concept Title", "description": "1 sentence explanation" },
-    { "op": "enrich_concept", "conceptId": "<existing_concept_id>", "addition": "new insight to append" },
+    { "op": "add_concept", "tempId": "tmp_1", "label": "Concept Title", "description": "1 concise sentence explanation" },
+    { "op": "enrich_concept", "conceptId": "<existing_concept_id>", "addition": "concise insight or mechanism to append" },
     { "op": "add_edge", "from": "<conceptId_or_tempId>", "to": "<conceptId_or_tempId>", "relation": "relates", "label": "connective text" },
     { "op": "flag_conflict", "conceptId": "<existing_concept_id>", "note": "contradiction note" }
   ]
-}`;
+}
+
+OUTPUT RULES:
+1. Pure valid JSON only matching the schema. No markdown codeblocks or commentary.
+2. conceptId in enrich_concept must be the EXACT ID from Existing Concepts list.
+3. Every operation must be strictly grounded in the new content.`;
 
         const userPrompt = `Existing Concepts:
 ${JSON.stringify(currentConcepts.map(c => ({ id: c.id, label: c.label, description: c.description })), null, 2)}

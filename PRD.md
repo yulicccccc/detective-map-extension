@@ -225,9 +225,12 @@ AI returns a **structured patch**, not a whole replacement map.
 
 AI must not directly emit destructive `delete_concept` operations as automatic actions.
 
-## 6.4 Deduplication
+## 6.4 Concept Boundary & Incremental Merge Policy
 
-Before proposing a new concept, AI compares it to existing concepts. Semantic equivalents should enrich an existing concept or create a merge suggestion rather than duplicate nodes.
+Before proposing a new concept, AI strictly evaluates whether incoming information represents a new standalone subject or an incremental refinement of an existing node:
+- **Prefer Enrichment over Fragmentation (High Cognitive Density)**: Mechanisms, definitions, schedule rules, implementation steps, examples, or properties of an existing concept MUST generate `enrich_concept` targeting the parent concept ID. AI is strictly forbidden from creating fragmented satellite nodes (e.g. creating "Scheduled Reviews", "Review Timing", or "Increasing Intervals" when "Spaced Repetition" already exists).
+- **Standalone Concept Threshold**: `add_concept` is reserved exclusively for distinct, independent mental models or theories that have their own identity outside existing concepts (e.g. "Active Recall", "Forgetting Curve").
+- **Deduplication**: Semantic equivalents enrich existing concepts or create merge suggestions rather than duplicating nodes.
 
 ## 6.5 Long Source Processing
 
