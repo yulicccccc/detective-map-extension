@@ -650,31 +650,31 @@ async function runSuite() {
     assert.strictEqual(state.audit.find(a => a.action === 'proposal_apply_success').revisionAfter, 2);
   });
 
-  // Test 18: Semantic Target Grounding Gate, Three-Pillar Boundary, & Edge Grounding Invariant
-  await test('18. Semantic Target Grounding Gate, Three-Pillar Boundary, & Edge Grounding Invariant', async () => {
+  // Test 18: Explicit Source Subject Preservation, Contrastive Identity Check, & Edge Grounding Invariant
+  await test('18. Explicit Source Subject Preservation, Contrastive Identity Check, & Edge Grounding Invariant', async () => {
     const fs = require('fs');
     const path = require('path');
     const workerCode = fs.readFileSync(path.join(__dirname, '../src/worker.js'), 'utf-8');
 
-    // 18.1 Verify Precondition Gate: Semantic Target Grounding
-    assert(workerCode.includes('PRECONDITION: SEMANTIC TARGET GROUNDING GATE'), 'worker.js must include SEMANTIC TARGET GROUNDING GATE');
-    assert(workerCode.includes('STEP 1 — IDENTIFY THE SOURCE TARGET'), 'worker.js must include Step 1: Identify Source Target');
-    assert(workerCode.includes('STEP 2 — TARGET ALIGNMENT & ANTI-MAGNETIC ABSORPTION RULE'), 'worker.js must include Step 2: Target Alignment & Anti-Magnetic Absorption');
-    assert(workerCode.includes('TOPICAL SIMILARITY IS NOT IDENTITY'), 'worker.js must include TOPICAL SIMILARITY IS NOT IDENTITY rule');
-    assert(workerCode.includes('STEP 3 — TARGET MISMATCH & THREE-PILLAR DECISION'), 'worker.js must include Step 3: Target Mismatch & Three-Pillar Decision');
+    // 18.1 Verify Precondition Gate: Explicit Source Subject Preservation
+    assert(workerCode.includes('PRECONDITION 1: EXPLICIT SOURCE SUBJECT PRESERVATION'), 'worker.js must include EXPLICIT SOURCE SUBJECT PRESERVATION');
+    assert(workerCode.includes('PRECONDITION 2: POSITIVE IDENTITY EVIDENCE & CONTRASTIVE CHECK'), 'worker.js must include POSITIVE IDENTITY EVIDENCE & CONTRASTIVE CHECK');
+    assert(workerCode.includes('CONTRASTIVE SUBSTITUTION TEST:'), 'worker.js must include CONTRASTIVE SUBSTITUTION TEST');
+    assert(workerCode.includes('CRITICAL SIBLING-CONCEPT ANTI-COLLAPSE RULE:'), 'worker.js must include SIBLING-CONCEPT ANTI-COLLAPSE RULE');
 
-    // 18.2 Verify Three-Pillars and Edge Grounding Rules
+    // 18.2 Verify Three-Pillars, Edge Grounding, and Proposal Consistency Rules
     assert(workerCode.includes('PRODUCT RULE: THREE-PILLAR CONCEPT BOUNDARY GATE'), 'worker.js must include THREE-PILLAR CONCEPT BOUNDARY GATE');
     assert(workerCode.includes('ATTACHMENT TEST (Internal to X) -> ENRICH EXISTING CONCEPT X'), 'worker.js must include ATTACHMENT TEST');
     assert(workerCode.includes('INDEPENDENCE TEST (Standalone A) -> ADD NEW CONCEPT A'), 'worker.js must include INDEPENDENCE TEST');
     assert(workerCode.includes('RELATIONAL & COMPOSABILITY SIGNAL -> ADD NEW CONCEPT A + ADD_EDGE'), 'worker.js must include RELATIONAL & COMPOSABILITY SIGNAL');
     assert(workerCode.includes('EDGE GROUNDING RULE'), 'worker.js must include EDGE GROUNDING RULE');
+    assert(workerCode.includes('PROPOSAL CONSISTENCY INVARIANT'), 'worker.js must include PROPOSAL CONSISTENCY INVARIANT');
 
     // 18.3 Verify balanced decision examples exist
-    assert(workerCode.includes('Classical Conditioning'), 'worker.js must provide Classical Conditioning example');
-    assert(workerCode.includes('Resistance Training'), 'worker.js must provide Resistance Training example');
+    assert(workerCode.includes('Precision'), 'worker.js must provide Precision sibling example');
+    assert(workerCode.includes('Validation'), 'worker.js must provide Validation sibling example');
+    assert(workerCode.includes('Polymerase Chain Reaction'), 'worker.js must provide PCR alias positive control');
     assert(workerCode.includes('Timeboxing'), 'worker.js must provide Timeboxing composability example');
-    assert(workerCode.includes('Enriched Spaced Repetition'), 'worker.js must provide Spaced Repetition enrichment example');
   });
 
   // Test 19: Human-Readable Edge Review UI Resolution Invariant

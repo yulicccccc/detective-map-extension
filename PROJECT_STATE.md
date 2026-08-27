@@ -44,16 +44,18 @@ Side Panel / Canvas UI (Interactive Map + Apply All / Review + Durable Stale Rec
     - Automatic resolution of `add_edge` and `suggest_merge` operations from raw IDs (`tmp_1`, `c_5d6601f0d6`) to human-readable concept labels (`Distributed Practice → Spaced Repetition`).
     - Full visual clarity preserving direction (`From → To`), relation type badge (`Relation: is a type of`), and semantic label explanation (`"specialized application"`).
     - Preserves subset selection semantics (`validateProposalSubset`) without exposing raw opaque IDs to users.
-- **Workers AI Ingestion Engine & Semantic Target Grounding Gate**:
+- **Workers AI Ingestion Engine & Explicit Source Subject Preservation**:
   - Model: `@cf/meta/llama-3.1-8b-instruct-fast` (with automatic fallback to `@cf/meta/llama-3.3-70b-instruct-fp8-fast`, `@cf/meta/llama-3-8b-instruct`).
   - Structured JSON Mode: `response_format: { type: 'json_object' }`.
-  - **Reasoning Order (Target Grounding $\rightarrow$ Three-Pillar Boundary $\rightarrow$ Grounded Operations)**:
-    - *Step 1 — Identify Source Target*: First determine what subject/entity $A$ the source is primarily about.
-    - *Step 2 — Target Alignment & Anti-Magnetic Absorption*: Before emitting `enrich_concept X`, require positive grounding (Direct Identity, Clear Alias/Synonym, Contextual Coreference) that $A$ is semantically identical to $X$. **Topical similarity is NOT identity** (e.g. `Retrieval Practice` is not absorbed into `Spaced Repetition` merely because both concern memory retention).
-    - *Step 3 — Three-Pillar Decision & Edge Grounding*:
+  - **Reasoning Order (Explicit Subject $\rightarrow$ Positive Identity & Contrastive Check $\rightarrow$ Three-Pillars $\rightarrow$ Grounded Operations $\rightarrow$ Consistent Summary)**:
+    - *Precondition 1 — Explicit Source Subject Preservation*: When the source explicitly introduces/names candidate concept $A$ ("A improves...", "A is...", "A refers to..."), $A$'s identity is strictly preserved.
+    - *Precondition 2 — Positive Identity & Contrastive Check*: Only map $A$ to existing $X$ if positive identity evidence exists (exact name, true alias like `PCR` $\leftrightarrow$ `Polymerase Chain Reaction`, explicit equivalence). **Contrastive test**: "If $A$ was replaced with $X$, would the technical meaning be distorted?" If yes $\rightarrow$ $A \neq X$.
+    - *Critical Sibling-Concept Anti-Collapse Rule*: Close conceptual siblings (e.g. `Self-Explanation` vs `Elaborative Interrogation`, `Retrieval Practice` vs `Spaced Repetition`, `Accuracy` vs `Precision`, `Sensitivity` vs `Specificity`, `Validation` vs `Verification`) are never collapsed into each other.
+    - *Three-Pillar Decision & Edge Grounding*:
       - *1. Attachment Test*: Property/mechanism of $X$ itself $\rightarrow$ `enrich_concept X`.
-      - *2. Independence Test*: Standalone/broader entity $A$ $\rightarrow$ `add_concept A` (with NO ungrounded edges).
+      - *2. Independence Test*: Standalone/sibling entity $A$ $\rightarrow$ `add_concept A` (with 0 ungrounded edges).
       - *3. Relational / Composability Signal*: Explicit combination/synergy between $A$ and $X$ $\rightarrow$ `add_concept A` + `add_edge (A <-> X)`.
+    - *Proposal Consistency Invariant*: The summary field must accurately describe the emitted operations (e.g., never claim "Added..." when only emitting `enrich_concept`).
   - Zero mock AI: Live end-to-end verified with real text ingestion and proposal extraction in 1.5–2.0s.
 - **Durable Proposal Lifecycle & Stale Recovery Across Reloads**:
   - Automatic `fetchRemoteState()` on startup and workspace switch.

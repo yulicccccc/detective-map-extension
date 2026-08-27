@@ -964,6 +964,173 @@ async function runCloudVerification() {
   assert(hasFermConcept, 'Proposal MUST contain add_concept for Fermentation');
   assert(!hasEnrichPhoto2, 'Proposal MUST NOT enrich Photosynthesis for fermentation');
   console.log('  ✓ PASS: Cross-Domain Target Grounding verified — Fermentation created as independent concept (+1 Concept)');
+
+  // Test 21: Real Failure Regression — Self-Explanation vs Elaborative Interrogation (Explicit Subject Preservation)
+  console.log('\n[Test 21] Explicit Source Subject Preservation (Self-Explanation MUST NOT absorb into Elaborative Interrogation)...');
+  const resWsSelfExp = await fetch(`${WORKER_BASE}/api/workspaces`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({ title: `__TEST__ SELF_EXP_${Date.now()}` })
+  });
+  const { workspace: wsSelfExp } = await resWsSelfExp.json();
+  assert(wsSelfExp && wsSelfExp.id, 'Must create temp test workspace');
+  createdTestWsIds.push(wsSelfExp.id);
+
+  const resBaseElab = await fetch(`${WORKER_BASE}/api/concepts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({
+      workspaceId: wsSelfExp.id,
+      label: 'Elaborative Interrogation',
+      description: 'Generating explanations for why explicitly stated facts are true.'
+    })
+  });
+  const { concept: baseElabConcept } = await resBaseElab.json();
+
+  const selfExpText = 'Self-explanation improves learning when learners generate explanations that connect new information with what they already know.';
+  await fetch(`${WORKER_BASE}/api/sources`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({
+      workspaceId: wsSelfExp.id,
+      title: 'Self-Explanation Study',
+      text: selfExpText
+    })
+  });
+
+  let selfExpProp = null;
+  const startSelfExpPoll = Date.now();
+  while (Date.now() - startSelfExpPoll < 60000) {
+    await new Promise(r => setTimeout(r, 2000));
+    const resState = await fetch(`${WORKER_BASE}/api/state?workspaceId=${wsSelfExp.id}`, {
+      headers: { 'Authorization': `Bearer ${aiToken}` }
+    });
+    const stateData = await resState.json();
+    if (stateData.proposals && stateData.proposals.length > 0) {
+      selfExpProp = stateData.proposals[0];
+      break;
+    }
+  }
+  assert(selfExpProp, 'AI must generate a proposal for self-explanation test');
+  const selfExpOps = selfExpProp.operations;
+  const hasSelfExpConcept = selfExpOps.some(op => op.op === 'add_concept' && /self[-\s]*explanation/i.test(op.label || ''));
+  const hasEnrichElab = selfExpOps.some(op => op.op === 'enrich_concept' && op.conceptId === baseElabConcept.id);
+  const hasEdgeToElab = selfExpOps.some(op => op.op === 'add_edge' && (op.to === baseElabConcept.id || op.from === baseElabConcept.id));
+
+  assert(hasSelfExpConcept, 'Proposal MUST contain add_concept for Self-Explanation');
+  assert(!hasEnrichElab, 'Proposal MUST NOT enrich Elaborative Interrogation (Close Sibling Anti-Collapse Rule)');
+  assert(!hasEdgeToElab, 'Proposal MUST NOT create an ungrounded edge to Elaborative Interrogation');
+  console.log('  ✓ PASS: Explicit Subject Preservation verified — Self-Explanation created as independent concept (+1 Concept, 0 Enriches, 0 Ungrounded Edges)');
+
+  // Test 22: Sibling Generalization Test (Sensitivity vs Specificity)
+  console.log('\n[Test 22] Sibling Generalization Test (Sensitivity vs Specificity)...');
+  const resWsSens = await fetch(`${WORKER_BASE}/api/workspaces`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({ title: `__TEST__ SENSITIVITY_${Date.now()}` })
+  });
+  const { workspace: wsSens } = await resWsSens.json();
+  assert(wsSens && wsSens.id, 'Must create temp test workspace');
+  createdTestWsIds.push(wsSens.id);
+
+  const resBaseSpec = await fetch(`${WORKER_BASE}/api/concepts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({
+      workspaceId: wsSens.id,
+      label: 'Specificity',
+      description: 'Ability of a test to correctly identify those without the disease.'
+    })
+  });
+  const { concept: baseSpecConcept } = await resBaseSpec.json();
+
+  const sensText = 'Sensitivity measures a diagnostic test\'s ability to correctly identify people who truly have the condition.';
+  await fetch(`${WORKER_BASE}/api/sources`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({
+      workspaceId: wsSens.id,
+      title: 'Diagnostic Metrics',
+      text: sensText
+    })
+  });
+
+  let sensProp = null;
+  const startSensPoll = Date.now();
+  while (Date.now() - startSensPoll < 60000) {
+    await new Promise(r => setTimeout(r, 2000));
+    const resState = await fetch(`${WORKER_BASE}/api/state?workspaceId=${wsSens.id}`, {
+      headers: { 'Authorization': `Bearer ${aiToken}` }
+    });
+    const stateData = await resState.json();
+    if (stateData.proposals && stateData.proposals.length > 0) {
+      sensProp = stateData.proposals[0];
+      break;
+    }
+  }
+  assert(sensProp, 'AI must generate a proposal for sensitivity test');
+  const sensOps = sensProp.operations;
+  const hasSensConcept = sensOps.some(op => op.op === 'add_concept' && /sensitivity/i.test(op.label || ''));
+  const hasEnrichSpec = sensOps.some(op => op.op === 'enrich_concept' && op.conceptId === baseSpecConcept.id);
+
+  assert(hasSensConcept, 'Proposal MUST contain add_concept for Sensitivity');
+  assert(!hasEnrichSpec, 'Proposal MUST NOT enrich Specificity');
+  console.log('  ✓ PASS: Sibling Generalization verified — Sensitivity created as independent concept (+1 Concept)');
+
+  // Test 23: True Alias Positive Control (PCR vs Polymerase Chain Reaction)
+  console.log('\n[Test 23] True Alias Positive Control (PCR vs Polymerase Chain Reaction)...');
+  const resWsPcr = await fetch(`${WORKER_BASE}/api/workspaces`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({ title: `__TEST__ PCR_ALIAS_${Date.now()}` })
+  });
+  const { workspace: wsPcr } = await resWsPcr.json();
+  assert(wsPcr && wsPcr.id, 'Must create temp test workspace');
+  createdTestWsIds.push(wsPcr.id);
+
+  const resBasePcr = await fetch(`${WORKER_BASE}/api/concepts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({
+      workspaceId: wsPcr.id,
+      label: 'Polymerase Chain Reaction',
+      description: 'Molecular technique for amplifying specific DNA regions.'
+    })
+  });
+  const { concept: basePcrConcept } = await resBasePcr.json();
+
+  const pcrText = 'PCR uses repeated thermal cycles to amplify a target DNA sequence.';
+  await fetch(`${WORKER_BASE}/api/sources`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({
+      workspaceId: wsPcr.id,
+      title: 'PCR Protocol',
+      text: pcrText
+    })
+  });
+
+  let pcrProp = null;
+  const startPcrPoll = Date.now();
+  while (Date.now() - startPcrPoll < 60000) {
+    await new Promise(r => setTimeout(r, 2000));
+    const resState = await fetch(`${WORKER_BASE}/api/state?workspaceId=${wsPcr.id}`, {
+      headers: { 'Authorization': `Bearer ${aiToken}` }
+    });
+    const stateData = await resState.json();
+    if (stateData.proposals && stateData.proposals.length > 0) {
+      pcrProp = stateData.proposals[0];
+      break;
+    }
+  }
+  assert(pcrProp, 'AI must generate a proposal for PCR alias test');
+  const pcrOps = pcrProp.operations;
+  const hasEnrichPcr = pcrOps.some(op => op.op === 'enrich_concept' && op.conceptId === basePcrConcept.id);
+  const pcrAddOps = pcrOps.filter(op => op.op === 'add_concept');
+
+  assert(hasEnrichPcr, 'Proposal MUST enrich Polymerase Chain Reaction for true alias PCR');
+  assert.strictEqual(pcrAddOps.length, 0, 'Proposal MUST NOT duplicate PCR as a new concept node');
+  console.log('  ✓ PASS: True Alias Positive Control verified — PCR successfully enriched Polymerase Chain Reaction (+0 Concepts, ~1 Enrichment)');
   } finally {
     // GUARANTEED CLEANUP OF ALL TEMPORARY TEST RESOURCES WITH POST-DELETION VERIFICATION
     if (createdTestWsIds.length > 0 && aiToken) {

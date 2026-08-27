@@ -225,16 +225,21 @@ AI returns a **structured patch**, not a whole replacement map.
 
 AI must not directly emit destructive `delete_concept` operations as automatic actions.
 
-## 6.4 Semantic Target Grounding & Three-Pillar Concept Boundary Policy
+## 6.4 Explicit Source Subject Preservation & Three-Pillar Concept Boundary Policy
 
-AI adheres to a strict 3-step reasoning order: **Source Target $\rightarrow$ Target Alignment $\rightarrow$ Three-Pillars $\rightarrow$ Grounded Operations**:
-- **Precondition: Semantic Target Grounding**:
-  - *Step 1 — Identify Source Target*: Determine the primary subject $A$ the material is ABOUT before comparing with existing concepts.
-  - *Step 2 — Target Alignment & Anti-Magnetic Absorption*: Only emit `enrich_concept X` when positive grounding proves $A$ is semantically identical to $X$. **Topical similarity is NOT identity**. Existing concepts must not act as semantic magnets absorbing different concepts in the same domain.
+AI adheres to a strict reasoning order: **Explicit Subject $\rightarrow$ Positive Identity & Contrastive Check $\rightarrow$ Three-Pillars $\rightarrow$ Grounded Operations $\rightarrow$ Consistent Summary**:
+- **Precondition 1: Explicit Source Subject Preservation**:
+  - When the source explicitly introduces/names candidate concept $A$, $A$'s identity is preserved and not substituted by a similar existing concept $X$.
+- **Precondition 2: Positive Identity Evidence & Contrastive Check**:
+  - Only map $A$ to existing $X$ if positive identity evidence exists (exact name match, true alias like `PCR` $\leftrightarrow$ `Polymerase Chain Reaction`, explicit equivalence).
+  - *Contrastive Test*: "If $A$ was replaced with $X$, would the technical meaning be distorted?" If yes $\rightarrow$ $A \neq X$.
+  - *Sibling-Concept Anti-Collapse*: Close conceptual neighbors (e.g. `Self-Explanation` vs `Elaborative Interrogation`, `Retrieval Practice` vs `Spaced Repetition`, `Accuracy` vs `Precision`, `Sensitivity` vs `Specificity`, `Validation` vs `Verification`) are strictly kept separate.
 - **Three-Pillar Concept Boundary & Merge Policy**:
-  - *1. Attachment Test (Anti-Fragmentation)*: Internal mechanisms, definitions, schedule rules, and properties of $X$ itself MUST generate `enrich_concept` targeting $X$.
-  - *2. Independence Test (Anti-Over-Merging)*: Claims that have independent identity (counterfactually true without $X$, broader/parallel conceptual scope, or general reusable methodology) MUST generate `add_concept` without inventing ungrounded edges.
+  - *1. Attachment Test (Anti-Fragmentation)*: Internal mechanisms, definitions, and properties of $X$ itself MUST generate `enrich_concept` targeting $X$.
+  - *2. Independence Test (Anti-Over-Merging)*: Claims that have independent identity (counterfactually true without $X$, broader scope, or sibling identity) MUST generate `add_concept` without inventing ungrounded edges.
   - *3. Relational / Composability Signal (Composability Guard)*: When new material relates $A$ to existing $X$ via composability, combination, complementarity, causality, or contrast, $A$ and $X$ are recognized as two distinct interacting entities, generating `add_concept A` + `add_edge (A <-> X)`.
+- **Proposal Consistency**:
+  - The summary field must strictly match the emitted operations (e.g., never claim "Added..." when only emitting `enrich_concept`).
 - **Deduplication**: Semantic equivalents enrich existing concepts or create merge suggestions rather than duplicating nodes.
 
 ## 6.5 Long Source Processing

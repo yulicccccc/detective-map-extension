@@ -1037,49 +1037,51 @@ export class DetectiveMapWorkspace {
 Your goal: Analyze new learning material against an existing map of concepts and output an INCREMENTAL JSON PATCH.
 
 --------------------------------------------------
-PRECONDITION: SEMANTIC TARGET GROUNDING GATE
+PRECONDITION 1: EXPLICIT SOURCE SUBJECT PRESERVATION
 --------------------------------------------------
-Follow this strict 3-step reasoning order before producing any operations:
+When the source introduces, names, or defines a candidate concept A:
+(e.g., "A improves...", "A is...", "A refers to...", "A involves...", "A works by...", "A occurs when...")
+-> A's identity MUST be preserved as the candidate subject.
+-> You MUST NOT substitute A with an existing concept X merely because X is semantically nearby or shares a domain.
 
-STEP 1 — IDENTIFY THE SOURCE TARGET (Subject / Entity A)
-Ask: "What concept, entity, method, phenomenon, or claim is the new source primarily ABOUT?"
-Determine the primary semantic subject / candidate target A.
-Examples:
-- "Classical conditioning forms associations..." -> Target A = Classical Conditioning
-- "Resistance training improves muscular strength..." -> Target A = Resistance Training
-- "Spaced repetition becomes less efficient when..." -> Target A = Spaced Repetition
-- "Timeboxing can be combined with Pomodoro..." -> Primary Target A = Timeboxing, Relational Target = Pomodoro
+--------------------------------------------------
+PRECONDITION 2: POSITIVE IDENTITY EVIDENCE & CONTRASTIVE CHECK
+--------------------------------------------------
+Evaluate whether candidate subject A is identical to an existing concept X:
 
-STEP 2 — TARGET ALIGNMENT & ANTI-MAGNETIC ABSORPTION RULE
-Before emitting "enrich_concept X", require POSITIVE GROUNDING that source target A is semantically identical to existing concept X:
-1. Direct Identity: The source explicitly discusses existing concept X by name or definition.
-2. Clear Synonym / Alias: Target A is genuinely the same concept as X (e.g., "Polymerase Chain Reaction" vs "PCR").
-3. Clear Coreference: The source unmistakably refers back to X in context.
+1. EXACT IDENTITY / SAME CONCEPT MECHANISM (A == X) -> ENRICH X:
+When the source discusses an existing concept X by name or exact definition (e.g., "X works by...", "X is scheduled by...", "X improves retention by..."):
+-> Candidate A IS existing concept X.
+-> Emit "enrich_concept X" with the mechanism or property. DO NOT invent duplicate or satellite concepts (e.g., do not turn "Spaced repetition works by..." into a new concept "Spaced Review").
 
-CRITICAL RULE: TOPICAL SIMILARITY IS NOT IDENTITY.
-Existing concepts must NEVER act as "semantic magnets" that absorb different concepts.
-- Do NOT enrich X merely because A and X share a broad domain (e.g., both are learning techniques, both relate to memory, biology, or exercise).
-- "Retrieval Practice" and "Spaced Repetition" are both memory techniques, but they are DISTINCT entities. Absorbing one into the other is a fatal modeling error.
-- "Classical Conditioning" and "Operant Conditioning" are both behavioral concepts, but they are DISTINCT entities.
+2. TRUE ALIAS / ABBREVIATION (A == X) -> ENRICH X:
+When candidate A is a recognized technical alias or abbreviation for existing concept X (e.g., "PCR" for "Polymerase Chain Reaction", "CBT" for "Cognitive Behavioral Therapy"):
+-> Emit "enrich_concept X". DO NOT create a duplicate node.
 
-STEP 3 — TARGET MISMATCH & THREE-PILLAR DECISION
-If Target A is a coherent, named concept and is NOT semantically identical to any existing concept X:
--> You MUST NOT enrich X.
--> Evaluate Target A using the Three-Pillars below:
+3. DISTINCT / SIBLING CONCEPTS (A != X) -> ADD NEW CONCEPT A:
+When candidate A is a DISTINCT named concept, theory, or method:
+-> Apply CONTRASTIVE SUBSTITUTION TEST: "If I replaced every occurrence of A with X in the source, would the technical meaning be preserved without distortion?"
+-> If NO: A != X. Sibling concepts and distinct methods MUST be preserved as independent concepts (emit "add_concept A").
+
+CRITICAL SIBLING-CONCEPT ANTI-COLLAPSE RULE:
+Close conceptual neighbors and siblings MUST NEVER be collapsed into each other:
+- "Self-Explanation" vs "Elaborative Interrogation" (Distinct learning methods -> DO NOT enrich one into the other!)
+- "Retrieval Practice" vs "Spaced Repetition" (Distinct memory techniques -> DO NOT enrich one into the other!)
+- "Classical Conditioning" vs "Operant Conditioning" (Distinct behavioral paradigms -> DO NOT collapse!)
+- "Accuracy" vs "Precision" (Distinct measurement concepts -> DO NOT collapse!)
+- "Sensitivity" vs "Specificity" (Distinct diagnostic metrics -> DO NOT collapse!)
+- "Validation" vs "Verification" (Distinct engineering processes -> DO NOT collapse!)
 
 --------------------------------------------------
 PRODUCT RULE: THREE-PILLAR CONCEPT BOUNDARY GATE
 --------------------------------------------------
 1. ATTACHMENT TEST (Internal to X) -> ENRICH EXISTING CONCEPT X
-Use "enrich_concept" ONLY when Target A IS existing concept X, and the statement describes an internal property, mechanism, formula, rule, or parameter of X:
-- An inner mechanism, operation, step, or formula of X itself (e.g., "X works by...", "X requires...", "X formula is...")
-- A condition, constraint, parameter, or practical variation of X itself.
+Use "enrich_concept" ONLY when candidate A IS proven identical to existing concept X (via exact identity or true alias), and the statement describes an internal property, mechanism, formula, rule, or parameter of X.
 
 2. INDEPENDENCE TEST (Standalone A) -> ADD NEW CONCEPT A
-Use "add_concept" when Target A is an independent entity, theory, or methodology distinct from existing concepts:
+Use "add_concept" when candidate A is distinct from existing concepts (including sibling concepts):
+- Standalone / Sibling Identity: Concept A has its own distinct definition, methodology, or measurement.
 - Counterfactual Independence: "If existing concepts did not exist, would concept A still be meaningful and true on its own?"
-- Scope / Generality: Concept A is broader than, parallel to, or independent of existing concepts.
-- Multi-domain Reuse: Concept A can stand alone and connect to varied disciplines.
 
 3. RELATIONAL & COMPOSABILITY SIGNAL -> ADD NEW CONCEPT A + ADD_EDGE (A <-> X)
 When the text explicitly describes a relationship, interaction, or combination BETWEEN candidate A and existing concept X:
@@ -1091,56 +1093,75 @@ When the text explicitly describes a relationship, interaction, or combination B
 --------------------------------------------------
 EDGE GROUNDING RULE
 --------------------------------------------------
-Do NOT invent unsupported edges between A and X.
+Do NOT invent unsupported edges between sibling concepts.
 If the source ONLY introduces and explains A without asserting an explicit relationship or interaction with existing concept X, emit "add_concept" for A with NO edge to X.
 Only emit "add_edge" when the source text explicitly grounds the relationship between them.
+
+--------------------------------------------------
+PROPOSAL CONSISTENCY INVARIANT
+--------------------------------------------------
+The "summary" field MUST accurately describe the emitted operations:
+- When emitting "add_concept A", summary must describe adding concept A.
+- When emitting "enrich_concept X", summary must describe enriching concept X.
+- NEVER write "Added..." in summary when operations only contain "enrich_concept".
 
 --------------------------------------------------
 BALANCED DECISION EXAMPLES
 --------------------------------------------------
 
-[Example 1: Topical Similarity is NOT Identity -> ADD standalone concept, NO edge]
-Existing Concepts: [{"id": "c_1", "label": "Operant Conditioning", "description": "Learning through rewards and punishments."}]
-Input: "Classical conditioning forms reflexive associations between neutral stimuli and unconditioned stimuli through repeated temporal pairing."
+[Example 1: Close Sibling Concepts in Science -> ADD standalone concept, NO edge]
+Existing Concepts: [{"id": "c_1", "label": "Accuracy", "description": "How close a measurement is to the true value."}]
+Input: "Precision describes how closely repeated measurements agree with one another under unchanged conditions."
 Output:
 {
-  "summary": "Added Classical Conditioning as a distinct behavioral learning paradigm.",
+  "summary": "Added Precision as a distinct measurement concept separate from Accuracy.",
   "operations": [
-    { "op": "add_concept", "tempId": "tmp_1", "label": "Classical Conditioning", "description": "Forms reflexive associations between neutral and unconditioned stimuli through repeated pairing." }
+    { "op": "add_concept", "tempId": "tmp_1", "label": "Precision", "description": "Degree of mutual agreement among repeated measurements under unchanged conditions." }
   ]
 }
 
-[Example 2: Distinct domain entity -> ADD standalone concept]
-Existing Concepts: [{"id": "c_2", "label": "Aerobic Exercise", "description": "Cardiovascular exercise utilizing oxygen for sustained energy production."}]
-Input: "Resistance training improves muscular strength and hypertrophy by exposing muscle fibers to external mechanical tension."
+[Example 2: Close Sibling Concepts in Engineering -> ADD standalone concept, NO edge]
+Existing Concepts: [{"id": "c_2", "label": "Verification", "description": "Checking whether a product meets design specifications."}]
+Input: "Validation demonstrates that a process consistently produces results meeting its intended operational requirements."
 Output:
 {
-  "summary": "Added Resistance Training as an independent exercise modality.",
+  "summary": "Added Validation as an independent quality assurance process.",
   "operations": [
-    { "op": "add_concept", "tempId": "tmp_1", "label": "Resistance Training", "description": "Exercise modality improving muscular strength and hypertrophy through mechanical tension." }
+    { "op": "add_concept", "tempId": "tmp_1", "label": "Validation", "description": "Demonstration that a process consistently produces results meeting intended operational requirements." }
   ]
 }
 
-[Example 3: Relational composability -> ADD + EDGE]
-Existing Concepts: [{"id": "c_3", "label": "Pomodoro Technique", "description": "Time management method using 25-minute focused work intervals."}]
+[Example 3: Same Concept Mechanism -> ENRICH existing concept]
+Existing Concepts: [{"id": "c_3", "label": "Photosynthesis", "description": "Process by which organisms convert light energy into chemical energy."}]
+Input: "Photosynthesis occurs in two stages: light-dependent reactions that generate ATP, and light-independent carbon fixation."
+Output:
+{
+  "summary": "Enriched Photosynthesis with two-stage reaction mechanism.",
+  "operations": [
+    { "op": "enrich_concept", "conceptId": "c_3", "addition": "Occurs in two stages: light-dependent reactions generating ATP and light-independent carbon fixation." }
+  ]
+}
+
+[Example 4: True Alias Positive Control -> ENRICH existing concept]
+Existing Concepts: [{"id": "c_4", "label": "Polymerase Chain Reaction", "description": "Technique for amplifying target DNA sequences."}]
+Input: "PCR uses repeated cycles of heating and cooling for enzymatic replication of DNA."
+Output:
+{
+  "summary": "Enriched Polymerase Chain Reaction with thermal cycling mechanism.",
+  "operations": [
+    { "op": "enrich_concept", "conceptId": "c_4", "addition": "Uses repeated thermal cycles of heating and cooling for enzymatic DNA replication." }
+  ]
+}
+
+[Example 5: Relational Composability -> ADD + EDGE]
+Existing Concepts: [{"id": "c_5", "label": "Pomodoro Technique", "description": "Time management method using 25-minute focused work intervals."}]
 Input: "Timeboxing is a distinct scheduling method that allocates fixed maximum time blocks to activities and can be combined with the Pomodoro technique for daily planning."
 Output:
 {
   "summary": "Added Timeboxing as a distinct scheduling method that can be combined with the Pomodoro Technique.",
   "operations": [
     { "op": "add_concept", "tempId": "tmp_1", "label": "Timeboxing", "description": "Scheduling method that allocates fixed maximum time blocks to activities." },
-    { "op": "add_edge", "from": "tmp_1", "to": "c_3", "relation": "can be combined with", "label": "complementary scheduling method" }
-  ]
-}
-
-[Example 4: Same target internal property -> ENRICH X]
-Existing Concepts: [{"id": "c_4", "label": "Spaced Repetition", "description": "Reviewing information at increasing intervals to flatten forgetting curves."}]
-Input: "Spaced repetition becomes significantly less efficient when review intervals are consistently scheduled too short."
-Output:
-{
-  "summary": "Enriched Spaced Repetition with interval efficiency constraint.",
-  "operations": [
-    { "op": "enrich_concept", "conceptId": "c_4", "addition": "Efficiency degrades when review intervals are consistently scheduled too short." }
+    { "op": "add_edge", "from": "tmp_1", "to": "c_5", "relation": "can be combined with", "label": "complementary scheduling method" }
   ]
 }
 
