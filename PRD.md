@@ -237,7 +237,10 @@ AI adheres to a strict reasoning order: **Explicit Subject $\rightarrow$ Positiv
 - **Three-Pillar Concept Boundary & Merge Policy**:
   - *1. Attachment Test (Anti-Fragmentation)*: Internal mechanisms, definitions, and properties of $X$ itself MUST generate `enrich_concept` targeting $X$.
   - *2. Independence Test (Anti-Over-Merging)*: Claims that have independent identity (counterfactually true without $X$, broader scope, or sibling identity) MUST generate `add_concept` without inventing ungrounded edges.
-  - *3. Relational / Composability Signal (Composability Guard)*: When new material relates $A$ to existing $X$ via composability, combination, complementarity, causality, or contrast, $A$ and $X$ are recognized as two distinct interacting entities, generating `add_concept A` + `add_edge (A <-> X)`.
+- **Hard Rule: Source-Grounded Edge Gate (Evidence Authority)**:
+  - Existing Map context is for disambiguation only; current Source is the EXCLUSIVE authority for emitted edges.
+  - An edge $A \leftrightarrow X$ is allowed ONLY when the source text explicitly states an interaction (causes, improves, inhibits, subtype of, combines with, requires, contrasts with).
+  - Merely sharing a domain, having similar outcomes, or making the graph more connected is strictly prohibited as grounds for emitting edges.
 - **Proposal Consistency**:
   - The summary field must strictly match the emitted operations (e.g., never claim "Added..." when only emitting `enrich_concept`).
 - **Deduplication**: Semantic equivalents enrich existing concepts or create merge suggestions rather than duplicating nodes.

@@ -1131,6 +1131,173 @@ async function runCloudVerification() {
   assert(hasEnrichPcr, 'Proposal MUST enrich Polymerase Chain Reaction for true alias PCR');
   assert.strictEqual(pcrAddOps.length, 0, 'Proposal MUST NOT duplicate PCR as a new concept node');
   console.log('  ✓ PASS: True Alias Positive Control verified — PCR successfully enriched Polymerase Chain Reaction (+0 Concepts, ~1 Enrichment)');
+
+  // Test 24: Real Failure Regression — Elaborative Rehearsal (Negative Edge / Unstated Relation)
+  console.log('\n[Test 24] Source-Grounded Edge Gate (Elaborative Rehearsal MUST NOT hallucinate edge to Distributed Practice)...');
+  const resWsElabReh = await fetch(`${WORKER_BASE}/api/workspaces`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({ title: `__TEST__ ELAB_REH_${Date.now()}` })
+  });
+  const { workspace: wsElabReh } = await resWsElabReh.json();
+  assert(wsElabReh && wsElabReh.id, 'Must create temp test workspace');
+  createdTestWsIds.push(wsElabReh.id);
+
+  const resBaseDist24 = await fetch(`${WORKER_BASE}/api/concepts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({
+      workspaceId: wsElabReh.id,
+      label: 'Distributed Practice',
+      description: 'Spacing study sessions over multiple intervals.'
+    })
+  });
+  const { concept: baseDistConcept24 } = await resBaseDist24.json();
+
+  const elabRehText = 'Elaborative rehearsal improves memory by actively connecting new information with existing knowledge and forming meaningful associations.';
+  await fetch(`${WORKER_BASE}/api/sources`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({
+      workspaceId: wsElabReh.id,
+      title: 'Elaborative Rehearsal Study',
+      text: elabRehText
+    })
+  });
+
+  let elabRehProp = null;
+  const startElabRehPoll = Date.now();
+  while (Date.now() - startElabRehPoll < 60000) {
+    await new Promise(r => setTimeout(r, 2000));
+    const resState = await fetch(`${WORKER_BASE}/api/state?workspaceId=${wsElabReh.id}`, {
+      headers: { 'Authorization': `Bearer ${aiToken}` }
+    });
+    const stateData = await resState.json();
+    if (stateData.proposals && stateData.proposals.length > 0) {
+      elabRehProp = stateData.proposals[0];
+      break;
+    }
+  }
+  assert(elabRehProp, 'AI must generate a proposal for elaborative rehearsal test');
+  const elabRehOps = elabRehProp.operations;
+  const hasElabRehConcept = elabRehOps.some(op => op.op === 'add_concept' && /elaborative\s*rehearsal/i.test(op.label || ''));
+  const hasEdgeToDist24 = elabRehOps.some(op => op.op === 'add_edge' && (op.to === baseDistConcept24.id || op.from === baseDistConcept24.id));
+  const hasEnrichDist24 = elabRehOps.some(op => op.op === 'enrich_concept' && op.conceptId === baseDistConcept24.id);
+
+  assert(hasElabRehConcept, 'Proposal MUST contain add_concept for Elaborative Rehearsal');
+  assert(!hasEdgeToDist24, 'Proposal MUST NOT hallucinate an edge to Distributed Practice when not stated in source');
+  assert(!hasEnrichDist24, 'Proposal MUST NOT enrich Distributed Practice');
+  console.log('  ✓ PASS: Source-Grounded Edge Gate verified — Elaborative Rehearsal created (+1 Concept, 0 Edges, 0 Enriches)');
+
+  // Test 25: Positive Edge Control — Explicitly Combined Relation
+  console.log('\n[Test 25] Positive Edge Control (Explicitly combined relationship MUST emit grounded edge)...');
+  const resWsPosEdge = await fetch(`${WORKER_BASE}/api/workspaces`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({ title: `__TEST__ POS_EDGE_${Date.now()}` })
+  });
+  const { workspace: wsPosEdge } = await resWsPosEdge.json();
+  assert(wsPosEdge && wsPosEdge.id, 'Must create temp test workspace');
+  createdTestWsIds.push(wsPosEdge.id);
+
+  const resBaseDist25 = await fetch(`${WORKER_BASE}/api/concepts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({
+      workspaceId: wsPosEdge.id,
+      label: 'Distributed Practice',
+      description: 'Spacing study sessions over multiple intervals.'
+    })
+  });
+  const { concept: baseDistConcept25 } = await resBaseDist25.json();
+
+  const combinedText = 'Elaborative rehearsal can be combined with distributed practice by spreading meaningful-association exercises across separate study sessions.';
+  await fetch(`${WORKER_BASE}/api/sources`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({
+      workspaceId: wsPosEdge.id,
+      title: 'Combined Protocol',
+      text: combinedText
+    })
+  });
+
+  let posEdgeProp = null;
+  const startPosEdgePoll = Date.now();
+  while (Date.now() - startPosEdgePoll < 60000) {
+    await new Promise(r => setTimeout(r, 2000));
+    const resState = await fetch(`${WORKER_BASE}/api/state?workspaceId=${wsPosEdge.id}`, {
+      headers: { 'Authorization': `Bearer ${aiToken}` }
+    });
+    const stateData = await resState.json();
+    if (stateData.proposals && stateData.proposals.length > 0) {
+      posEdgeProp = stateData.proposals[0];
+      break;
+    }
+  }
+  assert(posEdgeProp, 'AI must generate a proposal for positive edge test');
+  const posEdgeOps = posEdgeProp.operations;
+  const hasPosEdgeConcept = posEdgeOps.some(op => op.op === 'add_concept' && /elaborative\s*rehearsal/i.test(op.label || ''));
+  const hasPosEdgeLink = posEdgeOps.some(op => op.op === 'add_edge' && (op.to === baseDistConcept25.id || op.from === baseDistConcept25.id));
+
+  assert(hasPosEdgeConcept, 'Proposal MUST contain add_concept for Elaborative Rehearsal');
+  assert(hasPosEdgeLink, 'Proposal MUST contain grounded add_edge between Elaborative Rehearsal and Distributed Practice');
+  console.log('  ✓ PASS: Positive Edge Control verified — Grounded edge created (+1 Concept, 1 Grounded Edge)');
+
+  // Test 26: Cross-Domain Negative Control — Progressive Overload vs Aerobic Exercise
+  console.log('\n[Test 26] Cross-Domain Negative Edge Control (Progressive Overload vs Aerobic Exercise)...');
+  const resWsProg = await fetch(`${WORKER_BASE}/api/workspaces`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({ title: `__TEST__ PROG_OVER_${Date.now()}` })
+  });
+  const { workspace: wsProg } = await resWsProg.json();
+  assert(wsProg && wsProg.id, 'Must create temp test workspace');
+  createdTestWsIds.push(wsProg.id);
+
+  const resBaseAero26 = await fetch(`${WORKER_BASE}/api/concepts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({
+      workspaceId: wsProg.id,
+      label: 'Aerobic Exercise',
+      description: 'Cardiovascular activity requiring sustained oxygen intake.'
+    })
+  });
+  const { concept: baseAeroConcept26 } = await resBaseAero26.json();
+
+  const progText = 'Progressive overload increases training stimulus by gradually raising resistance, volume, or difficulty over time.';
+  await fetch(`${WORKER_BASE}/api/sources`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({
+      workspaceId: wsProg.id,
+      title: 'Strength Physiology',
+      text: progText
+    })
+  });
+
+  let progProp26 = null;
+  const startProgPoll26 = Date.now();
+  while (Date.now() - startProgPoll26 < 60000) {
+    await new Promise(r => setTimeout(r, 2000));
+    const resState = await fetch(`${WORKER_BASE}/api/state?workspaceId=${wsProg.id}`, {
+      headers: { 'Authorization': `Bearer ${aiToken}` }
+    });
+    const stateData = await resState.json();
+    if (stateData.proposals && stateData.proposals.length > 0) {
+      progProp26 = stateData.proposals[0];
+      break;
+    }
+  }
+  assert(progProp26, 'AI must generate a proposal for progressive overload test');
+  const progOps26 = progProp26.operations;
+  const hasProgConcept = progOps26.some(op => op.op === 'add_concept' && /progressive\s*overload/i.test(op.label || ''));
+  const hasEdgeToAero26 = progOps26.some(op => op.op === 'add_edge' && (op.to === baseAeroConcept26.id || op.from === baseAeroConcept26.id));
+
+  assert(hasProgConcept, 'Proposal MUST contain add_concept for Progressive Overload');
+  assert(!hasEdgeToAero26, 'Proposal MUST NOT create ungrounded edge to Aerobic Exercise');
+  console.log('  ✓ PASS: Cross-Domain Negative Control verified — Progressive Overload created (+1 Concept, 0 Edges)');
   } finally {
     // GUARANTEED CLEANUP OF ALL TEMPORARY TEST RESOURCES WITH POST-DELETION VERIFICATION
     if (createdTestWsIds.length > 0 && aiToken) {

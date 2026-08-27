@@ -1091,11 +1091,35 @@ When the text explicitly describes a relationship, interaction, or combination B
 -> Emit "add_concept" for A and "add_edge" linking A and X.
 
 --------------------------------------------------
-EDGE GROUNDING RULE
+HARD RULE: SOURCE-GROUNDED EDGE GATE (EVIDENCE AUTHORITY)
 --------------------------------------------------
-Do NOT invent unsupported edges between sibling concepts.
-If the source ONLY introduces and explains A without asserting an explicit relationship or interaction with existing concept X, emit "add_concept" for A with NO edge to X.
-Only emit "add_edge" when the source text explicitly grounds the relationship between them.
+Every add_edge operation MUST be strictly supported by explicit evidence in the current Source text.
+Existing Map context provides interpretation context ONLY, but MUST NEVER be used as permission to invent relationships from model background knowledge.
+
+Before emitting add_edge(A, X), ask:
+"What exact proposition in the CURRENT SOURCE asserts a relationship between A and X?"
+-> If no such proposition exists in the source text: DO NOT EMIT THE EDGE (0 edges).
+
+VALID SOURCE EVIDENCE FOR EDGES:
+The source text explicitly or unambiguously states a relationship:
+- A causes / leads to X
+- A improves / enhances / regulates X
+- A inhibits / suppresses X
+- A is part of / subtype of X
+- A depends on / requires X
+- A can be combined with / used alongside X (composability / synergy)
+- A contrasts with X
+
+PROHIBITED GROUNDS FOR EDGES (NEVER EMIT):
+- A and X share a broad domain (e.g., both are learning strategies, memory techniques, biology concepts, or exercise modalities).
+- They are commonly used together in practice or literature.
+- The model knows from pre-trained general knowledge that they relate.
+- Both improve the same outcome (e.g., both improve retention, memory, or fitness).
+- Graph connectivity bias (connecting nodes merely because X already exists on the map).
+
+CRITICAL INVARIANT:
+- Existing Map = Context for disambiguation.
+- Current Source = EXCLUSIVE EVIDENCE AUTHORITY for all emitted edges.
 
 --------------------------------------------------
 PROPOSAL CONSISTENCY INVARIANT

@@ -51,10 +51,11 @@ Side Panel / Canvas UI (Interactive Map + Apply All / Review + Durable Stale Rec
     - *Precondition 1 — Explicit Source Subject Preservation*: When the source explicitly introduces/names candidate concept $A$ ("A improves...", "A is...", "A refers to..."), $A$'s identity is strictly preserved.
     - *Precondition 2 — Positive Identity & Contrastive Check*: Only map $A$ to existing $X$ if positive identity evidence exists (exact name, true alias like `PCR` $\leftrightarrow$ `Polymerase Chain Reaction`, explicit equivalence). **Contrastive test**: "If $A$ was replaced with $X$, would the technical meaning be distorted?" If yes $\rightarrow$ $A \neq X$.
     - *Critical Sibling-Concept Anti-Collapse Rule*: Close conceptual siblings (e.g. `Self-Explanation` vs `Elaborative Interrogation`, `Retrieval Practice` vs `Spaced Repetition`, `Accuracy` vs `Precision`, `Sensitivity` vs `Specificity`, `Validation` vs `Verification`) are never collapsed into each other.
-    - *Three-Pillar Decision & Edge Grounding*:
+    - *Three-Pillar Decision & Hard Source-Grounded Edge Gate*:
       - *1. Attachment Test*: Property/mechanism of $X$ itself $\rightarrow$ `enrich_concept X`.
-      - *2. Independence Test*: Standalone/sibling entity $A$ $\rightarrow$ `add_concept A` (with 0 ungrounded edges).
+      - *2. Independence Test*: Standalone/sibling entity $A$ $\rightarrow$ `add_concept A`.
       - *3. Relational / Composability Signal*: Explicit combination/synergy between $A$ and $X$ $\rightarrow$ `add_concept A` + `add_edge (A <-> X)`.
+      - *4. Source-Grounded Edge Gate (Evidence Authority)*: Map context is for interpretation ONLY. The current Source is the EXCLUSIVE authority for relationships. If the source does not assert an interaction between $A$ and $X$, AI MUST NOT hallucinate edges from general background knowledge (emit 0 edges).
     - *Proposal Consistency Invariant*: The summary field must accurately describe the emitted operations (e.g., never claim "Added..." when only emitting `enrich_concept`).
   - Zero mock AI: Live end-to-end verified with real text ingestion and proposal extraction in 1.5–2.0s.
 - **Durable Proposal Lifecycle & Stale Recovery Across Reloads**:

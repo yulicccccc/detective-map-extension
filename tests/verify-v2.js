@@ -667,7 +667,8 @@ async function runSuite() {
     assert(workerCode.includes('ATTACHMENT TEST (Internal to X) -> ENRICH EXISTING CONCEPT X'), 'worker.js must include ATTACHMENT TEST');
     assert(workerCode.includes('INDEPENDENCE TEST (Standalone A) -> ADD NEW CONCEPT A'), 'worker.js must include INDEPENDENCE TEST');
     assert(workerCode.includes('RELATIONAL & COMPOSABILITY SIGNAL -> ADD NEW CONCEPT A + ADD_EDGE'), 'worker.js must include RELATIONAL & COMPOSABILITY SIGNAL');
-    assert(workerCode.includes('EDGE GROUNDING RULE'), 'worker.js must include EDGE GROUNDING RULE');
+    assert(workerCode.includes('HARD RULE: SOURCE-GROUNDED EDGE GATE (EVIDENCE AUTHORITY)'), 'worker.js must include SOURCE-GROUNDED EDGE GATE');
+    assert(workerCode.includes('EXCLUSIVE EVIDENCE AUTHORITY'), 'worker.js must include EXCLUSIVE EVIDENCE AUTHORITY');
     assert(workerCode.includes('PROPOSAL CONSISTENCY INVARIANT'), 'worker.js must include PROPOSAL CONSISTENCY INVARIANT');
 
     // 18.3 Verify balanced decision examples exist
