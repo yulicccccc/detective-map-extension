@@ -421,6 +421,129 @@ async function runSuite() {
     assert(dismissedBack.has('src_failed_999'), 'Dismissed source ID must remain persisted for original workspace');
   });
 
+  // Test 15: Side Panel Startup Integrity & Workspace Switch Safety
+  await test('15. Side Panel startup integrity & workspace switch (Zero undefined functions/variables)', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const vm = require('vm');
+
+    const sidepanelCode = fs.readFileSync(path.join(__dirname, '../sidepanel.js'), 'utf-8');
+    const canvasCode = fs.readFileSync(path.join(__dirname, '../canvas.js'), 'utf-8');
+
+    // 15.1 Static Invariant Assertions
+    assert(!sidepanelCode.includes('dismissedStale'), 'sidepanel.js must not contain any reference to removed variable "dismissedStale"');
+    assert(!canvasCode.includes('dismissedStale'), 'canvas.js must not contain any reference to removed variable "dismissedStale"');
+    assert(!sidepanelCode.includes('setupCanvas()'), 'sidepanel.js must call setupMapInteractions(), not setupCanvas()');
+    assert(sidepanelCode.includes('setupMapInteractions()'), 'sidepanel.js must call setupMapInteractions()');
+
+    // 15.2 Simulated Runtime Execution with Mock DOM
+    const createMockElement = (id = '') => {
+      const listeners = {};
+      const el = {
+        id,
+        style: {},
+        classList: {
+          add: () => {},
+          remove: () => {},
+          contains: () => false
+        },
+        children: [],
+        innerHTML: '',
+        textContent: '',
+        value: '',
+        dataset: {},
+        disabled: false,
+        appendChild: (child) => el.children.push(child),
+        querySelectorAll: () => [],
+        querySelector: (sel) => createMockElement(sel),
+        closest: () => createMockElement(),
+        remove: () => {},
+        setAttribute: () => {},
+        getAttribute: () => '',
+        getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }),
+        addEventListener: (event, handler) => {
+          if (!listeners[event]) listeners[event] = [];
+          listeners[event].push(handler);
+        },
+        trigger: async (event, eventData = {}) => {
+          if (listeners[event]) {
+            for (const h of listeners[event]) {
+              await h(eventData);
+            }
+          }
+        },
+        focus: () => {}
+      };
+      return el;
+    };
+
+    const elements = {};
+    const docListeners = {};
+
+    const mockDocument = {
+      addEventListener: (event, handler) => {
+        if (!docListeners[event]) docListeners[event] = [];
+        docListeners[event].push(handler);
+      },
+      getElementById: (id) => {
+        if (!elements[id]) elements[id] = createMockElement(id);
+        return elements[id];
+      },
+      createElement: (tag) => createMockElement(tag),
+      querySelectorAll: () => [],
+      querySelector: (sel) => createMockElement(sel)
+    };
+
+    const mockWindow = {
+      addEventListener: () => {},
+      devicePixelRatio: 1
+    };
+
+    const mockChrome = {
+      runtime: {
+        sendMessage: () => {}
+      }
+    };
+
+    const context = vm.createContext({
+      document: mockDocument,
+      window: mockWindow,
+      chrome: mockChrome,
+      Storage,
+      STORAGE_KEYS,
+      Set,
+      Map,
+      Promise,
+      Date,
+      Math,
+      parseInt,
+      parseFloat,
+      JSON,
+      alert: () => {},
+      prompt: () => 'New Map',
+      console
+    });
+
+    // Execute sidepanel.js script in VM context
+    vm.runInContext(sidepanelCode, context);
+
+    // Trigger DOMContentLoaded to launch init()
+    assert(docListeners['DOMContentLoaded'] && docListeners['DOMContentLoaded'].length > 0, 'Must register DOMContentLoaded listener');
+    for (const handler of docListeners['DOMContentLoaded']) {
+      await handler();
+    }
+
+    // Verify workspace dropdown populated without error
+    const selectWsEl = elements['sp-select-workspace'];
+    assert(selectWsEl, 'sp-select-workspace element must exist');
+    assert(selectWsEl.children.length > 0, 'Workspace dropdown must be populated with options');
+
+    // Simulate Workspace Switch event
+    await selectWsEl.trigger('change', { target: { value: selectWsEl.children[0].value || 'ws_default' } });
+
+    console.log('    ✓ Side Panel DOM startup and workspace switch lifecycle verified with 0 runtime errors');
+  });
+
   assert.strictEqual(networkCallsAttempted, 0, 'verify-v2.js MUST execute with ZERO network calls');
   console.log(`  ✓ VERIFIED: Zero (0) network calls attempted during verify-v2 execution.`);
 

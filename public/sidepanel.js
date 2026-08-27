@@ -111,7 +111,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     setupTabs();
     setupHeader();
-    setupCanvas();
+    setupMapInteractions();
     setupModals();
     setupStorageListener();
 
@@ -178,6 +178,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       tabContentMap.classList.remove('active');
       tabContentSources.style.display = 'flex';
       tabContentMap.style.display = 'none';
+      renderSourceFeed();
     }
   }
 
@@ -186,8 +187,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     selectWorkspace.addEventListener('change', async (e) => {
       activeWsId = e.target.value;
       staleRecoverySourceId = null;
-      dismissedStale = false;
-      dismissedFailedSourceIds.clear();
       await Storage.setActiveWorkspaceId(activeWsId);
       await loadData();
       fitToContent();
@@ -789,10 +788,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       try {
         await Storage.applyProposal(p.id, selectedOps);
-        pendingProposals = pendingProposals.filter(prop => prop.id !== p.id);
-        await Storage.saveProposalsLocal(pendingProposals);
-        staleRecoverySourceId = null;
-        dismissedStale = false;
+        pendingProposals = await Storage.getProposals();
+        staleProposals = await Storage.getStaleProposals();
         proposalModal.style.display = 'none';
         await loadData();
         fitToContent();

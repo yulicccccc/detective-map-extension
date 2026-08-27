@@ -61,7 +61,7 @@ Side Panel / Canvas UI (Interactive Map + Apply All / Review + Durable Stale Rec
 | Test Suite | Result | Details |
 |---|---|---|
 | `tests/verify-all.js` | **9/9 Passed** | MV3 structure, coordinate math, zoom invariance, eraser hit detection, export/import schema |
-| `tests/verify-v2.js` | **14/14 Passed** | **Pure In-Memory Test Isolation**: Strict 0-network guard (`DETECTIVE_TEST_MODE`), Workspace CRUD, Safari localStorage, palm rejection, cascading delete, tail chunking, proposal sanitization, subset validation, ink isolation, failure UI, scoped storage, **durable stale proposal recovery across reloads & retrySource clearing, dismissed failure persistence per workspace** |
+| `tests/verify-v2.js` | **15/15 Passed** | **Pure In-Memory Test Isolation**: Strict 0-network guard (`DETECTIVE_TEST_MODE`), Workspace CRUD, Safari localStorage, palm rejection, cascading delete, tail chunking, proposal sanitization, subset validation, ink isolation, failure UI, scoped storage, durable stale recovery, dismissed failure persistence, **Side Panel startup integrity & workspace switch (Zero undefined functions/variables)** |
 | `tests/verify-cloud.js` | **12/12 Passed** | Live Cloudflare security, legacy token rejection, KIRA-2026 auth, atomic PIN, real Workers AI execution, retry endpoint, **durable stale proposals in GET /api/state & dismiss-stale endpoint**, 401 stale token auto-healing, strict `__TEST__` deletion policy regression, **Automatic `finally` Array Cleanup (0 pollution left behind)** |
 
 ---
