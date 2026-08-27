@@ -8,6 +8,8 @@ const STORAGE_KEYS = {
   EDGES: 'dm_edges_v2',
   INK_STROKES: 'dm_ink_strokes_v2',
   PROPOSALS: 'dm_proposals_v2',
+  STALE_PROPOSALS: 'dm_stale_proposals_v2',
+  DISMISSED_FAILED: 'dm_dismissed_failed_v2',
   DEVICE_TOKEN: 'dm_device_token_v2',
   MIGRATION_DONE: 'dm_migration_v2_done',
   LEGACY_QUOTES: 'detective_quotes',
@@ -291,12 +293,26 @@ class V2CloudSyncEngine {
       if (msg.sources) Storage.saveSourcesLocal(msg.sources);
       if (msg.inkStrokes) Storage.saveStrokesLocal(msg.inkStrokes);
       if (msg.proposals) Storage.saveProposalsLocal(msg.proposals);
+      if (msg.staleProposals) Storage.saveStaleProposalsLocal(msg.staleProposals);
       triggerChange({
         [STORAGE_KEYS.CONCEPTS]: { newValue: msg.concepts },
         [STORAGE_KEYS.EDGES]: { newValue: msg.edges },
         [STORAGE_KEYS.INK_STROKES]: { newValue: msg.inkStrokes },
-        [STORAGE_KEYS.PROPOSALS]: { newValue: msg.proposals }
+        [STORAGE_KEYS.PROPOSALS]: { newValue: msg.proposals },
+        [STORAGE_KEYS.STALE_PROPOSALS]: { newValue: msg.staleProposals }
       });
+    } else if (msg.type === 'PROPOSALS_STALE_CLEARED') {
+      Storage.getAllStaleProposalsLocal().then(existing => {
+        const filtered = existing.filter(p => {
+          if (msg.proposalId && p.id === msg.proposalId) return false;
+          if (msg.sourceId && p.sourceId === msg.sourceId) return false;
+          return true;
+        });
+        Storage.saveStaleProposalsLocal(filtered);
+        triggerChange({ [STORAGE_KEYS.STALE_PROPOSALS]: { newValue: filtered } });
+      });
+    } else if (msg.type === 'PROPOSAL_STALE') {
+      Storage.fetchRemoteState();
     } else if (msg.type === 'WORKSPACE_CREATED' && msg.workspace) {
       Storage.getWorkspaces().then(existing => {
         const updated = [msg.workspace, ...existing.filter(w => w.id !== msg.workspace.id)];
@@ -627,6 +643,24 @@ const Storage = {
   },
 
   async retrySource(sourceId) {
+    // Clear any stale proposals associated with this source locally
+    const allStale = await this.getAllStaleProposalsLocal();
+    const filteredStale = allStale.filter(p => p.sourceId !== sourceId);
+    await this.saveStaleProposalsLocal(filteredStale);
+
+    // Also update source status in local storage immediately
+    const existing = await this.getAllSourcesLocal();
+    const idx = existing.findIndex(s => s.id === sourceId);
+    if (idx !== -1) {
+      existing[idx] = { ...existing[idx], processingStatus: 'processing' };
+      delete existing[idx].processingError;
+      await this.saveSourcesLocal(existing);
+      triggerChange({
+        [STORAGE_KEYS.SOURCES]: { newValue: existing },
+        [STORAGE_KEYS.STALE_PROPOSALS]: { newValue: filteredStale }
+      });
+    }
+
     if (!isTestMode()) {
       try {
         const res = await cloudSync.authenticatedFetch('/api/sources/retry', {
@@ -636,12 +670,12 @@ const Storage = {
         if (res && res.ok) {
           const data = await res.json();
           if (data.source) {
-            const existing = await this.getAllSourcesLocal();
-            const idx = existing.findIndex(s => s.id === sourceId);
-            if (idx !== -1) {
-              existing[idx] = { ...existing[idx], ...data.source };
-              await this.saveSourcesLocal(existing);
-              triggerChange({ [STORAGE_KEYS.SOURCES]: { newValue: existing } });
+            const currentSources = await this.getAllSourcesLocal();
+            const sIdx = currentSources.findIndex(s => s.id === sourceId);
+            if (sIdx !== -1) {
+              currentSources[sIdx] = { ...currentSources[sIdx], ...data.source };
+              await this.saveSourcesLocal(currentSources);
+              triggerChange({ [STORAGE_KEYS.SOURCES]: { newValue: currentSources } });
             }
           }
           return data;
@@ -943,7 +977,93 @@ const Storage = {
     memStore[STORAGE_KEYS.PROPOSALS] = merged;
   },
 
+  // --- Stale Proposals (Durable Recovery) ---
+  async getStaleProposals() {
+    const wsId = await this.getActiveWorkspaceId();
+    const all = await this.getAllStaleProposalsLocal();
+    return all.filter(p => (p.workspaceId || 'ws_default') === wsId && p.status === 'stale');
+  },
+
+  async getAllStaleProposalsLocal() {
+    if (isChromeStorage) {
+      const res = await chrome.storage.local.get([STORAGE_KEYS.STALE_PROPOSALS]);
+      return res[STORAGE_KEYS.STALE_PROPOSALS] || [];
+    } else if (hasLocalStorage) {
+      const data = localStorage.getItem(STORAGE_KEYS.STALE_PROPOSALS);
+      return data ? JSON.parse(data) : [];
+    }
+    return memStore[STORAGE_KEYS.STALE_PROPOSALS] || [];
+  },
+
+  async saveStaleProposalsLocal(staleProposals) {
+    const wsId = await this.getActiveWorkspaceId();
+    const all = await this.getAllStaleProposalsLocal();
+    const merged = mergeScopedItems(all, staleProposals, wsId);
+    if (isChromeStorage) await chrome.storage.local.set({ [STORAGE_KEYS.STALE_PROPOSALS]: merged });
+    if (hasLocalStorage) localStorage.setItem(STORAGE_KEYS.STALE_PROPOSALS, JSON.stringify(merged));
+    memStore[STORAGE_KEYS.STALE_PROPOSALS] = merged;
+  },
+
+  async dismissStaleProposal(proposalId, sourceId) {
+    const wsId = await this.getActiveWorkspaceId();
+    if (!isTestMode()) {
+      cloudSync.authenticatedFetch('/api/proposals/dismiss-stale', {
+        method: 'POST',
+        body: JSON.stringify({ proposalId, sourceId, workspaceId: wsId })
+      }).catch(() => {});
+    }
+
+    const all = await this.getAllStaleProposalsLocal();
+    const filtered = all.filter(p => {
+      if (proposalId && p.id === proposalId) return false;
+      if (sourceId && p.sourceId === sourceId) return false;
+      return true;
+    });
+    await this.saveStaleProposalsLocal(filtered);
+    triggerChange({ [STORAGE_KEYS.STALE_PROPOSALS]: { newValue: filtered } });
+  },
+
+  // --- Dismissed Failed Sources Persistence ---
+  async getDismissedFailedSourceIds() {
+    const wsId = await this.getActiveWorkspaceId();
+    let map = {};
+    if (isChromeStorage) {
+      const res = await chrome.storage.local.get([STORAGE_KEYS.DISMISSED_FAILED]);
+      map = res[STORAGE_KEYS.DISMISSED_FAILED] || {};
+    } else if (hasLocalStorage) {
+      const data = localStorage.getItem(STORAGE_KEYS.DISMISSED_FAILED);
+      map = data ? JSON.parse(data) : {};
+    } else {
+      map = memStore[STORAGE_KEYS.DISMISSED_FAILED] || {};
+    }
+    return new Set(map[wsId] || []);
+  },
+
+  async dismissFailedSource(sourceId) {
+    if (!sourceId) return;
+    const wsId = await this.getActiveWorkspaceId();
+    let map = {};
+    if (isChromeStorage) {
+      const res = await chrome.storage.local.get([STORAGE_KEYS.DISMISSED_FAILED]);
+      map = res[STORAGE_KEYS.DISMISSED_FAILED] || {};
+    } else if (hasLocalStorage) {
+      const data = localStorage.getItem(STORAGE_KEYS.DISMISSED_FAILED);
+      map = data ? JSON.parse(data) : {};
+    } else {
+      map = memStore[STORAGE_KEYS.DISMISSED_FAILED] || {};
+    }
+    if (!map[wsId]) map[wsId] = [];
+    if (!map[wsId].includes(sourceId)) {
+      map[wsId].push(sourceId);
+    }
+    if (isChromeStorage) await chrome.storage.local.set({ [STORAGE_KEYS.DISMISSED_FAILED]: map });
+    if (hasLocalStorage) localStorage.setItem(STORAGE_KEYS.DISMISSED_FAILED, JSON.stringify(map));
+    memStore[STORAGE_KEYS.DISMISSED_FAILED] = map;
+    triggerChange({ [STORAGE_KEYS.DISMISSED_FAILED]: { newValue: map } });
+  },
+
   async applyProposal(proposalId, operations) {
+    const wsId = await this.getActiveWorkspaceId();
     if (!isTestMode()) {
       try {
         const res = await cloudSync.authenticatedFetch('/api/proposals/apply', {
@@ -960,14 +1080,32 @@ const Storage = {
             if (res.status === 409) {
               const all = await this.getAllProposalsLocal();
               const prop = all.find(p => p.id === proposalId);
-              if (prop) {
-                prop.status = 'stale';
-                err.sourceId = prop.sourceId;
-              }
-              if (data.sourceId) {
-                err.sourceId = data.sourceId;
-              }
-              await this.saveProposalsLocal(all);
+              const sId = data.sourceId || (prop ? prop.sourceId : null);
+              err.sourceId = sId;
+
+              // Remove from pending proposals
+              const remainingProposals = all.filter(p => p.id !== proposalId);
+              await this.saveProposalsLocal(remainingProposals);
+
+              // Add to durable stale proposals
+              const allStale = await this.getAllStaleProposalsLocal();
+              const staleItem = {
+                id: proposalId,
+                workspaceId: wsId,
+                sourceId: sId,
+                baseRevision: data.baseRevision || (prop ? prop.baseRevision : 1),
+                summary: prop ? prop.summary : 'Outdated proposal',
+                operations: operations || (prop ? prop.operations : []),
+                status: 'stale',
+                createdAt: new Date().toISOString()
+              };
+              const updatedStale = [staleItem, ...allStale.filter(p => p.id !== proposalId)];
+              await this.saveStaleProposalsLocal(updatedStale);
+
+              triggerChange({
+                [STORAGE_KEYS.PROPOSALS]: { newValue: remainingProposals },
+                [STORAGE_KEYS.STALE_PROPOSALS]: { newValue: updatedStale }
+              });
             }
             throw err;
           }
@@ -986,7 +1124,7 @@ const Storage = {
     if (!prop) throw new Error('Proposal not found');
 
     const ops = operations || prop.operations;
-    const wsId = prop.workspaceId || 'ws_default';
+    const wsIdFallback = prop.workspaceId || 'ws_default';
     const allConcepts = await this.getAllConceptsLocal();
     const allEdges = await this.getAllEdgesLocal();
     const tempIdMap = new Map();
@@ -1002,7 +1140,7 @@ const Storage = {
         existingIds.add(realId);
         allConcepts.push({
           id: realId,
-          workspaceId: wsId,
+          workspaceId: wsIdFallback,
           label: op.label,
           description: op.description || '',
           x: nextX,
@@ -1030,7 +1168,7 @@ const Storage = {
         if (existingIds.has(fromId) && existingIds.has(toId) && fromId !== toId) {
           allEdges.push({
             id: 'e_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-            workspaceId: wsId,
+            workspaceId: wsIdFallback,
             fromId,
             toId,
             relation: op.relation || 'relates',
@@ -1073,7 +1211,8 @@ const Storage = {
         edges: await this.getEdges(),
         sources: await this.getSources(),
         inkStrokes: await this.getStrokes(),
-        proposals: await this.getProposals()
+        proposals: await this.getProposals(),
+        staleProposals: await this.getStaleProposals()
       };
     }
     const wsId = await this.getActiveWorkspaceId();
@@ -1091,11 +1230,13 @@ const Storage = {
         if (data.sources) await this.saveSourcesLocal(data.sources);
         if (data.inkStrokes) await this.saveStrokesLocal(data.inkStrokes);
         if (data.proposals) await this.saveProposalsLocal(data.proposals);
+        if (data.staleProposals) await this.saveStaleProposalsLocal(data.staleProposals);
         triggerChange({
           [STORAGE_KEYS.CONCEPTS]: { newValue: data.concepts },
           [STORAGE_KEYS.EDGES]: { newValue: data.edges },
           [STORAGE_KEYS.INK_STROKES]: { newValue: data.inkStrokes },
           [STORAGE_KEYS.PROPOSALS]: { newValue: data.proposals },
+          [STORAGE_KEYS.STALE_PROPOSALS]: { newValue: data.staleProposals },
           [STORAGE_KEYS.SOURCES]: { newValue: data.sources }
         });
         cloudSync.setStatus('connected');

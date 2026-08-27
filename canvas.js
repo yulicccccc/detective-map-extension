@@ -49,8 +49,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnDismissFailedSource = document.getElementById('btn-dismiss-failed-source');
   let currentFailedSourceId = null;
   let staleRecoverySourceId = null;
-  let dismissedStale = false;
-  const dismissedFailedSourceIds = new Set();
+  let staleProposalId = null;
+  let dismissedFailedSourceIds = new Set();
 
   const staleProposalToast = document.getElementById('stale-proposal-toast');
   const staleProposalTitle = document.getElementById('stale-proposal-title');
@@ -100,6 +100,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let sources = [];
   let strokes = [];
   let pendingProposals = [];
+  let staleProposals = [];
   let viewport = { panX: 100, panY: 100, zoom: 1.0 };
   let activeTool = 'select'; // 'select' | 'connect' | 'pen' | 'highlighter' | 'eraser'
 
@@ -174,12 +175,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     await Storage.fetchRemoteState();
 
-    [concepts, edges, sources, strokes, pendingProposals] = await Promise.all([
+    [concepts, edges, sources, strokes, pendingProposals, staleProposals, dismissedFailedSourceIds] = await Promise.all([
       Storage.getConcepts(),
       Storage.getEdges(),
       Storage.getSources(),
       Storage.getStrokes(),
-      Storage.getProposals()
+      Storage.getProposals(),
+      Storage.getStaleProposals(),
+      Storage.getDismissedFailedSourceIds()
     ]);
 
     updateViewportTransforms();
@@ -694,9 +697,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // --- Proposal Review & Ingestion UI (Hierarchical Priority) ---
   // Priority: Pending Proposal > Stale Proposal Recovery > Current/Historical Failure
   function checkPendingProposals() {
-    const validPendingProposals = pendingProposals.filter(p => p.status !== 'stale');
+    const validPendingProposals = pendingProposals.filter(p => p.status === 'pending' || !p.status);
 
-    // Priority 1: Pending Proposal
+    // Priority 1: Pending Proposal (✨ Blue)
     if (validPendingProposals.length > 0) {
       const p = validPendingProposals[0];
       proposalSummary.textContent = p.summary || 'AI proposed incremental updates';
@@ -708,8 +711,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     proposalToast.style.display = 'none';
 
-    // Priority 2: Stale Proposal Recovery
-    if (staleRecoverySourceId && !dismissedStale) {
+    // Priority 2: Stale Proposal Recovery (🔄 Amber / Durable)
+    if (staleProposals.length > 0) {
+      const sp = staleProposals[0];
+      staleRecoverySourceId = sp.sourceId;
+      staleProposalId = sp.id;
       if (staleProposalToast) staleProposalToast.style.display = 'block';
       if (sourceFailedToast) sourceFailedToast.style.display = 'none';
       return;
@@ -735,15 +741,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   btnReanalyzeStale?.addEventListener('click', async () => {
+    if (!staleRecoverySourceId && staleProposals.length > 0) {
+      staleRecoverySourceId = staleProposals[0].sourceId;
+    }
     if (!staleRecoverySourceId) return;
+
     btnReanalyzeStale.disabled = true;
     btnReanalyzeStale.textContent = 'Re-analyzing...';
 
     const sId = staleRecoverySourceId;
     try {
       await Storage.retrySource(sId);
-      staleRecoverySourceId = null;
-      dismissedStale = false;
+      staleProposals = await Storage.getStaleProposals();
       if (staleProposalToast) staleProposalToast.style.display = 'none';
       await loadWorkspaceData();
     } catch (err) {
@@ -753,17 +762,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  btnDismissStale?.addEventListener('click', () => {
-    dismissedStale = true;
+  const dismissStaleHandler = async () => {
+    if (staleProposalId || staleRecoverySourceId) {
+      await Storage.dismissStaleProposal(staleProposalId, staleRecoverySourceId);
+    }
+    staleProposals = await Storage.getStaleProposals();
     if (staleProposalToast) staleProposalToast.style.display = 'none';
     checkPendingProposals();
-  });
+  };
 
-  btnDismissStaleX?.addEventListener('click', () => {
-    dismissedStale = true;
-    if (staleProposalToast) staleProposalToast.style.display = 'none';
-    checkPendingProposals();
-  });
+  btnDismissStale?.addEventListener('click', dismissStaleHandler);
+  btnDismissStaleX?.addEventListener('click', dismissStaleHandler);
 
   btnRetrySource?.addEventListener('click', async () => {
     if (!currentFailedSourceId) return;
@@ -779,34 +788,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     btnRetrySource.textContent = 'Retry Analysis';
   });
 
-  btnDismissFailedSource?.addEventListener('click', () => {
+  btnDismissFailedSource?.addEventListener('click', async () => {
     if (currentFailedSourceId) {
       dismissedFailedSourceIds.add(currentFailedSourceId);
+      await Storage.dismissFailedSource(currentFailedSourceId);
     }
     if (sourceFailedToast) sourceFailedToast.style.display = 'none';
     checkPendingProposals();
   });
 
   async function executeApplyProposal(proposalId, operations) {
-    const currentProp = pendingProposals.find(p => p.id === proposalId);
     try {
       await Storage.applyProposal(proposalId, operations);
-      pendingProposals = pendingProposals.filter(p => p.id !== proposalId);
-      await Storage.saveProposalsLocal(pendingProposals);
-      staleRecoverySourceId = null;
-      dismissedStale = false;
+      pendingProposals = await Storage.getProposals();
+      staleProposals = await Storage.getStaleProposals();
       await loadWorkspaceData();
       proposalToast.style.display = 'none';
       proposalReviewModal.style.display = 'none';
     } catch (err) {
       if (err.status === 409 || err.code === 'PROPOSAL_STALE' || (err.message && err.message.includes('Map changed'))) {
-        staleRecoverySourceId = err.sourceId || (currentProp ? currentProp.sourceId : null);
-        dismissedStale = false;
-
-        // Mark local proposal stale and remove from pending UI
-        pendingProposals = pendingProposals.filter(p => p.id !== proposalId);
-        await Storage.saveProposalsLocal(pendingProposals);
-
+        staleProposals = await Storage.getStaleProposals();
+        pendingProposals = await Storage.getProposals();
         proposalToast.style.display = 'none';
         proposalReviewModal.style.display = 'none';
         checkPendingProposals();
@@ -1248,12 +1250,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         strokes = await Storage.getStrokes();
         renderAllStrokes();
       }
-      if (changes[STORAGE_KEYS.PROPOSALS]) {
+      if (changes[STORAGE_KEYS.PROPOSALS] || changes[STORAGE_KEYS.STALE_PROPOSALS]) {
         pendingProposals = await Storage.getProposals();
-        if (pendingProposals.length > 0) {
-          staleRecoverySourceId = null;
-          dismissedStale = false;
-        }
+        staleProposals = await Storage.getStaleProposals();
+        checkPendingProposals();
+      }
+      if (changes[STORAGE_KEYS.DISMISSED_FAILED]) {
+        dismissedFailedSourceIds = await Storage.getDismissedFailedSourceIds();
         checkPendingProposals();
       }
       if (changes[STORAGE_KEYS.ACTIVE_WS]) {

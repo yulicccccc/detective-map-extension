@@ -224,8 +224,52 @@ async function runCloudVerification() {
   assert(retryData.success, 'Retry endpoint must return success: true');
   console.log('  ✓ PASS: Retry Analysis endpoint verified successfully');
 
-  // Test 10: Auth Self-Healing on 401 Stale Token
-  console.log('[Test 10] Testing authenticatedFetch 401 stale token auto-healing...');
+  // Test 10: Durable Stale Proposals in GET /api/state & dismiss-stale
+  console.log('[Test 10] Testing Durable Stale Proposals in GET /api/state & dismiss-stale...');
+  // Bump workspace revision by adding a concept to testWs
+  await fetch(`${WORKER_BASE}/api/concepts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({ workspaceId: testWs.id, label: 'Revision Bumping Concept', x: 100, y: 100 })
+  });
+
+  // Attempt to apply proposal from Test 8 (which was created against revision 1)
+  const staleProposalId = finalAiState.proposals[0].id;
+  const resApplyStale = await fetch(`${WORKER_BASE}/api/proposals/apply`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({ proposalId: staleProposalId })
+  });
+  const staleApplyJson = await resApplyStale.json();
+  assert.strictEqual(resApplyStale.status, 409, 'Applying proposal on bumped revision must return HTTP 409 PROPOSAL_STALE');
+  assert.strictEqual(staleApplyJson.sourceId, testSrc.id, '409 response must preserve sourceId');
+
+  // Query GET /api/state to verify durable separation
+  const resStateStale = await fetch(`${WORKER_BASE}/api/state?workspaceId=${encodeURIComponent(testWs.id)}`, {
+    headers: { 'Authorization': `Bearer ${aiToken}` }
+  });
+  const stateStaleData = await resStateStale.json();
+  assert.strictEqual(stateStaleData.proposals.length, 0, 'Pending proposals must be 0');
+  assert(Array.isArray(stateStaleData.staleProposals) && stateStaleData.staleProposals.length === 1, 'staleProposals must have 1 record');
+  assert.strictEqual(stateStaleData.staleProposals[0].sourceId, testSrc.id, 'staleProposals must preserve sourceId across reload');
+
+  // Dismiss stale proposal
+  const resDismiss = await fetch(`${WORKER_BASE}/api/proposals/dismiss-stale`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({ proposalId: staleProposalId, workspaceId: testWs.id })
+  });
+  assert.strictEqual(resDismiss.status, 200);
+
+  const resStateAfterDismiss = await fetch(`${WORKER_BASE}/api/state?workspaceId=${encodeURIComponent(testWs.id)}`, {
+    headers: { 'Authorization': `Bearer ${aiToken}` }
+  });
+  const stateAfterDismissData = await resStateAfterDismiss.json();
+  assert.strictEqual(stateAfterDismissData.staleProposals.length, 0, 'Stale proposal must be dismissed durably');
+  console.log('  ✓ PASS: Durable Stale Proposals verified in GET /api/state & dismiss-stale');
+
+  // Test 11: Auth Self-Healing on 401 Stale Token
+  console.log('[Test 11] Testing authenticatedFetch 401 stale token auto-healing...');
   const { Storage } = require('../shared/storage.js');
   const resHeal = await Storage.cloudSync.authenticatedFetch('/api/workspaces', {
     headers: { 'Authorization': 'Bearer dt_expired_mock_token_12345' }
@@ -235,10 +279,10 @@ async function runCloudVerification() {
   assert(Array.isArray(healData.workspaces) && healData.workspaces.length > 0, 'Must return cloud workspaces');
   console.log(`  ✓ PASS: Stale token auto-healed, retrieved ${healData.workspaces.length} cloud workspaces`);
 
-  // Test 11: Strict Data Safety & Deletion Policy Regression Suite
-  console.log('[Test 11] Testing Strict Workspace Deletion Safety Policy...');
+  // Test 12: Strict Data Safety & Deletion Policy Regression Suite
+  console.log('[Test 12] Testing Strict Workspace Deletion Safety Policy...');
 
-  // 11.1: Deleting ws_default (My Learning Map) MUST be rejected with HTTP 403
+  // 12.1: Deleting ws_default (My Learning Map) MUST be rejected with HTTP 403
   const resDelDefault = await fetch(`${WORKER_BASE}/api/workspaces/delete`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
@@ -249,7 +293,7 @@ async function runCloudVerification() {
   assert(delDefaultJson.error && delDefaultJson.error.includes('only allowed for test workspaces'), 'Must explain test workspaces restriction');
   console.log('  ✓ PASS: 1. Deleting "My Learning Map" safely rejected with HTTP 403 Forbidden');
 
-  // 11.2: Deleting ws_8fd9bcca89 (Test - Living Map) MUST be rejected with HTTP 403
+  // 12.2: Deleting ws_8fd9bcca89 (Test - Living Map) MUST be rejected with HTTP 403
   const resDelLiving = await fetch(`${WORKER_BASE}/api/workspaces/delete`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
@@ -258,7 +302,7 @@ async function runCloudVerification() {
   assert.strictEqual(resDelLiving.status, 403, 'Deleting Test - Living Map must return HTTP 403');
   console.log('  ✓ PASS: 2. Deleting "Test - Living Map" safely rejected with HTTP 403 Forbidden');
 
-  // 11.3: cleanup-tests endpoint IGNORES arbitrary client-provided titles
+  // 12.3: cleanup-tests endpoint IGNORES arbitrary client-provided titles
   const resCleanupArbitrary = await fetch(`${WORKER_BASE}/api/workspaces/cleanup-tests`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
@@ -274,7 +318,7 @@ async function runCloudVerification() {
   assert(hasDefault && hasLiving, 'Legitimate workspaces must remain completely intact');
   console.log('  ✓ PASS: 3. cleanup-tests rejects arbitrary title lists and preserves user data');
 
-  // 11.4: Creating and deleting a __TEST__ workspace returns HTTP 200
+  // 12.4: Creating and deleting a __TEST__ workspace returns HTTP 200
   const resWsTest = await fetch(`${WORKER_BASE}/api/workspaces`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },

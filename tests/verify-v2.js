@@ -334,38 +334,91 @@ async function runSuite() {
     Storage.fetchRemoteState = origFetchRemoteState;
   });
 
-  // Test 13: Stale Proposal Handling & Source ID Preservation
-  await test('13. Stale proposal marks status stale and preserves sourceId for re-analysis', async () => {
+  // Test 13: Durable Stale Proposal Lifecycle & Recovery Across Reload
+  await test('13. Stale proposal durable recovery across client reload and retrySource clearing', async () => {
     const wsId = await Storage.getActiveWorkspaceId();
-    const proposal = {
-      id: 'prop_test_stale',
+    const proposalA = {
+      id: 'prop_A',
       workspaceId: wsId,
-      sourceId: 'src_stale_123',
+      sourceId: 'src_A',
       baseRevision: 1,
-      summary: 'Stale candidate',
-      operations: [{ op: 'enrich_concept', conceptId: 'c1', addition: 'new insight' }],
+      summary: 'Proposal A',
+      operations: [{ op: 'add_concept', tempId: 't1', label: 'Concept A', description: 'Desc A' }],
+      status: 'pending'
+    };
+    const proposalB = {
+      id: 'prop_B',
+      workspaceId: wsId,
+      sourceId: 'src_B',
+      baseRevision: 1,
+      summary: 'Proposal B',
+      operations: [{ op: 'enrich_concept', conceptId: 't1', addition: 'Enrich insight' }],
       status: 'pending'
     };
 
-    await Storage.saveProposalsLocal([proposal]);
-    const pendingBefore = await Storage.getProposals();
-    assert.strictEqual(pendingBefore.length, 1);
+    // Save pending proposals
+    await Storage.saveProposalsLocal([proposalA, proposalB]);
+    let pending = await Storage.getProposals();
+    assert.strictEqual(pending.length, 2);
 
-    // Simulate 409 stale conflict
-    const all = await Storage.getAllProposalsLocal();
-    const target = all.find(p => p.id === 'prop_test_stale');
-    assert(target, 'Proposal must exist');
-    target.status = 'stale';
-    await Storage.saveProposalsLocal(all);
+    // Apply Proposal A -> succeeds
+    await Storage.applyProposal('prop_A', proposalA.operations);
 
-    // Assert getProposals drops it from active pending list
-    const pendingAfter = await Storage.getProposals();
-    assert.strictEqual(pendingAfter.length, 0, 'Stale proposal must not appear in pending proposals');
+    // Proposal B becomes stale
+    const allStaleBefore = await Storage.getStaleProposals();
+    assert.strictEqual(allStaleBefore.length, 0);
 
-    // Assert sourceId is preserved in raw storage for re-analysis
-    const rawAll = await Storage.getAllProposalsLocal();
-    const staleProp = rawAll.find(p => p.id === 'prop_test_stale');
-    assert.strictEqual(staleProp.sourceId, 'src_stale_123', 'Stale proposal must preserve sourceId');
+    // Simulate 409 conflict when applying Proposal B
+    const propBObj = {
+      id: 'prop_B',
+      workspaceId: wsId,
+      sourceId: 'src_B',
+      baseRevision: 1,
+      summary: 'Proposal B',
+      operations: proposalB.operations,
+      status: 'stale',
+      createdAt: new Date().toISOString()
+    };
+    await Storage.saveStaleProposalsLocal([propBObj]);
+    await Storage.saveProposalsLocal([]); // prop_B removed from pending
+
+    // Assert pending is 0, stale is 1
+    pending = await Storage.getProposals();
+    assert.strictEqual(pending.length, 0, 'Pending proposals must be empty');
+
+    let stale = await Storage.getStaleProposals();
+    assert.strictEqual(stale.length, 1, 'Stale proposal must exist in getStaleProposals()');
+    assert.strictEqual(stale[0].sourceId, 'src_B', 'Recoverable sourceId must match src_B');
+
+    // Simulate Client Reload (reinitialization via fetchRemoteState)
+    const reloadedState = await Storage.fetchRemoteState();
+    assert.strictEqual(reloadedState.proposals.length, 0);
+    assert.strictEqual(reloadedState.staleProposals.length, 1);
+    assert.strictEqual(reloadedState.staleProposals[0].sourceId, 'src_B');
+
+    // Test retrySource() clears stale record
+    await Storage.retrySource('src_B');
+    const staleAfterRetry = await Storage.getStaleProposals();
+    assert.strictEqual(staleAfterRetry.length, 0, 'retrySource must clear stale proposal record');
+  });
+
+  // Test 14: Dismissed Failure Persistence per Workspace
+  await test('14. Dismissed failure persistence per workspace in local storage', async () => {
+    const wsId = await Storage.getActiveWorkspaceId();
+    await Storage.dismissFailedSource('src_failed_999');
+
+    const dismissed = await Storage.getDismissedFailedSourceIds();
+    assert(dismissed.has('src_failed_999'), 'Dismissed source ID must be persisted in Set');
+
+    // Switch workspace and verify isolation
+    await Storage.setActiveWorkspaceId('ws_other_temp');
+    const dismissedOther = await Storage.getDismissedFailedSourceIds();
+    assert(!dismissedOther.has('src_failed_999'), 'Dismissed source IDs must be scoped per workspace');
+
+    // Switch back
+    await Storage.setActiveWorkspaceId(wsId);
+    const dismissedBack = await Storage.getDismissedFailedSourceIds();
+    assert(dismissedBack.has('src_failed_999'), 'Dismissed source ID must remain persisted for original workspace');
   });
 
   assert.strictEqual(networkCallsAttempted, 0, 'verify-v2.js MUST execute with ZERO network calls');

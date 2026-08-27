@@ -1,6 +1,6 @@
 # Detective Map V2.0 — Project State & Memory
 
-**Last Verified:** 2026-08-26  
+**Last Verified:** 2026-08-27  
 **Status:** 🟢 Production Stable & Live Verified  
 **Cloud Deployment:** `https://detectivemap.qchen9108.workers.dev`  
 **Master Pairing Code:** `KIRA-2026`  
@@ -19,10 +19,10 @@ Cloudflare Worker + Durable Object SQLite (Durable State & Single Authoritative 
 Cloudflare Workers AI (@cf/meta/llama-3.1-8b-instruct-fast)
        │ (Structured JSON operations)
        ▼
-SQLite proposals table (status = 'pending')
+SQLite proposals table (status = 'pending' | 'stale' | 'archived')
        │ (Broadcast PROPOSAL_CREATED & auto-hydrated on /api/state)
        ▼
-Side Panel / Canvas UI (Interactive Map + Apply All / Review)
+Side Panel / Canvas UI (Interactive Map + Apply All / Review + Durable Stale Recovery)
 ```
 
 ---
@@ -38,12 +38,14 @@ Side Panel / Canvas UI (Interactive Map + Apply All / Review)
   - Model: `@cf/meta/llama-3.1-8b-instruct-fast` (with automatic fallback to `@cf/meta/llama-3.3-70b-instruct-fp8-fast`, `@cf/meta/llama-3-8b-instruct`).
   - Structured JSON Mode: `response_format: { type: 'json_object' }`.
   - Zero mock AI: Live end-to-end verified with real text ingestion and proposal extraction in 1.5–2.0s.
-- **Proposal Lifecycle & Auto-Hydration**:
+- **Durable Proposal Lifecycle & Stale Recovery Across Reloads**:
   - Automatic `fetchRemoteState()` on startup and workspace switch.
-  - Workspace-scoped local storage: saving proposals, sources, concepts, edges, and ink isolates data per workspace.
-  - `POST /api/sources/retry`: Authenticated retry endpoint for failed sources.
-  - Stale `processing` sources timeout auto-heal in backend SQLite query.
-  - **Stale Proposal Recovery & Banner Hierarchy**: When 409 `PROPOSAL_STALE` occurs (baseRevision conflict), `sourceId` is preserved, local proposal marked stale, and dedicated `[Re-analyze Source]` banner is shown. Hierarchical priority: `Pending Proposal` > `Stale Proposal Recovery` > `Active Failure`. Enrich stats formatted as `~ N Enrichment(s)`.
+  - Workspace-scoped local storage: saving proposals, stale proposals, dismissed failures, sources, concepts, edges, and ink isolates data per workspace.
+  - **Durable Server Stale State (`GET /api/state`)**: Server isolates pending proposals (`status = 'pending'`) from stale proposals (`status = 'stale'`), returning both in distinct properties (`proposals` vs `staleProposals`).
+  - **Durable Stale Recovery**: Survives Side Panel close/re-open, Chrome extension reload, browser restart, and multi-device sync. When a 409 `PROPOSAL_STALE` occurs (baseRevision conflict), the proposal is durably persisted as stale with its original `sourceId`. The client displays the amber recovery banner: `"This proposal is outdated because the map changed." [Re-analyze Source]`.
+  - **Retry & Stale Archiving (`POST /api/sources/retry`)**: Retrying an outdated source automatically marks old stale proposals as `archived`, resets `source.processingStatus = 'processing'`, re-analyzes against the latest revision, and broadcasts `PROPOSALS_STALE_CLEARED`.
+  - **Stale & Failure Dismiss Persistence**: Dismissing stale proposals calls `POST /api/proposals/dismiss-stale` and persists across sessions; dismissing failed source alerts (`dismissedFailedSourceIds`) is durably persisted per workspace.
+  - **Banner Hierarchy**: `Pending Proposal (✨ Blue)` > `Stale Proposal Recovery (🔄 Amber)` > `Active Source Failure (⚠️ Yellow)`.
 - **Durable Auth & Pairing**:
   - Master PIN: `KIRA-2026` (permanent, case-insensitive, repeatable).
   - Auto-pairing fallback: Extension automatically pairs with `KIRA-2026` if token is missing.
@@ -59,8 +61,8 @@ Side Panel / Canvas UI (Interactive Map + Apply All / Review)
 | Test Suite | Result | Details |
 |---|---|---|
 | `tests/verify-all.js` | **9/9 Passed** | MV3 structure, coordinate math, zoom invariance, eraser hit detection, export/import schema |
-| `tests/verify-v2.js` | **13/13 Passed** | **Pure In-Memory Test Isolation**: Strict 0-network guard (`DETECTIVE_TEST_MODE`), Workspace CRUD, Safari localStorage, palm rejection, cascading delete, tail chunking, proposal sanitization, subset validation, ink isolation, failure UI, scoped storage, **stale proposal recovery & sourceId preservation** |
-| `tests/verify-cloud.js` | **11/11 Passed** | Live Cloudflare security, legacy token rejection, KIRA-2026 auth, atomic PIN, real Workers AI execution, retry endpoint, 401 stale token auto-healing, strict `__TEST__` deletion policy regression, **Automatic `finally` Array Cleanup (0 pollution left behind)** |
+| `tests/verify-v2.js` | **14/14 Passed** | **Pure In-Memory Test Isolation**: Strict 0-network guard (`DETECTIVE_TEST_MODE`), Workspace CRUD, Safari localStorage, palm rejection, cascading delete, tail chunking, proposal sanitization, subset validation, ink isolation, failure UI, scoped storage, **durable stale proposal recovery across reloads & retrySource clearing, dismissed failure persistence per workspace** |
+| `tests/verify-cloud.js` | **12/12 Passed** | Live Cloudflare security, legacy token rejection, KIRA-2026 auth, atomic PIN, real Workers AI execution, retry endpoint, **durable stale proposals in GET /api/state & dismiss-stale endpoint**, 401 stale token auto-healing, strict `__TEST__` deletion policy regression, **Automatic `finally` Array Cleanup (0 pollution left behind)** |
 
 ---
 

@@ -397,9 +397,13 @@ export class DetectiveMapWorkspace {
           return jsonResponse({ success: true, message: 'Proposal already exists', source: { ...source, processingStatus: 'completed' } });
         }
 
+        // Archive any stale proposals for this source so they do not keep reappearing
+        this.sql.exec(`UPDATE proposals SET status = 'archived' WHERE sourceId = ? AND status = 'stale'`, sourceId);
+
         this.sql.exec(`UPDATE sources SET processingStatus = 'processing' WHERE id = ?`, sourceId);
         const updatedSource = { ...source, processingStatus: 'processing' };
         this.broadcast({ type: 'SOURCE_UPDATED', source: updatedSource, workspaceId });
+        this.broadcast({ type: 'PROPOSALS_STALE_CLEARED', sourceId, workspaceId });
 
         this.ctx.waitUntil(this.processSourceWithAI(workspaceId, updatedSource));
 
@@ -407,6 +411,19 @@ export class DetectiveMapWorkspace {
       } catch (err) {
         return jsonResponse({ error: err.message }, 400);
       }
+    }
+
+    // POST /api/proposals/dismiss-stale (CRITICAL: Dismiss/archive stale proposal durably)
+    if (url.pathname === '/api/proposals/dismiss-stale' && request.method === 'POST') {
+      const body = await request.json().catch(() => ({}));
+      const { proposalId, sourceId, workspaceId = 'ws_default' } = body;
+      if (proposalId) {
+        this.sql.exec(`UPDATE proposals SET status = 'archived' WHERE id = ?`, proposalId);
+      } else if (sourceId) {
+        this.sql.exec(`UPDATE proposals SET status = 'archived' WHERE sourceId = ? AND status = 'stale'`, sourceId);
+      }
+      this.broadcast({ type: 'PROPOSALS_STALE_CLEARED', proposalId, sourceId, workspaceId });
+      return jsonResponse({ success: true });
     }
 
     // POST /api/proposals/apply (CRITICAL 3 & 4 & 6: Stale check & safe subset validation)
@@ -426,8 +443,16 @@ export class DetectiveMapWorkspace {
       const currentRevision = wsRow ? wsRow.revision : 1;
 
       if (proposal.baseRevision !== currentRevision) {
-        // Mark proposal as stale in SQLite so it does not reappear
+        // Mark proposal as stale in SQLite so it can be durably recovered
         this.sql.exec(`UPDATE proposals SET status = 'stale' WHERE id = ?`, proposalId);
+        this.broadcast({
+          type: 'PROPOSAL_STALE',
+          proposalId,
+          sourceId: proposal.sourceId,
+          workspaceId,
+          baseRevision: proposal.baseRevision,
+          currentRevision: currentRevision
+        });
         return jsonResponse({
           error: 'PROPOSAL_STALE',
           proposalId,
@@ -676,6 +701,7 @@ export class DetectiveMapWorkspace {
     const rawEdges = this.sql.exec(`SELECT * FROM edges WHERE workspaceId = ?`, workspaceId).toArray();
     const rawStrokes = this.sql.exec(`SELECT * FROM ink_strokes WHERE workspaceId = ?`, workspaceId).toArray();
     const rawProposals = this.sql.exec(`SELECT * FROM proposals WHERE workspaceId = ? AND status = 'pending' ORDER BY createdAt DESC`, workspaceId).toArray();
+    const rawStaleProposals = this.sql.exec(`SELECT * FROM proposals WHERE workspaceId = ? AND status = 'stale' ORDER BY createdAt DESC`, workspaceId).toArray();
 
     return {
       workspaces,
@@ -695,6 +721,10 @@ export class DetectiveMapWorkspace {
         points: safeParseJSON(s.points, [])
       })),
       proposals: rawProposals.map(p => ({
+        ...p,
+        operations: safeParseJSON(p.operations, [])
+      })),
+      staleProposals: rawStaleProposals.map(p => ({
         ...p,
         operations: safeParseJSON(p.operations, [])
       }))
