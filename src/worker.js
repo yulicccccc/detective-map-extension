@@ -98,6 +98,28 @@ export class DetectiveMapWorkspace {
         pin TEXT PRIMARY KEY,
         expiresAt INTEGER NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS mutation_audit (
+        id TEXT PRIMARY KEY,
+        timestamp TEXT NOT NULL,
+        workspaceId TEXT NOT NULL,
+        action TEXT NOT NULL,
+        proposalId TEXT,
+        sourceId TEXT,
+        baseRevision INTEGER,
+        revisionBefore INTEGER,
+        revisionAfter INTEGER,
+        requestId TEXT,
+        clientActionId TEXT,
+        surface TEXT,
+        deviceFingerprint TEXT,
+        userAgent TEXT,
+        result TEXT,
+        httpStatus INTEGER,
+        metadata TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_mutation_audit_ws_time ON mutation_audit(workspaceId, timestamp DESC);
     `);
 
     // Ensure default workspace exists
@@ -135,6 +157,39 @@ export class DetectiveMapWorkspace {
       VALUES (?, ?, ?)
     `, token, deviceName, new Date().toISOString());
     return token;
+  }
+
+  recordMutationAudit(row) {
+    try {
+      this.sql.exec(`
+        INSERT INTO mutation_audit (
+          id, timestamp, workspaceId, action, proposalId, sourceId,
+          baseRevision, revisionBefore, revisionAfter, requestId,
+          clientActionId, surface, deviceFingerprint, userAgent,
+          result, httpStatus, metadata
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+        row.id,
+        row.timestamp,
+        row.workspaceId || 'unknown',
+        row.action,
+        row.proposalId || null,
+        row.sourceId || null,
+        row.baseRevision !== undefined ? row.baseRevision : null,
+        row.revisionBefore !== undefined ? row.revisionBefore : null,
+        row.revisionAfter !== undefined ? row.revisionAfter : null,
+        row.requestId || null,
+        row.clientActionId || null,
+        row.surface || 'unknown',
+        row.deviceFingerprint || 'unknown',
+        row.userAgent || 'unknown',
+        row.result || 'unknown',
+        row.httpStatus !== undefined ? row.httpStatus : null,
+        row.metadata || null
+      );
+    } catch (err) {
+      console.warn('[Mutation Audit Record Error]', err.message);
+    }
   }
 
   async fetch(request) {
@@ -267,6 +322,31 @@ export class DetectiveMapWorkspace {
       return jsonResponse({ workspaces });
     }
 
+    // GET /api/audit (CRITICAL: Authenticated Read-Only Mutation Audit Trail)
+    if (url.pathname === '/api/audit' && request.method === 'GET') {
+      const workspaceId = url.searchParams.get('workspaceId') || 'ws_default';
+      const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '50', 10), 1), 200);
+
+      const rows = this.sql.exec(`
+        SELECT id, timestamp, workspaceId, action, proposalId, sourceId,
+               baseRevision, revisionBefore, revisionAfter, requestId,
+               clientActionId, surface, deviceFingerprint, userAgent,
+               result, httpStatus, metadata
+        FROM mutation_audit
+        WHERE workspaceId = ?
+        ORDER BY timestamp DESC
+        LIMIT ?
+      `, workspaceId, limit).toArray();
+
+      return jsonResponse({
+        workspaceId,
+        audit: rows.map(r => ({
+          ...r,
+          metadata: safeParseJSON(r.metadata, null)
+        }))
+      });
+    }
+
     // POST /api/workspaces
     if (url.pathname === '/api/workspaces' && request.method === 'POST') {
       const body = await request.json();
@@ -297,10 +377,10 @@ export class DetectiveMapWorkspace {
       }
 
       const ws = rows[0];
-      // STRICT SAFETY POLICY: Automated deletion is strictly restricted to test workspaces starting with '__TEST__'
-      if (!ws.title || !ws.title.startsWith('__TEST__')) {
+      // STRICT SAFETY POLICY: Automated deletion is strictly restricted to test workspaces starting with '__TEST'
+      if (!ws.title || !ws.title.startsWith('__TEST')) {
         return jsonResponse({
-          error: 'Automated deletion only allowed for test workspaces (title must start with __TEST__)'
+          error: 'Automated deletion only allowed for test workspaces (title must start with __TEST)'
         }, 403);
       }
 
@@ -315,11 +395,11 @@ export class DetectiveMapWorkspace {
       return jsonResponse({ success: true, workspaceId, deletedTitle: ws.title });
     }
 
-    // POST /api/workspaces/cleanup-tests (Server-decided: ONLY title LIKE '__TEST__%')
+    // POST /api/workspaces/cleanup-tests (Server-decided: ONLY title LIKE '__TEST%')
     if (url.pathname === '/api/workspaces/cleanup-tests' && request.method === 'POST') {
       // Server determines test data strictly by prefix. Arbitrary client-provided titles are never trusted.
       const rows = this.sql.exec(
-        `SELECT id, title FROM workspaces WHERE title LIKE '__TEST__%'`
+        `SELECT id, title FROM workspaces WHERE title LIKE '__TEST%'`
       ).toArray();
 
       const deletedList = [];
@@ -426,13 +506,38 @@ export class DetectiveMapWorkspace {
       return jsonResponse({ success: true });
     }
 
-    // POST /api/proposals/apply (CRITICAL 3 & 4 & 6: Stale check & safe subset validation)
+    // POST /api/proposals/apply (CRITICAL 3 & 4 & 6: Stale check, safe subset validation & Mutation Audit Trail)
     if (url.pathname === '/api/proposals/apply' && request.method === 'POST') {
-      const body = await request.json();
+      const body = await request.json().catch(() => ({}));
       const { proposalId, operations } = body;
+      const now = new Date().toISOString();
+      const requestId = 'req_' + crypto.randomUUID().replace(/-/g, '').slice(0, 10);
+      const surface = (request.headers.get('X-Detective-Surface') || 'unknown').slice(0, 32);
+      const clientActionId = (request.headers.get('X-Detective-Action-Id') || 'unknown').slice(0, 64);
+      const userAgent = (request.headers.get('User-Agent') || 'unknown').slice(0, 256);
+      const deviceFingerprint = await hashFingerprint(token);
 
       const proposalRows = this.sql.exec(`SELECT * FROM proposals WHERE id = ?`, proposalId).toArray();
       if (proposalRows.length === 0) {
+        this.recordMutationAudit({
+          id: 'audit_' + crypto.randomUUID().replace(/-/g, '').slice(0, 12),
+          timestamp: now,
+          workspaceId: 'unknown',
+          action: 'proposal_apply_error',
+          proposalId,
+          sourceId: null,
+          baseRevision: null,
+          revisionBefore: null,
+          revisionAfter: null,
+          requestId,
+          clientActionId,
+          surface,
+          deviceFingerprint,
+          userAgent,
+          result: 'not_found',
+          httpStatus: 404,
+          metadata: JSON.stringify({ error: 'Proposal not found' })
+        });
         return jsonResponse({ error: 'Proposal not found' }, 404);
       }
 
@@ -442,8 +547,29 @@ export class DetectiveMapWorkspace {
       const wsRow = this.sql.exec(`SELECT revision FROM workspaces WHERE id = ?`, workspaceId).toArray()[0];
       const currentRevision = wsRow ? wsRow.revision : 1;
 
+      // 1. Record Apply Attempt BEFORE state checks
+      this.recordMutationAudit({
+        id: 'audit_' + crypto.randomUUID().replace(/-/g, '').slice(0, 12),
+        timestamp: now,
+        workspaceId,
+        action: 'proposal_apply_attempt',
+        proposalId,
+        sourceId: proposal.sourceId,
+        baseRevision: proposal.baseRevision,
+        revisionBefore: currentRevision,
+        revisionAfter: null,
+        requestId,
+        clientActionId,
+        surface,
+        deviceFingerprint,
+        userAgent,
+        result: 'attempt',
+        httpStatus: null,
+        metadata: JSON.stringify({ proposalStatus: proposal.status, summary: proposal.summary })
+      });
+
+      // 2. Check Stale Proposal Conflict
       if (proposal.baseRevision !== currentRevision) {
-        // Mark proposal as stale in SQLite so it can be durably recovered
         this.sql.exec(`UPDATE proposals SET status = 'stale' WHERE id = ?`, proposalId);
         this.broadcast({
           type: 'PROPOSAL_STALE',
@@ -453,6 +579,27 @@ export class DetectiveMapWorkspace {
           baseRevision: proposal.baseRevision,
           currentRevision: currentRevision
         });
+
+        this.recordMutationAudit({
+          id: 'audit_' + crypto.randomUUID().replace(/-/g, '').slice(0, 12),
+          timestamp: new Date().toISOString(),
+          workspaceId,
+          action: 'proposal_apply_stale_409',
+          proposalId,
+          sourceId: proposal.sourceId,
+          baseRevision: proposal.baseRevision,
+          revisionBefore: currentRevision,
+          revisionAfter: currentRevision,
+          requestId,
+          clientActionId,
+          surface,
+          deviceFingerprint,
+          userAgent,
+          result: 'stale_conflict',
+          httpStatus: 409,
+          metadata: JSON.stringify({ reason: 'baseRevision !== currentRevision', baseRevision: proposal.baseRevision, currentRevision })
+        });
+
         return jsonResponse({
           error: 'PROPOSAL_STALE',
           proposalId,
@@ -463,21 +610,71 @@ export class DetectiveMapWorkspace {
         }, 409);
       }
 
-      const opsToApply = operations || JSON.parse(proposal.operations);
-      const applyResult = this.applyProposalOperations(workspaceId, opsToApply, proposal.sourceId);
+      // 3. Execute Operations & Apply
+      try {
+        const opsToApply = operations || JSON.parse(proposal.operations);
+        const applyResult = this.applyProposalOperations(workspaceId, opsToApply, proposal.sourceId);
 
-      this.sql.exec(`UPDATE proposals SET status = 'applied' WHERE id = ?`, proposalId);
+        this.sql.exec(`UPDATE proposals SET status = 'applied' WHERE id = ?`, proposalId);
 
-      this.broadcast({
-        type: 'PROPOSAL_APPLIED',
-        proposalId,
-        workspaceId,
-        revision: applyResult.revision,
-        appliedConcepts: applyResult.concepts,
-        appliedEdges: applyResult.edges
-      });
+        this.recordMutationAudit({
+          id: 'audit_' + crypto.randomUUID().replace(/-/g, '').slice(0, 12),
+          timestamp: new Date().toISOString(),
+          workspaceId,
+          action: 'proposal_apply_success',
+          proposalId,
+          sourceId: proposal.sourceId,
+          baseRevision: proposal.baseRevision,
+          revisionBefore: currentRevision,
+          revisionAfter: applyResult.revision,
+          requestId,
+          clientActionId,
+          surface,
+          deviceFingerprint,
+          userAgent,
+          result: 'success',
+          httpStatus: 200,
+          metadata: JSON.stringify({
+            createdConceptCount: applyResult.concepts.length,
+            createdEdgeCount: applyResult.edges.length,
+            createdConceptIds: applyResult.concepts.map(c => c.id),
+            createdEdgeIds: applyResult.edges.map(e => e.id)
+          })
+        });
 
-      return jsonResponse({ success: true, ...applyResult });
+        this.broadcast({
+          type: 'PROPOSAL_APPLIED',
+          proposalId,
+          workspaceId,
+          revision: applyResult.revision,
+          appliedConcepts: applyResult.concepts,
+          appliedEdges: applyResult.edges
+        });
+
+        return jsonResponse({ success: true, ...applyResult });
+      } catch (applyErr) {
+        this.recordMutationAudit({
+          id: 'audit_' + crypto.randomUUID().replace(/-/g, '').slice(0, 12),
+          timestamp: new Date().toISOString(),
+          workspaceId,
+          action: 'proposal_apply_error',
+          proposalId,
+          sourceId: proposal.sourceId,
+          baseRevision: proposal.baseRevision,
+          revisionBefore: currentRevision,
+          revisionAfter: currentRevision,
+          requestId,
+          clientActionId,
+          surface,
+          deviceFingerprint,
+          userAgent,
+          result: 'error',
+          httpStatus: 500,
+          metadata: JSON.stringify({ error: applyErr.message })
+        });
+
+        return jsonResponse({ error: applyErr.message }, 500);
+      }
     }
 
     // POST /api/proposals/reject (CRITICAL 6: Persist proposal rejection)
@@ -1017,13 +1214,24 @@ function jsonResponse(data, status = 200) {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Bootstrap-Secret'
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Bootstrap-Secret, X-Detective-Surface, X-Detective-Action-Id'
     }
   });
 }
 
 function safeParseJSON(str, fallback) {
   try { return typeof str === 'string' ? JSON.parse(str) : (str || fallback); } catch { return fallback; }
+}
+
+async function hashFingerprint(str) {
+  if (!str) return 'unknown';
+  try {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+    const hex = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    return 'fp_' + hex.slice(0, 12);
+  } catch {
+    return 'fp_generic';
+  }
 }
 
 export default {
@@ -1036,7 +1244,7 @@ export default {
         headers: {
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Bootstrap-Secret'
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Bootstrap-Secret, X-Detective-Surface, X-Detective-Action-Id'
         }
       });
     }

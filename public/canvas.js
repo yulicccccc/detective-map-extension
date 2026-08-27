@@ -797,9 +797,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     checkPendingProposals();
   });
 
-  async function executeApplyProposal(proposalId, operations) {
+  async function executeApplyProposal(proposalId, operations, options = {}) {
     try {
-      await Storage.applyProposal(proposalId, operations);
+      await Storage.applyProposal(proposalId, operations, options);
       pendingProposals = await Storage.getProposals();
       staleProposals = await Storage.getStaleProposals();
       await loadWorkspaceData();
@@ -824,7 +824,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     btnApplyProposalAll.textContent = 'Applying...';
     btnApplyProposalAll.disabled = true;
 
-    await executeApplyProposal(p.id, p.operations);
+    const clientActionId = 'act_cv_apply_all_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    await executeApplyProposal(p.id, p.operations, { surface: 'canvas', clientActionId });
 
     btnApplyProposalAll.textContent = 'Apply All';
     btnApplyProposalAll.disabled = false;
@@ -952,7 +953,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     btnApplySelectedOps.textContent = 'Applying...';
     btnApplySelectedOps.disabled = true;
 
-    await executeApplyProposal(p.id, selectedOps);
+    const clientActionId = 'act_cv_apply_sel_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    await executeApplyProposal(p.id, selectedOps, { surface: 'canvas', clientActionId });
 
     btnApplySelectedOps.textContent = 'Apply Selected Operations';
     btnApplySelectedOps.disabled = false;

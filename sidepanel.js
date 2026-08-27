@@ -632,7 +632,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       btnApplyProposal.disabled = true;
 
       try {
-        await Storage.applyProposal(p.id, p.operations);
+        const clientActionId = 'act_sp_apply_all_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+        await Storage.applyProposal(p.id, p.operations, { surface: 'sidepanel', clientActionId });
         pendingProposals = await Storage.getProposals();
         staleProposals = await Storage.getStaleProposals();
         await loadData();
@@ -787,7 +788,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       btnApplySelected.disabled = true;
 
       try {
-        await Storage.applyProposal(p.id, selectedOps);
+        const clientActionId = 'act_sp_apply_sel_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+        await Storage.applyProposal(p.id, selectedOps, { surface: 'sidepanel', clientActionId });
         pendingProposals = await Storage.getProposals();
         staleProposals = await Storage.getStaleProposals();
         proposalModal.style.display = 'none';

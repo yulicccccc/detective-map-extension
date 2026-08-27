@@ -1062,12 +1062,19 @@ const Storage = {
     triggerChange({ [STORAGE_KEYS.DISMISSED_FAILED]: { newValue: map } });
   },
 
-  async applyProposal(proposalId, operations) {
+  async applyProposal(proposalId, operations, options = {}) {
     const wsId = await this.getActiveWorkspaceId();
+    const surface = options.surface || 'unknown';
+    const clientActionId = options.clientActionId || 'act_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+
     if (!isTestMode()) {
       try {
         const res = await cloudSync.authenticatedFetch('/api/proposals/apply', {
           method: 'POST',
+          headers: {
+            'X-Detective-Surface': surface,
+            'X-Detective-Action-Id': clientActionId
+          },
           body: JSON.stringify({ proposalId, operations })
         });
         if (res && res.status !== 404) {

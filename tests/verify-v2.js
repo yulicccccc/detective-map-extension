@@ -544,6 +544,37 @@ async function runSuite() {
     console.log('    ✓ Side Panel DOM startup and workspace switch lifecycle verified with 0 runtime errors');
   });
 
+  // Test 16: Mutation Audit Invariant & Header Propagation (AI Proposes; Human Commits)
+  await test('16. Mutation Audit Invariant & Surface/Action-ID Header Propagation', async () => {
+    const fs = require('fs');
+    const path = require('path');
+
+    const sidepanelCode = fs.readFileSync(path.join(__dirname, '../sidepanel.js'), 'utf-8');
+    const canvasCode = fs.readFileSync(path.join(__dirname, '../canvas.js'), 'utf-8');
+    const storageCode = fs.readFileSync(path.join(__dirname, '../shared/storage.js'), 'utf-8');
+
+    // 16.1 Verify storage.js propagates audit headers
+    assert(storageCode.includes("'X-Detective-Surface': surface"), 'storage.js must attach X-Detective-Surface header');
+    assert(storageCode.includes("'X-Detective-Action-Id': clientActionId"), 'storage.js must attach X-Detective-Action-Id header');
+
+    // 16.2 Verify sidepanel.js sends surface: 'sidepanel' and unique action ID on explicit Apply click
+    assert(sidepanelCode.includes("surface: 'sidepanel'"), "sidepanel.js must pass surface: 'sidepanel' on apply");
+    assert(sidepanelCode.includes("act_sp_apply_all_"), "sidepanel.js must generate unique action ID for Apply All");
+    assert(sidepanelCode.includes("act_sp_apply_sel_"), "sidepanel.js must generate unique action ID for Apply Selected");
+
+    // 16.3 Verify canvas.js sends surface: 'canvas' and unique action ID on explicit Apply click
+    assert(canvasCode.includes("surface: 'canvas'"), "canvas.js must pass surface: 'canvas' on apply");
+    assert(canvasCode.includes("act_cv_apply_all_"), "canvas.js must generate unique action ID for Apply All");
+    assert(canvasCode.includes("act_cv_apply_sel_"), "canvas.js must generate unique action ID for Apply Selected");
+
+    // 16.4 Verify that fetchRemoteState, init, loadData, switchWorkspace do NOT call applyProposal
+    const initFnMatch = sidepanelCode.match(/async function init\(\)\s*\{[\s\S]*?fitToContent\(\);?\s*\}/);
+    assert(initFnMatch && !initFnMatch[0].includes('applyProposal'), 'init() must NEVER call applyProposal');
+
+    const loadDataMatch = sidepanelCode.match(/async function loadData\(\)\s*\{[\s\S]*?checkBanners\(\);?\s*\}/);
+    assert(loadDataMatch && !loadDataMatch[0].includes('applyProposal'), 'loadData() must NEVER call applyProposal');
+  });
+
   assert.strictEqual(networkCallsAttempted, 0, 'verify-v2.js MUST execute with ZERO network calls');
   console.log(`  ✓ VERIFIED: Zero (0) network calls attempted during verify-v2 execution.`);
 

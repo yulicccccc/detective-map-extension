@@ -326,7 +326,6 @@ async function runCloudVerification() {
   });
   const { workspace: wsTemp } = await resWsTest.json();
   assert(wsTemp && wsTemp.id, 'Must create temp __TEST__ workspace');
-  createdTestWsIds.push(wsTemp.id);
 
   const resDelTest = await fetch(`${WORKER_BASE}/api/workspaces/delete`, {
     method: 'POST',
@@ -336,6 +335,100 @@ async function runCloudVerification() {
   assert.strictEqual(resDelTest.status, 200, 'Deleting __TEST__ workspace must return HTTP 200');
   console.log('  ✓ PASS: 4. Deleting valid __TEST__ workspace returns HTTP 200');
 
+  // Test 13: Live Server-Side Mutation Audit Trail Verification (CRITICAL: "AI Proposes; Human Commits")
+  console.log('\n[Test 13] Verifying Live Server-Side Mutation Audit Trail on __TEST__ workspace...');
+  const resWsAudit = await fetch(`${WORKER_BASE}/api/workspaces`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({ title: `__TEST__ MUTATION_AUDIT_${Date.now()}` })
+  });
+  const { workspace: wsAudit } = await resWsAudit.json();
+  assert(wsAudit && wsAudit.id, 'Must create test workspace for mutation audit');
+  createdTestWsIds.push(wsAudit.id);
+
+  // 13.1: Initial audit log must be empty for new workspace
+  const resAuditInitial = await fetch(`${WORKER_BASE}/api/audit?workspaceId=${wsAudit.id}`, {
+    headers: { 'Authorization': `Bearer ${aiToken}` }
+  });
+  assert.strictEqual(resAuditInitial.status, 200, 'GET /api/audit must return HTTP 200');
+  const auditInitialData = await resAuditInitial.json();
+  assert.strictEqual(auditInitialData.audit.length, 0, 'New workspace must have 0 audit entries');
+
+  // 13.2: Ingest a source to create a proposal
+  const resSourceAudit = await fetch(`${WORKER_BASE}/api/sources`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({
+      workspaceId: wsAudit.id,
+      text: 'Neural networks use gradient descent to optimize parameters iteratively.'
+    })
+  });
+  assert.strictEqual(resSourceAudit.status, 200);
+
+  // Wait for AI proposal to generate
+  let auditProp = null;
+  for (let i = 0; i < 15; i++) {
+    await new Promise(r => setTimeout(r, 1000));
+    const resState = await fetch(`${WORKER_BASE}/api/state?workspaceId=${wsAudit.id}`, {
+      headers: { 'Authorization': `Bearer ${aiToken}` }
+    });
+    const stateData = await resState.json();
+    if (stateData.proposals && stateData.proposals.length > 0) {
+      auditProp = stateData.proposals[0];
+      break;
+    }
+  }
+  assert(auditProp, 'AI must generate a proposal for audit test');
+
+  // 13.3: Explicit Apply with X-Detective-Surface & X-Detective-Action-Id
+  const testActionId = `act_cv_test_${Date.now()}`;
+  const resApplyAudit = await fetch(`${WORKER_BASE}/api/proposals/apply`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${aiToken}`,
+      'X-Detective-Surface': 'canvas',
+      'X-Detective-Action-Id': testActionId,
+      'User-Agent': 'DetectiveMapTestRunner/2.0'
+    },
+    body: JSON.stringify({ proposalId: auditProp.id })
+  });
+  assert.strictEqual(resApplyAudit.status, 200, 'Proposal apply must succeed with HTTP 200');
+
+  // 13.4: Query GET /api/audit and verify both attempt and success logs
+  const resAuditAfter = await fetch(`${WORKER_BASE}/api/audit?workspaceId=${wsAudit.id}`, {
+    headers: { 'Authorization': `Bearer ${aiToken}` }
+  });
+  assert.strictEqual(resAuditAfter.status, 200);
+  const { audit: auditEntries } = await resAuditAfter.json();
+  assert(auditEntries.length >= 2, 'Audit trail must contain attempt and success records');
+
+  const attemptRecord = auditEntries.find(a => a.action === 'proposal_apply_attempt');
+  assert(attemptRecord, 'Audit trail must record proposal_apply_attempt');
+  assert.strictEqual(attemptRecord.surface, 'canvas', 'Audit must capture X-Detective-Surface');
+  assert.strictEqual(attemptRecord.clientActionId, testActionId, 'Audit must capture X-Detective-Action-Id');
+  assert(attemptRecord.deviceFingerprint && attemptRecord.deviceFingerprint.startsWith('fp_'), 'Audit must record hashed device fingerprint');
+  assert.strictEqual(attemptRecord.proposalId, auditProp.id);
+
+  const successRecord = auditEntries.find(a => a.action === 'proposal_apply_success');
+  assert(successRecord, 'Audit trail must record proposal_apply_success');
+  assert.strictEqual(successRecord.result, 'success');
+  assert.strictEqual(successRecord.httpStatus, 200);
+  assert.strictEqual(successRecord.revisionBefore, 1);
+  assert.strictEqual(successRecord.revisionAfter, 2);
+  assert(successRecord.metadata && successRecord.metadata.createdConceptCount >= 1);
+
+  // 13.5: Verify security — NO raw tokens or secrets in audit trail
+  const resAuditFinal = await fetch(`${WORKER_BASE}/api/audit?workspaceId=${wsAudit.id}`, {
+    headers: { 'Authorization': `Bearer ${aiToken}` }
+  });
+  const { audit: finalAuditList } = await resAuditFinal.json();
+  for (const entry of finalAuditList) {
+    assert(!JSON.stringify(entry).includes(aiToken), 'Audit trail must NEVER contain raw auth tokens');
+    assert(!JSON.stringify(entry).includes('KIRA-2026'), 'Audit trail must NEVER contain pairing codes');
+  }
+
+  console.log('  ✓ PASS: Live server-side Mutation Audit Trail fully verified (attempt, success, metadata, zero secret leak)');
   } finally {
     // GUARANTEED CLEANUP OF ALL TEMPORARY TEST RESOURCES WITH POST-DELETION VERIFICATION
     if (createdTestWsIds.length > 0 && aiToken) {
