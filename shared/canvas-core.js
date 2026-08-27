@@ -269,98 +269,108 @@ const CanvasCore = {
   },
 
   /**
-   * Incrementally render active stroke preview: FINALIZED SEGMENTS + REPLACEABLE LIVE TAIL.
-   * Only redraws a constant-size recent tail window without replaying historical points.
-   * @param {CanvasRenderingContext2D} targetCtx
+   * Incrementally render active stroke preview:
+   * - Finalized segments are rendered additively onto activeCtx (never erased during drawing).
+   * - Replaceable live tail is rendered onto scratchCtx (which is cleared each frame).
+   * 
+   * @param {CanvasRenderingContext2D} activeCtx Target context for finalized active segments
+   * @param {CanvasRenderingContext2D} scratchCtx Target context for replaceable live tail
    * @param {Object} stroke Active stroke object
-   * @param {Object} state { finalizedCount: number, prevTail: { bbox: {...} } | null }
-   * @returns {Object} Updated state { finalizedCount, prevTail }
+   * @param {Object} state { finalizedCount: number, liveTail: { type, from, to, width } | null }
+   * @returns {Object} Updated state { finalizedCount, liveTail }
    */
-  renderIncrementalStroke(targetCtx, stroke, state = { finalizedCount: 0, prevTail: null }) {
+  renderIncrementalStroke(activeCtx, scratchCtx, stroke, state = { finalizedCount: 0, liveTail: null }) {
     if (!stroke || !stroke.points || stroke.points.length === 0) {
-      return state || { finalizedCount: 0, prevTail: null };
+      return state || { finalizedCount: 0, liveTail: null };
     }
 
     const pts = stroke.points;
     const baseWidth = stroke.width || (stroke.tool === 'highlighter' ? 20 : 3);
     const isPen = stroke.tool !== 'highlighter';
 
-    targetCtx.save();
-    targetCtx.lineCap = 'round';
-    targetCtx.lineJoin = 'round';
-    targetCtx.strokeStyle = stroke.color || (isPen ? '#38bdf8' : '#f59e0b');
-    targetCtx.fillStyle = targetCtx.strokeStyle;
-    targetCtx.globalAlpha = stroke.opacity || (isPen ? 1.0 : 0.35);
-
-    // 1. Clear previous replaceable live tail dirty rect
-    if (state && state.prevTail && state.prevTail.bbox) {
-      targetCtx.clearRect(
-        state.prevTail.bbox.x,
-        state.prevTail.bbox.y,
-        state.prevTail.bbox.width,
-        state.prevTail.bbox.height
-      );
+    // 1. Clear ONLY the replaceable live tail layer (scratchCtx)
+    if (scratchCtx) {
+      scratchCtx.clearRect(-100000, -100000, 200000, 200000);
+      scratchCtx.save();
+      scratchCtx.lineCap = 'round';
+      scratchCtx.lineJoin = 'round';
+      scratchCtx.strokeStyle = stroke.color || (isPen ? '#38bdf8' : '#f59e0b');
+      scratchCtx.fillStyle = scratchCtx.strokeStyle;
+      scratchCtx.globalAlpha = stroke.opacity || (isPen ? 1.0 : 0.35);
     }
 
     let finalizedCount = (state && state.finalizedCount) || 0;
-    let prevTail = null;
+    let liveTail = null;
 
     if (pts.length === 1) {
       const w0 = isPen ? this.computePointWidth(baseWidth, pts[0].pressure, 'pen') : baseWidth;
-      targetCtx.beginPath();
-      targetCtx.arc(pts[0].x, pts[0].y, w0 / 2, 0, Math.PI * 2);
-      targetCtx.fill();
-      prevTail = { bbox: this.computeStrokeBBox(pts[0], null, w0) };
+      if (scratchCtx) {
+        scratchCtx.beginPath();
+        scratchCtx.arc(pts[0].x, pts[0].y, w0 / 2, 0, Math.PI * 2);
+        scratchCtx.fill();
+      }
+      liveTail = { type: 'dot', to: { x: pts[0].x, y: pts[0].y }, width: w0 };
     } else if (pts.length === 2) {
       const w0 = isPen ? this.computePointWidth(baseWidth, pts[0].pressure, 'pen') : baseWidth;
       const w1 = isPen ? this.computePointWidth(baseWidth, pts[1].pressure, 'pen') : baseWidth;
       const lineW = (w0 + w1) / 2;
-      this.drawLineSegment(targetCtx, pts[0], pts[1], lineW);
-      prevTail = { bbox: this.computeStrokeBBox(pts[0], pts[1], lineW) };
+      if (scratchCtx) {
+        this.drawLineSegment(scratchCtx, pts[0], pts[1], lineW);
+      }
+      liveTail = { type: 'line', from: { x: pts[0].x, y: pts[0].y }, to: { x: pts[1].x, y: pts[1].y }, width: lineW };
     } else {
       // pts.length >= 3
 
-      // If we cleared a tail and have previously finalized segments, repair the last finalized segment
-      if (finalizedCount > 0) {
-        const lastFinalIdx = finalizedCount - 1;
-        if (lastFinalIdx === 0) {
-          const mid1 = { x: (pts[1].x + pts[2].x) / 2, y: (pts[1].y + pts[2].y) / 2 };
-          const w1 = isPen ? this.computePointWidth(baseWidth, pts[1].pressure, 'pen') : baseWidth;
-          this.drawSegment(targetCtx, pts[0], pts[1], mid1, w1);
-        } else {
-          const prevMid = { x: (pts[lastFinalIdx].x + pts[lastFinalIdx + 1].x) / 2, y: (pts[lastFinalIdx].y + pts[lastFinalIdx + 1].y) / 2 };
-          const currMid = { x: (pts[lastFinalIdx + 1].x + pts[lastFinalIdx + 2].x) / 2, y: (pts[lastFinalIdx + 1].y + pts[lastFinalIdx + 2].y) / 2 };
-          const wi = isPen ? this.computePointWidth(baseWidth, pts[lastFinalIdx + 1].pressure, 'pen') : baseWidth;
-          this.drawSegment(targetCtx, prevMid, pts[lastFinalIdx + 1], currMid, wi);
+      // Draw all newly finalized segments onto activeCtx (additive stamp, never cleared)
+      if (activeCtx) {
+        activeCtx.save();
+        activeCtx.lineCap = 'round';
+        activeCtx.lineJoin = 'round';
+        activeCtx.strokeStyle = stroke.color || (isPen ? '#38bdf8' : '#f59e0b');
+        activeCtx.fillStyle = activeCtx.strokeStyle;
+        activeCtx.globalAlpha = stroke.opacity || (isPen ? 1.0 : 0.35);
+
+        while (finalizedCount <= pts.length - 3) {
+          const j = finalizedCount;
+          if (j === 0) {
+            const mid1 = { x: (pts[1].x + pts[2].x) / 2, y: (pts[1].y + pts[2].y) / 2 };
+            const w1 = isPen ? this.computePointWidth(baseWidth, pts[1].pressure, 'pen') : baseWidth;
+            this.drawSegment(activeCtx, pts[0], pts[1], mid1, w1);
+          } else {
+            const prevMid = { x: (pts[j].x + pts[j + 1].x) / 2, y: (pts[j].y + pts[j + 1].y) / 2 };
+            const currMid = { x: (pts[j + 1].x + pts[j + 2].x) / 2, y: (pts[j + 1].y + pts[j + 2].y) / 2 };
+            const wi = isPen ? this.computePointWidth(baseWidth, pts[j + 1].pressure, 'pen') : baseWidth;
+            this.drawSegment(activeCtx, prevMid, pts[j + 1], currMid, wi);
+          }
+          finalizedCount++;
         }
+
+        activeCtx.restore();
+      } else {
+        finalizedCount = pts.length - 2;
       }
 
-      // Draw all newly finalized segments: from finalizedCount up to pts.length - 3
-      while (finalizedCount <= pts.length - 3) {
-        const j = finalizedCount;
-        if (j === 0) {
-          const mid1 = { x: (pts[1].x + pts[2].x) / 2, y: (pts[1].y + pts[2].y) / 2 };
-          const w1 = isPen ? this.computePointWidth(baseWidth, pts[1].pressure, 'pen') : baseWidth;
-          this.drawSegment(targetCtx, pts[0], pts[1], mid1, w1);
-        } else {
-          const prevMid = { x: (pts[j].x + pts[j + 1].x) / 2, y: (pts[j].y + pts[j + 1].y) / 2 };
-          const currMid = { x: (pts[j + 1].x + pts[j + 2].x) / 2, y: (pts[j + 1].y + pts[j + 2].y) / 2 };
-          const wi = isPen ? this.computePointWidth(baseWidth, pts[j + 1].pressure, 'pen') : baseWidth;
-          this.drawSegment(targetCtx, prevMid, pts[j + 1], currMid, wi);
-        }
-        finalizedCount++;
-      }
-
-      // Draw the new live tail from M_{N-2} to P_{N-1}
+      // Draw live tail (from M_{N-2} to latest Pencil point P_{N-1}) on scratchCtx
       const lastIdx = pts.length - 1;
       const lastMid = { x: (pts[lastIdx - 1].x + pts[lastIdx].x) / 2, y: (pts[lastIdx - 1].y + pts[lastIdx].y) / 2 };
       const wTail = isPen ? this.computePointWidth(baseWidth, pts[lastIdx].pressure, 'pen') : baseWidth;
-      this.drawLineSegment(targetCtx, lastMid, pts[lastIdx], wTail);
-      prevTail = { bbox: this.computeStrokeBBox(lastMid, pts[lastIdx], wTail) };
+
+      if (scratchCtx) {
+        this.drawLineSegment(scratchCtx, lastMid, pts[lastIdx], wTail);
+      }
+      liveTail = {
+        type: 'tail',
+        from: { x: lastMid.x, y: lastMid.y },
+        to: { x: pts[lastIdx].x, y: pts[lastIdx].y },
+        width: wTail
+      };
     }
 
-    targetCtx.restore();
-    return { finalizedCount, prevTail };
+    if (scratchCtx) {
+      scratchCtx.restore();
+    }
+
+    return { finalizedCount, liveTail };
   }
 };
 

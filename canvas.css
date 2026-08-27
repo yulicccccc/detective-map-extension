@@ -357,8 +357,8 @@ html, body {
   display: block;
 }
 
-/* Dual Canvas Layers */
-#ink-canvas, #scratch-canvas {
+/* Multi Canvas Layers */
+#ink-canvas, #active-stroke-canvas, #scratch-canvas {
   position: absolute;
   top: 0;
   left: 0;
@@ -367,7 +367,7 @@ html, body {
   touch-action: none;
 }
 
-#scratch-canvas {
+#active-stroke-canvas, #scratch-canvas {
   pointer-events: none;
 }
 

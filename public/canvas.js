@@ -8,8 +8,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const svgEdgesLayer = document.getElementById('svg-edges-layer');
   const conceptsContainer = document.getElementById('concepts-container');
   const inkCanvas = document.getElementById('ink-canvas');
+  const activeStrokeCanvas = document.getElementById('active-stroke-canvas');
   const scratchCanvas = document.getElementById('scratch-canvas');
   const ctx = inkCanvas.getContext('2d');
+  const activeStrokeCtx = activeStrokeCanvas ? activeStrokeCanvas.getContext('2d') : null;
   const scratchCtx = scratchCanvas.getContext('2d');
 
   // Toolbar Elements
@@ -108,7 +110,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let isDrawing = false;
   let activePenPointerId = null;
   let currentStroke = null;
-  let activeStrokeState = { finalizedCount: 0, prevTail: null };
+  let activeStrokeState = { finalizedCount: 0, liveTail: null };
   let isPanning = false;
   let isSpacePressed = false;
   let panStart = { x: 0, y: 0 };
@@ -155,7 +157,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   function setupCanvasResolution() {
     dpr = window.devicePixelRatio || 1;
     const rect = viewportContainer.getBoundingClientRect();
-    [inkCanvas, scratchCanvas].forEach(c => {
+    [inkCanvas, activeStrokeCanvas, scratchCanvas].filter(Boolean).forEach(c => {
       c.width = rect.width * dpr;
       c.height = rect.height * dpr;
       c.style.width = `${rect.width}px`;
@@ -462,7 +464,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if ((e.pointerType === 'pen' || e.pointerType === 'mouse') && (activeTool === 'pen' || activeTool === 'highlighter')) {
       isDrawing = true;
       activePenPointerId = e.pointerId;
-      activeStrokeState = { finalizedCount: 0, prevTail: null };
+      activeStrokeState = { finalizedCount: 0, liveTail: null };
       inkCanvas.setPointerCapture(e.pointerId);
 
       currentStroke = {
@@ -479,6 +481,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         }]
       };
 
+      if (activeStrokeCtx) {
+        activeStrokeCtx.clearRect(-100000, -100000, 200000, 200000);
+        activeStrokeCtx.setTransform(
+          viewport.zoom * dpr, 0,
+          0, viewport.zoom * dpr,
+          viewport.panX * dpr, viewport.panY * dpr
+        );
+      }
+
       scratchCtx.clearRect(-100000, -100000, 200000, 200000);
       scratchCtx.setTransform(
         viewport.zoom * dpr, 0,
@@ -487,7 +498,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       );
 
       // Render initial live preview (dot)
-      activeStrokeState = CanvasCore.renderIncrementalStroke(scratchCtx, currentStroke, activeStrokeState);
+      activeStrokeState = CanvasCore.renderIncrementalStroke(activeStrokeCtx, scratchCtx, currentStroke, activeStrokeState);
       return;
     }
 
@@ -558,8 +569,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
       }
 
-      // Low-latency incremental rendering: Finalized Segments + Replaceable Live Tail
-      activeStrokeState = CanvasCore.renderIncrementalStroke(scratchCtx, currentStroke, activeStrokeState);
+      // Low-latency incremental rendering: Finalized Segments on activeStrokeCanvas + Replaceable Live Tail on scratchCanvas
+      activeStrokeState = CanvasCore.renderIncrementalStroke(activeStrokeCtx, scratchCtx, currentStroke, activeStrokeState);
       return;
     }
 
@@ -602,16 +613,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (currentStroke.points.length > 0) {
         // Immediate paint to permanent inkCanvas (no blank frame / no disappearing ink!)
         CanvasCore.renderStroke(ctx, currentStroke);
+        if (activeStrokeCtx) activeStrokeCtx.clearRect(-100000, -100000, 200000, 200000);
         scratchCtx.clearRect(-100000, -100000, 200000, 200000);
 
         strokes.push(currentStroke);
         await Storage.addStroke(currentStroke);
         updateStatusPills();
       } else {
+        if (activeStrokeCtx) activeStrokeCtx.clearRect(-100000, -100000, 200000, 200000);
         scratchCtx.clearRect(-100000, -100000, 200000, 200000);
       }
       currentStroke = null;
-      activeStrokeState = { finalizedCount: 0, prevTail: null };
+      activeStrokeState = { finalizedCount: 0, liveTail: null };
     }
   }
 
