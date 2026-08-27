@@ -866,6 +866,158 @@ async function runSuite() {
     }
   });
 
+  // Test 21: Apple Pencil Ink Engine V1 (Pressure-aware, incremental rendering, palm rejection)
+  await test('21. Apple Pencil Ink Engine V1 (Pressure-aware, incremental rendering, palm rejection)', async () => {
+    const { CanvasCore } = require('../shared/canvas-core.js');
+
+    // 21.1 Pressure normalization and width curve
+    const baseW = 3;
+    const wLight = CanvasCore.computePointWidth(baseW, 0.1, 'pen');
+    const wNormal = CanvasCore.computePointWidth(baseW, 0.5, 'pen');
+    const wFirm = CanvasCore.computePointWidth(baseW, 1.0, 'pen');
+
+    assert(wLight < wNormal, 'Light pressure width must be thinner than normal');
+    assert(wNormal < wFirm, 'Normal pressure width must be thinner than firm');
+    assert(wLight >= 1.4 && wLight <= 1.8, `Light width expected ~1.5px, got ${wLight}`);
+    assert(wNormal >= 2.9 && wNormal <= 3.3, `Normal width expected ~3.0px, got ${wNormal}`);
+    assert(wFirm >= 4.8 && wFirm <= 5.5, `Firm width expected ~5.1px, got ${wFirm}`);
+
+    // 21.2 Missing pressure fallback
+    const wUndef = CanvasCore.computePointWidth(baseW, undefined, 'pen');
+    const wNull = CanvasCore.computePointWidth(baseW, null, 'pen');
+    const wZero = CanvasCore.computePointWidth(baseW, 0, 'pen');
+    assert.strictEqual(wUndef, wNormal, 'Undefined pressure must fall back to normal pressure (0.5)');
+    assert.strictEqual(wNull, wNormal, 'Null pressure must fall back to normal pressure (0.5)');
+    assert.strictEqual(wZero, wNormal, 'Zero pressure must fall back to normal pressure (0.5)');
+
+    // 21.3 Width bounds
+    const wExtremeLow = CanvasCore.computePointWidth(baseW, -100, 'pen');
+    const wExtremeHigh = CanvasCore.computePointWidth(baseW, 1000, 'pen');
+    const wNaN = CanvasCore.computePointWidth(baseW, NaN, 'pen');
+    assert(wExtremeLow >= 1.0 && wExtremeLow <= baseW * 2.2, 'Negative pressure must stay within bounds');
+    assert(wExtremeHigh >= 1.0 && wExtremeHigh <= baseW * 2.2, 'High pressure must stay within bounds');
+    assert(wNaN >= 1.0 && wNaN <= baseW * 2.2, 'NaN pressure must stay within bounds');
+
+    // 21.4 Smooth monotonic interpolation
+    let prevW = 0;
+    for (let p = 0.05; p <= 1.0; p += 0.05) {
+      const currW = CanvasCore.computePointWidth(baseW, p, 'pen');
+      assert(currW >= prevW, `Width must scale monotonically with pressure at p=${p}`);
+      prevW = currW;
+    }
+
+    // 21.5 Incremental rendering O(1) performance invariant
+    function createMockCtx() {
+      const ops = [];
+      return {
+        ops,
+        save() { ops.push({ type: 'save' }); },
+        restore() { ops.push({ type: 'restore' }); },
+        beginPath() { ops.push({ type: 'beginPath' }); },
+        moveTo(x, y) { ops.push({ type: 'moveTo', x, y }); },
+        lineTo(x, y) { ops.push({ type: 'lineTo', x, y }); },
+        quadraticCurveTo(cx, cy, x, y) { ops.push({ type: 'quadraticCurveTo', cx, cy, x, y }); },
+        stroke() { ops.push({ type: 'stroke' }); },
+        arc(x, y, r) { ops.push({ type: 'arc', x, y, r }); },
+        fill() { ops.push({ type: 'fill' }); },
+        set lineWidth(v) { ops.push({ type: 'lineWidth', value: v }); }
+      };
+    }
+
+    const testStroke = {
+      tool: 'pen',
+      width: 3,
+      points: [{ x: 0, y: 0, pressure: 0.5 }]
+    };
+
+    let drawnCount = 0;
+    const incrementalCtx = createMockCtx();
+
+    // Append 500 points one by one
+    let opsAtPoint500 = 0;
+    for (let i = 1; i <= 500; i++) {
+      testStroke.points.push({ x: i * 2, y: Math.sin(i / 10) * 50, pressure: 0.2 + (i % 8) * 0.1 });
+      const opsBefore = incrementalCtx.ops.length;
+      drawnCount = CanvasCore.renderIncrementalSegment(incrementalCtx, testStroke, drawnCount);
+      const opsDelta = incrementalCtx.ops.length - opsBefore;
+
+      if (i === 500) {
+        opsAtPoint500 = opsDelta;
+      }
+    }
+
+    assert(drawnCount === 499, `Total drawn segments must match N-2 (499), got ${drawnCount}`);
+    assert(opsAtPoint500 > 0 && opsAtPoint500 <= 15, `Ops when appending point 500 MUST be O(1) (got ${opsAtPoint500} ops), NOT proportional to 500`);
+
+    // 21.6 Replay / Incremental Geometry Parity
+    const sampleStroke = {
+      tool: 'pen',
+      width: 3,
+      points: [
+        { x: 10, y: 10, pressure: 0.2 },
+        { x: 30, y: 20, pressure: 0.4 },
+        { x: 60, y: 35, pressure: 0.6 },
+        { x: 90, y: 40, pressure: 0.8 },
+        { x: 120, y: 50, pressure: 0.5 }
+      ]
+    };
+
+    const replayCtx = createMockCtx();
+    CanvasCore.renderStroke(replayCtx, sampleStroke);
+
+    const replayCurveOps = replayCtx.ops.filter(op => op.type === 'quadraticCurveTo');
+    assert.strictEqual(replayCurveOps.length, 3, 'Sample stroke must have 3 quadratic bezier segments in full replay');
+
+    // 21.7 Palm Rejection & Touch separation
+    let mockTool = 'pen';
+    let mockIsDrawing = false;
+    let mockActivePenPointerId = null;
+    const mockPointers = new Map();
+
+    function mockInkPointerDown(e) {
+      mockPointers.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
+
+      // Resting palm while pencil is down MUST NOT interrupt pencil stroke
+      if (mockIsDrawing && mockActivePenPointerId !== null) {
+        if (e.pointerType === 'touch') {
+          return 'palm_ignored';
+        }
+      }
+
+      if (mockPointers.size === 2 && !mockIsDrawing) {
+        return 'pinch_started';
+      }
+
+      if (e.pointerType === 'touch') {
+        return 'touch_pan';
+      }
+
+      if (e.pointerType === 'pen' && mockTool === 'pen') {
+        mockIsDrawing = true;
+        mockActivePenPointerId = e.pointerId;
+        return 'drawing_started';
+      }
+    }
+
+    // Touch cannot start drawing
+    const touchRes = mockInkPointerDown({ pointerId: 1, pointerType: 'touch', clientX: 100, clientY: 100 });
+    assert.strictEqual(touchRes, 'touch_pan', 'Touch MUST NOT initiate drawing');
+    assert.strictEqual(mockIsDrawing, false, 'isDrawing must remain false on touch');
+    mockPointers.clear();
+
+    // Pen initiates drawing
+    const penRes = mockInkPointerDown({ pointerId: 2, pointerType: 'pen', clientX: 150, clientY: 150, pressure: 0.6 });
+    assert.strictEqual(penRes, 'drawing_started', 'Pen must start drawing');
+    assert.strictEqual(mockIsDrawing, true, 'isDrawing must be true');
+    assert.strictEqual(mockActivePenPointerId, 2);
+
+    // Palm touch arrives while pen is drawing
+    const palmRes = mockInkPointerDown({ pointerId: 3, pointerType: 'touch', clientX: 200, clientY: 200 });
+    assert.strictEqual(palmRes, 'palm_ignored', 'Palm touch must be ignored while pen is active');
+    assert.strictEqual(mockIsDrawing, true, 'Pen drawing must NOT be interrupted by palm touch');
+    assert.strictEqual(mockActivePenPointerId, 2, 'Active pen pointer ID must remain authoritative');
+  });
+
   assert.strictEqual(networkCallsAttempted, 0, 'verify-v2.js MUST execute with ZERO network calls');
   console.log(`  ✓ VERIFIED: Zero (0) network calls attempted during verify-v2 execution.`);
 

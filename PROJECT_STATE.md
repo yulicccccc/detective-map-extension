@@ -43,7 +43,12 @@ Side Panel / Canvas UI (Interactive Map + Apply All / Review + Durable Stale Rec
   - **Human-Readable Proposal Review UI ("AI Proposes; Human Commits")**:
     - Automatic resolution of `add_edge` and `suggest_merge` operations from raw IDs (`tmp_1`, `c_5d6601f0d6`) to human-readable concept labels (`Distributed Practice → Spaced Repetition`).
     - Full visual clarity preserving direction (`From → To`), relation type badge (`Relation: is a type of`), and semantic label explanation (`"specialized application"`).
-    - Preserves subset selection semantics (`validateProposalSubset`) without exposing raw opaque IDs to users.
+  - **Apple Pencil Ink Engine V1 (Pressure-Aware & Low-Latency Incremental Rendering)**:
+    - *Variable-Width Pressure Response*: Smooth, deterministic curve mapping pressure $p \in [0.05, 1.0]$ to width (light $\sim 1.5\text{px}$, normal $\sim 3.0\text{px}$, firm $\sim 5.1\text{px}$, bounded in $[1.0, 2.2 \times \text{baseWidth}]$). Missing pressure safely defaults to $0.5$.
+    - *Low-Latency Incremental Rendering ($O(1)$ per pointermove)*: During active pen drawing on `scratchCanvas`, only newly arrived coalesced segments are drawn without clearing or replaying historical points.
+    - *Dual Canvas Replay Parity*: Replaying persisted strokes on `inkCanvas` via `renderStroke` produces identical quadratic bezier segment geometry and smooth width interpolation.
+    - *Palm & Touch Separation Safety*: Touch is strictly isolated for pan/pinch gestures. Palm touch while Pencil is drawing is completely ignored and cannot interrupt the active stroke or trigger pinch zoom.
+    - *Durable Stroke Compatibility*: Stored stroke schema remains unchanged (`{ tool, color, width, opacity, points: [{ x, y, pressure }] }`).
 - **Workers AI Ingestion Engine & Explicit Source Subject Preservation**:
   - Model: `@cf/meta/llama-3.1-8b-instruct-fast` (with automatic fallback to `@cf/meta/llama-3.3-70b-instruct-fp8-fast`, `@cf/meta/llama-3-8b-instruct`).
   - Structured JSON Mode: `response_format: { type: 'json_object' }`.

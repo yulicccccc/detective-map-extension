@@ -271,6 +271,14 @@ The user receives one proposal, not chunk-level result spam.
 - **Protected Contenteditable**: Clicking editable titles or descriptions preserves text editing and never triggers dragging.
 - **Edge Label Readability**: SVG edge labels feature a protective high-contrast halo (`paint-order: stroke fill; stroke: #0f172a; stroke-width: 4px;`) ensuring text remains legible when crossing grid lines and ink strokes.
 
+## 6.8 Apple Pencil Ink Engine V1 (Pressure-Aware & Low-Latency Incremental Rendering)
+
+- **Pressure-Aware Stroke Scaling**: Smooth, bounded width mapping curve (`0.4 + 1.2*p + 0.1*p^2`, bounded in `[1.0, 2.2 * baseWidth]`) allowing light strokes to render thin (~1.5px) and heavy strokes to render thick (~5.1px).
+- **Missing-Pressure Fallback**: Strokes with missing or standard pressure safely default to normal weight (3.0px).
+- **Incremental Active Rendering**: During `pointermove` on `scratchCanvas`, only newly arrived coalesced segments are drawn without clearing or redrawing historical points ($O(1)$ per event), eliminating latency and lag on long strokes.
+- **Dual-Canvas Replay Parity**: Replaying persisted strokes on `inkCanvas` via `renderStroke` produces identical quadratic bezier segment geometry and smooth width interpolation.
+- **Palm & Gesture Separation**: Touch is strictly reserved for panning and pinch-to-zoom; palm touch while Apple Pencil is drawing is completely ignored and cannot interrupt active pen strokes.
+
 ---
 
 # 7. Map Data Model

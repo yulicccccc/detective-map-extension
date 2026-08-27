@@ -108,6 +108,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let isDrawing = false;
   let activePenPointerId = null;
   let currentStroke = null;
+  let strokeDrawnSegments = 0;
   let isPanning = false;
   let isSpacePressed = false;
   let panStart = { x: 0, y: 0 };
@@ -368,43 +369,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function drawStrokeOnContext(targetCtx, stroke) {
     if (!stroke || !stroke.points || stroke.points.length === 0) return;
-
-    targetCtx.save();
-    targetCtx.lineCap = 'round';
-    targetCtx.lineJoin = 'round';
-
-    if (stroke.tool === 'highlighter') {
-      targetCtx.strokeStyle = stroke.color || '#f59e0b';
-      targetCtx.lineWidth = stroke.width || 20;
-      targetCtx.globalAlpha = stroke.opacity || 0.35;
-    } else {
-      targetCtx.strokeStyle = stroke.color || '#38bdf8';
-      targetCtx.lineWidth = stroke.width || 3;
-      targetCtx.globalAlpha = stroke.opacity || 1.0;
-    }
-
-    const pts = stroke.points;
-    if (pts.length === 1) {
-      targetCtx.beginPath();
-      targetCtx.arc(pts[0].x, pts[0].y, (stroke.width || 3) / 2, 0, Math.PI * 2);
-      targetCtx.fillStyle = targetCtx.strokeStyle;
-      targetCtx.fill();
-    } else {
-      targetCtx.beginPath();
-      targetCtx.moveTo(pts[0].x, pts[0].y);
-      for (let i = 1; i < pts.length; i++) {
-        if (i < pts.length - 1) {
-          const midX = (pts[i].x + pts[i + 1].x) / 2;
-          const midY = (pts[i].y + pts[i + 1].y) / 2;
-          targetCtx.quadraticCurveTo(pts[i].x, pts[i].y, midX, midY);
-        } else {
-          targetCtx.lineTo(pts[i].x, pts[i].y);
-        }
-      }
-      targetCtx.stroke();
-    }
-
-    targetCtx.restore();
+    CanvasCore.renderStroke(targetCtx, stroke);
   }
 
   // --- Pointer Routing & Apple Pencil / Touch Separation (CRITICAL 5: Palm Rejection) ---
@@ -497,6 +462,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if ((e.pointerType === 'pen' || e.pointerType === 'mouse') && (activeTool === 'pen' || activeTool === 'highlighter')) {
       isDrawing = true;
       activePenPointerId = e.pointerId;
+      strokeDrawnSegments = 0;
       inkCanvas.setPointerCapture(e.pointerId);
 
       currentStroke = {
@@ -513,6 +479,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }]
       };
 
+      scratchCtx.clearRect(-100000, -100000, 200000, 200000);
       scratchCtx.setTransform(
         viewport.zoom * dpr, 0,
         0, viewport.zoom * dpr,
@@ -588,8 +555,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
       }
 
-      scratchCtx.clearRect(-10000, -10000, 20000, 20000);
-      drawStrokeOnContext(scratchCtx, currentStroke);
+      // Low-latency incremental rendering: Draw only new segments without clearing or redrawing historical points
+      strokeDrawnSegments = CanvasCore.renderIncrementalSegment(scratchCtx, currentStroke, strokeDrawnSegments);
       return;
     }
 
@@ -628,7 +595,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (isDrawing && currentStroke && e.pointerId === activePenPointerId) {
       isDrawing = false;
       activePenPointerId = null;
-      scratchCtx.clearRect(-10000, -10000, 20000, 20000);
+      scratchCtx.clearRect(-100000, -100000, 200000, 200000);
 
       if (currentStroke.points.length > 0) {
         strokes.push(currentStroke);
@@ -637,6 +604,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateStatusPills();
       }
       currentStroke = null;
+      strokeDrawnSegments = 0;
     }
   }
 
