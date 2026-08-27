@@ -44,14 +44,16 @@ Side Panel / Canvas UI (Interactive Map + Apply All / Review + Durable Stale Rec
     - Automatic resolution of `add_edge` and `suggest_merge` operations from raw IDs (`tmp_1`, `c_5d6601f0d6`) to human-readable concept labels (`Distributed Practice → Spaced Repetition`).
     - Full visual clarity preserving direction (`From → To`), relation type badge (`Relation: is a type of`), and semantic label explanation (`"specialized application"`).
     - Preserves subset selection semantics (`validateProposalSubset`) without exposing raw opaque IDs to users.
-- **Workers AI Ingestion Engine & Three-Pillar Concept Boundary Policy**:
+- **Workers AI Ingestion Engine & Semantic Target Grounding Gate**:
   - Model: `@cf/meta/llama-3.1-8b-instruct-fast` (with automatic fallback to `@cf/meta/llama-3.3-70b-instruct-fp8-fast`, `@cf/meta/llama-3-8b-instruct`).
   - Structured JSON Mode: `response_format: { type: 'json_object' }`.
-  - **Three-Pillar Concept Boundary Policy**:
-    - *1. Attachment Test (Anti-Fragmentation)*: Mechanisms, parameters, implementation steps, conditions, and explanations that describe an internal property of $X$ itself MUST generate `enrich_concept` on $X$.
-    - *2. Independence Test (Anti-Over-Merging)*: Claims that have standalone identity (counterfactually true even without $X$, broader/parallel conceptual scope, or general reusable methodology) MUST generate `add_concept` (e.g. `Distributed Learning`, `Cellular Respiration`).
-    - *3. Relational / Composability Signal (Composability Guard)*: When new material relates $A$ to existing $X$ via composability, synergy, combination, complementarity, causality, or contrast (e.g. "A can be combined with X", "A complements X", "A works alongside X"), $A$ and $X$ are recognized as two distinct interacting entities. Generates `add_concept A` + `add_edge (A <-> X)` instead of absorbing $A$ into $X$.
-    - *Decision Principle*: Property of $X$ $\rightarrow$ enrich $X$; Standalone idea $A$ $\rightarrow$ add $A$; Relationship/combination between $A$ and $X$ $\rightarrow$ add $A$ + edge.
+  - **Reasoning Order (Target Grounding $\rightarrow$ Three-Pillar Boundary $\rightarrow$ Grounded Operations)**:
+    - *Step 1 — Identify Source Target*: First determine what subject/entity $A$ the source is primarily about.
+    - *Step 2 — Target Alignment & Anti-Magnetic Absorption*: Before emitting `enrich_concept X`, require positive grounding (Direct Identity, Clear Alias/Synonym, Contextual Coreference) that $A$ is semantically identical to $X$. **Topical similarity is NOT identity** (e.g. `Retrieval Practice` is not absorbed into `Spaced Repetition` merely because both concern memory retention).
+    - *Step 3 — Three-Pillar Decision & Edge Grounding*:
+      - *1. Attachment Test*: Property/mechanism of $X$ itself $\rightarrow$ `enrich_concept X`.
+      - *2. Independence Test*: Standalone/broader entity $A$ $\rightarrow$ `add_concept A` (with NO ungrounded edges).
+      - *3. Relational / Composability Signal*: Explicit combination/synergy between $A$ and $X$ $\rightarrow$ `add_concept A` + `add_edge (A <-> X)`.
   - Zero mock AI: Live end-to-end verified with real text ingestion and proposal extraction in 1.5–2.0s.
 - **Durable Proposal Lifecycle & Stale Recovery Across Reloads**:
   - Automatic `fetchRemoteState()` on startup and workspace switch.

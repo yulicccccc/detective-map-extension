@@ -852,6 +852,118 @@ async function runCloudVerification() {
   assert(hasMobilityConcept, 'Proposal MUST contain add_concept for Mobility Training');
   assert(!onlyEnrichStrength, 'Proposal MUST NOT solely enrich Strength Training when composability relation is stated');
   console.log('  ✓ PASS: Cross-Domain Composability Generalization verified — Mobility Training created as independent concept (+1 Concept)');
+
+  // Test 19: Semantic Target Grounding — Real Failure Regression (Retrieval Practice vs Spaced Repetition)
+  console.log('\n[Test 19] Semantic Target Grounding (Retrieval Practice MUST NOT absorb into Spaced Repetition)...');
+  const resWsRetrieval = await fetch(`${WORKER_BASE}/api/workspaces`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({ title: `__TEST__ RETRIEVAL_${Date.now()}` })
+  });
+  const { workspace: wsRetrieval } = await resWsRetrieval.json();
+  assert(wsRetrieval && wsRetrieval.id, 'Must create temp test workspace');
+  createdTestWsIds.push(wsRetrieval.id);
+
+  const resBaseSpaced19 = await fetch(`${WORKER_BASE}/api/concepts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({
+      workspaceId: wsRetrieval.id,
+      label: 'Spaced Repetition',
+      description: 'Improves long-term retention by increasing review intervals.'
+    })
+  });
+  const { concept: baseSpacedConcept19 } = await resBaseSpaced19.json();
+
+  const retrievalText = 'Retrieval practice strengthens long-term memory because actively retrieving information improves later retention.';
+  await fetch(`${WORKER_BASE}/api/sources`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({
+      workspaceId: wsRetrieval.id,
+      title: 'Retrieval Ingestion',
+      text: retrievalText
+    })
+  });
+
+  let retrievalProp = null;
+  const startRetrievalPoll = Date.now();
+  while (Date.now() - startRetrievalPoll < 60000) {
+    await new Promise(r => setTimeout(r, 2000));
+    const resState = await fetch(`${WORKER_BASE}/api/state?workspaceId=${wsRetrieval.id}`, {
+      headers: { 'Authorization': `Bearer ${aiToken}` }
+    });
+    const stateData = await resState.json();
+    if (stateData.proposals && stateData.proposals.length > 0) {
+      retrievalProp = stateData.proposals[0];
+      break;
+    }
+  }
+  assert(retrievalProp, 'AI must generate a proposal for retrieval practice test');
+  const retrievalOps = retrievalProp.operations;
+  const hasRetrievalConcept = retrievalOps.some(op => op.op === 'add_concept' && /retrieval\s*practice|retrieval/i.test(op.label || ''));
+  const hasEnrichSpaced = retrievalOps.some(op => op.op === 'enrich_concept' && op.conceptId === baseSpacedConcept19.id);
+  const hasEdgeToSpaced = retrievalOps.some(op => op.op === 'add_edge' && (op.to === baseSpacedConcept19.id || op.from === baseSpacedConcept19.id));
+
+  assert(hasRetrievalConcept, 'Proposal MUST contain add_concept for Retrieval Practice');
+  assert(!hasEnrichSpaced, 'Proposal MUST NOT enrich Spaced Repetition (Topical Similarity is not identity)');
+  assert(!hasEdgeToSpaced, 'Proposal MUST NOT create an ungrounded edge to Spaced Repetition');
+  console.log('  ✓ PASS: Semantic Target Grounding verified — Retrieval Practice created as independent concept (+1 Concept, 0 Enriches, 0 Ungrounded Edges)');
+
+  // Test 20: Cross-Domain Semantic Target Grounding (Fermentation vs Photosynthesis)
+  console.log('\n[Test 20] Cross-Domain Semantic Target Grounding (Fermentation vs Photosynthesis)...');
+  const resWsFerm = await fetch(`${WORKER_BASE}/api/workspaces`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({ title: `__TEST__ FERMENTATION_${Date.now()}` })
+  });
+  const { workspace: wsFerm } = await resWsFerm.json();
+  assert(wsFerm && wsFerm.id, 'Must create temp test workspace');
+  createdTestWsIds.push(wsFerm.id);
+
+  const resBasePhoto20 = await fetch(`${WORKER_BASE}/api/concepts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({
+      workspaceId: wsFerm.id,
+      label: 'Photosynthesis',
+      description: 'Biological process converting light into chemical energy.'
+    })
+  });
+  const { concept: basePhotoConcept2 } = await resBasePhoto20.json();
+
+  const fermText = 'Fermentation produces energy from organic compounds without requiring oxygen.';
+  await fetch(`${WORKER_BASE}/api/sources`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiToken}` },
+    body: JSON.stringify({
+      workspaceId: wsFerm.id,
+      title: 'Fermentation Study',
+      text: fermText
+    })
+  });
+
+  let fermProp = null;
+  const startFermPoll = Date.now();
+  while (Date.now() - startFermPoll < 60000) {
+    await new Promise(r => setTimeout(r, 2000));
+    const resState = await fetch(`${WORKER_BASE}/api/state?workspaceId=${wsFerm.id}`, {
+      headers: { 'Authorization': `Bearer ${aiToken}` }
+    });
+    const stateData = await resState.json();
+    if (stateData.proposals && stateData.proposals.length > 0) {
+      fermProp = stateData.proposals[0];
+      break;
+    }
+  }
+  assert(fermProp, 'AI must generate a proposal for fermentation test');
+  const fermOps = fermProp.operations;
+  const hasFermConcept = fermOps.some(op => op.op === 'add_concept' && /fermentation/i.test(op.label || ''));
+  const hasEnrichPhoto2 = fermOps.some(op => op.op === 'enrich_concept' && op.conceptId === basePhotoConcept2.id);
+
+  assert(hasFermConcept, 'Proposal MUST contain add_concept for Fermentation');
+  assert(!hasEnrichPhoto2, 'Proposal MUST NOT enrich Photosynthesis for fermentation');
+  console.log('  ✓ PASS: Cross-Domain Target Grounding verified — Fermentation created as independent concept (+1 Concept)');
   } finally {
     // GUARANTEED CLEANUP OF ALL TEMPORARY TEST RESOURCES WITH POST-DELETION VERIFICATION
     if (createdTestWsIds.length > 0 && aiToken) {

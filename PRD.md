@@ -225,12 +225,16 @@ AI returns a **structured patch**, not a whole replacement map.
 
 AI must not directly emit destructive `delete_concept` operations as automatic actions.
 
-## 6.4 Three-Pillar Concept Boundary & Merge Policy
+## 6.4 Semantic Target Grounding & Three-Pillar Concept Boundary Policy
 
-Before proposing an operation, AI evaluates all three pillars to balance cognitive density, conceptual accuracy, and relationship topology:
-- **1. Attachment Test (Anti-Fragmentation)**: Mechanisms, definitions, schedule rules, implementation steps, examples, or properties that describe an internal attribute of an existing concept $X$ MUST generate `enrich_concept` targeting $X$.
-- **2. Independence Test (Anti-Over-Merging)**: Claims that have independent identity (counterfactually true without $X$, broader/parallel conceptual scope, or general reusable methodology across domains) MUST generate `add_concept` (e.g. `Distributed Learning`, `Cellular Respiration`).
-- **3. Relational / Composability Signal (Composability Guard)**: When new material relates $A$ to existing $X$ via composability, combination, complementarity, causality, or contrast (e.g. "A can be combined with X", "A complements X", "A works alongside X"), $A$ and $X$ are recognized as two distinct interacting entities, generating `add_concept A` + `add_edge (A <-> X)` instead of absorbing $A$ into $X$.
+AI adheres to a strict 3-step reasoning order: **Source Target $\rightarrow$ Target Alignment $\rightarrow$ Three-Pillars $\rightarrow$ Grounded Operations**:
+- **Precondition: Semantic Target Grounding**:
+  - *Step 1 — Identify Source Target*: Determine the primary subject $A$ the material is ABOUT before comparing with existing concepts.
+  - *Step 2 — Target Alignment & Anti-Magnetic Absorption*: Only emit `enrich_concept X` when positive grounding proves $A$ is semantically identical to $X$. **Topical similarity is NOT identity**. Existing concepts must not act as semantic magnets absorbing different concepts in the same domain.
+- **Three-Pillar Concept Boundary & Merge Policy**:
+  - *1. Attachment Test (Anti-Fragmentation)*: Internal mechanisms, definitions, schedule rules, and properties of $X$ itself MUST generate `enrich_concept` targeting $X$.
+  - *2. Independence Test (Anti-Over-Merging)*: Claims that have independent identity (counterfactually true without $X$, broader/parallel conceptual scope, or general reusable methodology) MUST generate `add_concept` without inventing ungrounded edges.
+  - *3. Relational / Composability Signal (Composability Guard)*: When new material relates $A$ to existing $X$ via composability, combination, complementarity, causality, or contrast, $A$ and $X$ are recognized as two distinct interacting entities, generating `add_concept A` + `add_edge (A <-> X)`.
 - **Deduplication**: Semantic equivalents enrich existing concepts or create merge suggestions rather than duplicating nodes.
 
 ## 6.5 Long Source Processing

@@ -650,25 +650,31 @@ async function runSuite() {
     assert.strictEqual(state.audit.find(a => a.action === 'proposal_apply_success').revisionAfter, 2);
   });
 
-  // Test 18: Three-Pillar Concept Boundary Gate & Incremental Merge Invariant
-  await test('18. Three-Pillar Concept Boundary Gate & Incremental Merge Invariant', async () => {
+  // Test 18: Semantic Target Grounding Gate, Three-Pillar Boundary, & Edge Grounding Invariant
+  await test('18. Semantic Target Grounding Gate, Three-Pillar Boundary, & Edge Grounding Invariant', async () => {
     const fs = require('fs');
     const path = require('path');
     const workerCode = fs.readFileSync(path.join(__dirname, '../src/worker.js'), 'utf-8');
 
-    // 18.1 Verify system prompt includes Three-Pillar Concept Boundary Gate
-    assert(workerCode.includes('PRODUCT RULE: THREE-PILLAR CONCEPT BOUNDARY GATE'), 'worker.js must include THREE-PILLAR CONCEPT BOUNDARY GATE in systemPrompt');
-    assert(workerCode.includes('ATTACHMENT TEST -> ENRICH EXISTING CONCEPT'), 'worker.js must include ATTACHMENT TEST');
-    assert(workerCode.includes('INDEPENDENCE TEST -> ADD NEW CONCEPT'), 'worker.js must include INDEPENDENCE TEST');
-    assert(workerCode.includes('RELATIONAL / COMPOSABILITY SIGNAL -> ADD NEW CONCEPT A + ADD_EDGE'), 'worker.js must include RELATIONAL / COMPOSABILITY SIGNAL');
-    assert(workerCode.includes('Counterfactual Independence:'), 'worker.js must include Counterfactual Independence criterion');
-    assert(workerCode.includes('Scope / Generality:'), 'worker.js must include Scope / Generality criterion');
+    // 18.1 Verify Precondition Gate: Semantic Target Grounding
+    assert(workerCode.includes('PRECONDITION: SEMANTIC TARGET GROUNDING GATE'), 'worker.js must include SEMANTIC TARGET GROUNDING GATE');
+    assert(workerCode.includes('STEP 1 — IDENTIFY THE SOURCE TARGET'), 'worker.js must include Step 1: Identify Source Target');
+    assert(workerCode.includes('STEP 2 — TARGET ALIGNMENT & ANTI-MAGNETIC ABSORPTION RULE'), 'worker.js must include Step 2: Target Alignment & Anti-Magnetic Absorption');
+    assert(workerCode.includes('TOPICAL SIMILARITY IS NOT IDENTITY'), 'worker.js must include TOPICAL SIMILARITY IS NOT IDENTITY rule');
+    assert(workerCode.includes('STEP 3 — TARGET MISMATCH & THREE-PILLAR DECISION'), 'worker.js must include Step 3: Target Mismatch & Three-Pillar Decision');
 
-    // 18.2 Verify balanced decision examples exist
-    assert(workerCode.includes('Testing Effect'), 'worker.js must provide Testing Effect independent concept example');
+    // 18.2 Verify Three-Pillars and Edge Grounding Rules
+    assert(workerCode.includes('PRODUCT RULE: THREE-PILLAR CONCEPT BOUNDARY GATE'), 'worker.js must include THREE-PILLAR CONCEPT BOUNDARY GATE');
+    assert(workerCode.includes('ATTACHMENT TEST (Internal to X) -> ENRICH EXISTING CONCEPT X'), 'worker.js must include ATTACHMENT TEST');
+    assert(workerCode.includes('INDEPENDENCE TEST (Standalone A) -> ADD NEW CONCEPT A'), 'worker.js must include INDEPENDENCE TEST');
+    assert(workerCode.includes('RELATIONAL & COMPOSABILITY SIGNAL -> ADD NEW CONCEPT A + ADD_EDGE'), 'worker.js must include RELATIONAL & COMPOSABILITY SIGNAL');
+    assert(workerCode.includes('EDGE GROUNDING RULE'), 'worker.js must include EDGE GROUNDING RULE');
+
+    // 18.3 Verify balanced decision examples exist
+    assert(workerCode.includes('Classical Conditioning'), 'worker.js must provide Classical Conditioning example');
+    assert(workerCode.includes('Resistance Training'), 'worker.js must provide Resistance Training example');
     assert(workerCode.includes('Timeboxing'), 'worker.js must provide Timeboxing composability example');
-    assert(workerCode.includes('Primer Design'), 'worker.js must provide Primer Design independent concept example');
-    assert(workerCode.includes('Enriched Active Recall'), 'worker.js must provide Active Recall enrichment example');
+    assert(workerCode.includes('Enriched Spaced Repetition'), 'worker.js must provide Spaced Repetition enrichment example');
   });
 
   // Test 19: Human-Readable Edge Review UI Resolution Invariant

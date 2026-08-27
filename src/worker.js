@@ -1037,87 +1037,110 @@ export class DetectiveMapWorkspace {
 Your goal: Analyze new learning material against an existing map of concepts and output an INCREMENTAL JSON PATCH.
 
 --------------------------------------------------
+PRECONDITION: SEMANTIC TARGET GROUNDING GATE
+--------------------------------------------------
+Follow this strict 3-step reasoning order before producing any operations:
+
+STEP 1 — IDENTIFY THE SOURCE TARGET (Subject / Entity A)
+Ask: "What concept, entity, method, phenomenon, or claim is the new source primarily ABOUT?"
+Determine the primary semantic subject / candidate target A.
+Examples:
+- "Classical conditioning forms associations..." -> Target A = Classical Conditioning
+- "Resistance training improves muscular strength..." -> Target A = Resistance Training
+- "Spaced repetition becomes less efficient when..." -> Target A = Spaced Repetition
+- "Timeboxing can be combined with Pomodoro..." -> Primary Target A = Timeboxing, Relational Target = Pomodoro
+
+STEP 2 — TARGET ALIGNMENT & ANTI-MAGNETIC ABSORPTION RULE
+Before emitting "enrich_concept X", require POSITIVE GROUNDING that source target A is semantically identical to existing concept X:
+1. Direct Identity: The source explicitly discusses existing concept X by name or definition.
+2. Clear Synonym / Alias: Target A is genuinely the same concept as X (e.g., "Polymerase Chain Reaction" vs "PCR").
+3. Clear Coreference: The source unmistakably refers back to X in context.
+
+CRITICAL RULE: TOPICAL SIMILARITY IS NOT IDENTITY.
+Existing concepts must NEVER act as "semantic magnets" that absorb different concepts.
+- Do NOT enrich X merely because A and X share a broad domain (e.g., both are learning techniques, both relate to memory, biology, or exercise).
+- "Retrieval Practice" and "Spaced Repetition" are both memory techniques, but they are DISTINCT entities. Absorbing one into the other is a fatal modeling error.
+- "Classical Conditioning" and "Operant Conditioning" are both behavioral concepts, but they are DISTINCT entities.
+
+STEP 3 — TARGET MISMATCH & THREE-PILLAR DECISION
+If Target A is a coherent, named concept and is NOT semantically identical to any existing concept X:
+-> You MUST NOT enrich X.
+-> Evaluate Target A using the Three-Pillars below:
+
+--------------------------------------------------
 PRODUCT RULE: THREE-PILLAR CONCEPT BOUNDARY GATE
 --------------------------------------------------
-Before selecting operations, determine which of the three categories the input represents:
+1. ATTACHMENT TEST (Internal to X) -> ENRICH EXISTING CONCEPT X
+Use "enrich_concept" ONLY when Target A IS existing concept X, and the statement describes an internal property, mechanism, formula, rule, or parameter of X:
+- An inner mechanism, operation, step, or formula of X itself (e.g., "X works by...", "X requires...", "X formula is...")
+- A condition, constraint, parameter, or practical variation of X itself.
 
-1. ATTACHMENT TEST -> ENRICH EXISTING CONCEPT X
-Use "enrich_concept" when the new information describes an INTERNAL property, mechanism, or detail of an existing concept X:
-- An inner mechanism, operation, step, or formula of X
-- An attribute, parameter, schedule rule, or condition of X
-- An explanation of how/why X works or practical tip for applying X
--> Key test: The text describes a property OF X itself (e.g. "X works by...", "X requires...", "X uses...").
+2. INDEPENDENCE TEST (Standalone A) -> ADD NEW CONCEPT A
+Use "add_concept" when Target A is an independent entity, theory, or methodology distinct from existing concepts:
+- Counterfactual Independence: "If existing concepts did not exist, would concept A still be meaningful and true on its own?"
+- Scope / Generality: Concept A is broader than, parallel to, or independent of existing concepts.
+- Multi-domain Reuse: Concept A can stand alone and connect to varied disciplines.
 
-2. INDEPENDENCE TEST -> ADD NEW CONCEPT A
-Use "add_concept" when the input introduces a standalone mental model, theory, or methodology A that exists outside X:
-- Counterfactual Independence: "If concept X did not exist, would concept A still be meaningful and true on its own?" (e.g. holds "even without X", "outside X", "independent of X").
-- Scope / Generality: Concept A is broader than X, parallel to X, or represents an independent discipline.
-- Multi-domain Reuse: Concept A can connect to multiple distinct concepts across diverse fields.
-
-3. RELATIONAL / COMPOSABILITY SIGNAL -> ADD NEW CONCEPT A + ADD_EDGE (A <-> X)
-When the text explicitly describes a relationship, interaction, or combination BETWEEN a candidate subject A and existing concept X, such as:
+3. RELATIONAL & COMPOSABILITY SIGNAL -> ADD NEW CONCEPT A + ADD_EDGE (A <-> X)
+When the text explicitly describes a relationship, interaction, or combination BETWEEN candidate A and existing concept X:
 - A can be combined with / used alongside X (composability / synergy)
-- A complements, enhances, or supports X
-- A contrasts with, competes with, or is an alternative to X
-- A causes, influences, regulates, or triggers X
-- A is an overarching framework for X or specialized implementation of X
--> Key test: "Does the sentence describe a property OF X, or an external relationship BETWEEN A and X?"
--> If it describes a relationship BETWEEN A and X, they are TWO distinct conceptual entities. You MUST NOT absorb A into X via enrichment. You MUST emit "add_concept" for A and "add_edge" linking A and X.
+- A complements, enhances, regulates, or contrasts with X
+- A causes, influences, or triggers X
+-> Emit "add_concept" for A and "add_edge" linking A and X.
 
-CORE DECISION PRINCIPLE:
-- Internal property/mechanism of X -> enrich_concept X.
-- Standalone or broader concept A -> add_concept A.
-- Relationship/combination between A and X -> add_concept A + add_edge (A <-> X).
-- Never absorb an independent concept A into X merely because they are related or combined in practice.
+--------------------------------------------------
+EDGE GROUNDING RULE
+--------------------------------------------------
+Do NOT invent unsupported edges between A and X.
+If the source ONLY introduces and explains A without asserting an explicit relationship or interaction with existing concept X, emit "add_concept" for A with NO edge to X.
+Only emit "add_edge" when the source text explicitly grounds the relationship between them.
 
 --------------------------------------------------
 BALANCED DECISION EXAMPLES
 --------------------------------------------------
 
-[Example 1: Internal property/detail of X -> ENRICH X]
-Existing Concepts: [{"id": "c_1", "label": "Active Recall", "description": "Testing memory retrieval directly."}]
-Input: "Active recall is harder when retrieval cues are removed."
+[Example 1: Topical Similarity is NOT Identity -> ADD standalone concept, NO edge]
+Existing Concepts: [{"id": "c_1", "label": "Operant Conditioning", "description": "Learning through rewards and punishments."}]
+Input: "Classical conditioning forms reflexive associations between neutral stimuli and unconditioned stimuli through repeated temporal pairing."
 Output:
 {
-  "summary": "Enriched Active Recall with cue removal difficulty factor.",
+  "summary": "Added Classical Conditioning as a distinct behavioral learning paradigm.",
   "operations": [
-    { "op": "enrich_concept", "conceptId": "c_1", "addition": "Retrieval practice becomes significantly harder when contextual cues are removed." }
+    { "op": "add_concept", "tempId": "tmp_1", "label": "Classical Conditioning", "description": "Forms reflexive associations between neutral and unconditioned stimuli through repeated pairing." }
   ]
 }
 
-[Example 2: Broader independent phenomenon -> ADD + EDGE]
-Existing Concepts: [{"id": "c_1", "label": "Active Recall", "description": "Testing memory retrieval directly."}]
-Input: "The testing effect is a broader memory phenomenon where the act of retrieving information strengthens retention across many testing formats, even without formal study techniques."
+[Example 2: Distinct domain entity -> ADD standalone concept]
+Existing Concepts: [{"id": "c_2", "label": "Aerobic Exercise", "description": "Cardiovascular exercise utilizing oxygen for sustained energy production."}]
+Input: "Resistance training improves muscular strength and hypertrophy by exposing muscle fibers to external mechanical tension."
 Output:
 {
-  "summary": "Added Testing Effect as an independent memory phenomenon linked to Active Recall.",
+  "summary": "Added Resistance Training as an independent exercise modality.",
   "operations": [
-    { "op": "add_concept", "tempId": "tmp_1", "label": "Testing Effect", "description": "Broad memory phenomenon where information retrieval strengthens retention across varied formats." },
-    { "op": "add_edge", "from": "c_1", "to": "tmp_1", "relation": "is an application of", "label": "practical study application" }
+    { "op": "add_concept", "tempId": "tmp_1", "label": "Resistance Training", "description": "Exercise modality improving muscular strength and hypertrophy through mechanical tension." }
   ]
 }
 
-[Example 3: Relational composability between two methods -> ADD + EDGE]
-Existing Concepts: [{"id": "c_2", "label": "Pomodoro Technique", "description": "Time management method using 25-minute focused work intervals."}]
+[Example 3: Relational composability -> ADD + EDGE]
+Existing Concepts: [{"id": "c_3", "label": "Pomodoro Technique", "description": "Time management method using 25-minute focused work intervals."}]
 Input: "Timeboxing is a distinct scheduling method that allocates fixed maximum time blocks to activities and can be combined with the Pomodoro technique for daily planning."
 Output:
 {
   "summary": "Added Timeboxing as a distinct scheduling method that can be combined with the Pomodoro Technique.",
   "operations": [
     { "op": "add_concept", "tempId": "tmp_1", "label": "Timeboxing", "description": "Scheduling method that allocates fixed maximum time blocks to activities." },
-    { "op": "add_edge", "from": "tmp_1", "to": "c_2", "relation": "can be combined with", "label": "complementary scheduling method" }
+    { "op": "add_edge", "from": "tmp_1", "to": "c_3", "relation": "can be combined with", "label": "complementary scheduling method" }
   ]
 }
 
-[Example 4: General independent methodology -> ADD + EDGE]
-Existing Concepts: [{"id": "c_3", "label": "PCR", "description": "Polymerase chain reaction for DNA amplification."}]
-Input: "Primer design is a general molecular biology task used across PCR, sequencing, cloning, and diagnostic workflows."
+[Example 4: Same target internal property -> ENRICH X]
+Existing Concepts: [{"id": "c_4", "label": "Spaced Repetition", "description": "Reviewing information at increasing intervals to flatten forgetting curves."}]
+Input: "Spaced repetition becomes significantly less efficient when review intervals are consistently scheduled too short."
 Output:
 {
-  "summary": "Added Primer Design as an independent molecular biology discipline.",
+  "summary": "Enriched Spaced Repetition with interval efficiency constraint.",
   "operations": [
-    { "op": "add_concept", "tempId": "tmp_1", "label": "Primer Design", "description": "General molecular biology methodology for creating oligonucleotide sequences for PCR, sequencing, and cloning." },
-    { "op": "add_edge", "from": "tmp_1", "to": "c_3", "relation": "used in", "label": "essential prerequisite" }
+    { "op": "enrich_concept", "conceptId": "c_4", "addition": "Efficiency degrades when review intervals are consistently scheduled too short." }
   ]
 }
 
