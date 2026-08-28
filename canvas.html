@@ -39,9 +39,9 @@
           <span class="btn-icon">🔗</span>
           <span class="btn-label">Connect</span>
         </button>
-        <button id="tool-pen" class="tool-btn" data-tool="pen" title="Apple Pencil / Pen (P)">
-          <span class="btn-icon">✍️</span>
-          <span class="btn-label">Pen</span>
+        <button id="tool-pen" class="tool-btn" data-tool="pen" title="Fountain Pen / Stylus (P)">
+          <span class="btn-icon">✒️</span>
+          <span class="btn-label">Fountain</span>
         </button>
         <button id="tool-highlighter" class="tool-btn" data-tool="highlighter" title="Highlighter (H)">
           <span class="btn-icon">🖍</span>
@@ -86,7 +86,7 @@
           <span id="cloud-sync-icon" class="btn-icon">☁️</span>
           <span id="cloud-sync-label" class="btn-label">Sync: Connecting</span>
         </button>
-        <button id="btn-pair-device-menu" class="icon-btn" title="Pair Another Device (iPad)">📱</button>
+        <button id="btn-pair-device-menu" class="icon-btn" title="Pair Another Device">📱</button>
         <button id="btn-export-canvas" class="icon-btn" title="Export Backup JSON">💾</button>
       </div>
     </header>
@@ -156,7 +156,7 @@
       </div>
     </div>
 
-    <!-- Detailed Proposal Review Modal (CRITICAL G) -->
+    <!-- Detailed Proposal Review Modal -->
     <div id="proposal-review-modal" class="modal-backdrop" style="display:none;">
       <div class="modal-card modal-wide">
         <div class="modal-header">
@@ -164,9 +164,7 @@
           <button id="btn-close-review-modal" class="btn-card-close">✕</button>
         </div>
         <p id="review-proposal-summary" class="modal-desc"></p>
-        
         <div id="review-operations-list" class="review-ops-container"></div>
-
         <div class="modal-footer">
           <button id="btn-reject-proposal-all" class="btn-secondary">Reject Proposal</button>
           <button id="btn-apply-selected-ops" class="btn-primary">Apply Selected Operations</button>
@@ -174,7 +172,7 @@
       </div>
     </div>
 
-    <!-- Evidence Drawer (Supporting Sources for Concept) -->
+    <!-- Evidence Drawer -->
     <aside id="evidence-drawer" class="evidence-drawer" style="display:none;">
       <div class="drawer-header">
         <h3 id="drawer-concept-title">Supporting Evidence</h3>
@@ -191,12 +189,10 @@
           <button id="btn-close-source-modal" class="btn-card-close">✕</button>
         </div>
         <p class="modal-desc">Paste an article, paragraph, or ChatGPT notes (up to ~10,000 words). AI will chunk, extract, and compare against your existing concepts.</p>
-        
         <form id="form-add-source" class="source-form">
           <input type="text" id="input-source-title" class="text-input" placeholder="Title (e.g. Cognitive Psychology Notes)" />
           <input type="url" id="input-source-url" class="text-input" placeholder="Source URL (Optional)" />
           <textarea id="input-source-text" class="textarea-input" rows="8" placeholder="Paste text here..." required></textarea>
-          
           <div class="modal-footer">
             <span id="source-word-count" class="word-count">0 words</span>
             <button type="submit" id="btn-submit-source" class="btn-primary">Analyze & Ingest</button>
@@ -211,29 +207,25 @@
         <div class="modal-icon">🔐</div>
         <h2>Private Workspace Pairing</h2>
         <p>Enter your <strong>One-Time Pairing Code</strong> to connect this device in real time.</p>
-        
         <form id="form-pair" class="pairing-form">
           <input type="text" id="input-pairing-code" class="pairing-input" placeholder="e.g. PIN-123456" autofocus autocomplete="off" autocapitalize="characters" />
           <button type="submit" id="btn-submit-pair" class="btn-pair-submit">Pair & Connect</button>
         </form>
-
         <div id="pairing-error-msg" class="pairing-error" style="display:none;"></div>
       </div>
     </div>
 
-    <!-- Generate PIN Modal (for iPad Pairing) -->
+    <!-- Generate PIN Modal -->
     <div id="generate-pin-modal" class="modal-backdrop" style="display:none;">
       <div class="modal-card">
         <div class="modal-header">
-          <h2>📱 Connect iPad / Second Device</h2>
+          <h2>📱 Connect Second Device</h2>
           <button id="btn-close-pin-modal" class="btn-card-close">✕</button>
         </div>
-        <p class="modal-desc">Use this one-time code on your iPad Safari to connect to this Workspace. Valid for 15 minutes.</p>
-        
+        <p class="modal-desc">Use this one-time code on another browser/device to connect to this Workspace. Valid for 15 minutes.</p>
         <div class="pin-display-box">
           <span id="generated-pin-text" class="generated-pin">Generating...</span>
         </div>
-
         <button id="btn-copy-pin" class="btn-primary-block" style="margin-top:12px;">Copy Pairing PIN</button>
       </div>
     </div>
@@ -241,14 +233,14 @@
     <!-- Bottom Status Bar -->
     <footer id="status-bar">
       <div class="status-left">
-        <span id="pointer-device-tag" class="status-pill">📱 Pointer: Ready</span>
+        <span id="pointer-device-tag" class="status-pill">✒ Pen Input: Ready</span>
         <span id="coords-tag" class="status-pill">World: (0, 0)</span>
       </div>
       <div class="status-right">
         <span id="concept-count-tag" class="status-pill">0 Concepts</span>
         <span id="edge-count-tag" class="status-pill">0 Edges</span>
         <span id="stroke-count-tag" class="status-pill">0 Strokes</span>
-        <span class="status-pill hint-pill">Apple Pencil Optimized</span>
+        <span class="status-pill hint-pill">Pen / Stylus Optimized</span>
       </div>
     </footer>
   </div>
@@ -256,6 +248,7 @@
   <script src="shared/engine-core.js"></script>
   <script src="shared/storage.js"></script>
   <script src="shared/canvas-core.js"></script>
+  <script src="shared/fountain-pen-v2.js"></script>
   <script src="canvas.js"></script>
 </body>
 </html>
