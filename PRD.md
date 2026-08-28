@@ -457,25 +457,27 @@ stroke crossing→ locally darker/richer overlap
 edge           → soft, not fluorescent-marker hard
 ```
 
-### 6.10.3 Brush Palette & Interaction Model
+### 6.10.3 Brush Palette & Interaction Model — Two-Button Mapping Locked
 
-Primary creative tools:
+The primary toolbar keeps the existing **two ink buttons only**. Product names in the toolbar remain simple and familiar; the expressive brush engine is an implementation detail behind each button.
 
 ```text
-✒ Fountain Pen      — beautiful handwriting / arrows / notes
-🖌 Watercolor Brush — highlighting / emphasis / expressive marks
-🧽 Stroke Eraser
+✒ Pen         → Fountain Pen engine
+🖌 Highlighter → Watercolor Brush engine
+🧽 Eraser
 ↩ Undo
 ```
 
-Utility brushes may remain available:
+Locked rules:
 
-```text
-Pen / Ball Pen      — simple predictable writing
-Highlighter         — classic flat marker
-```
+- The visible **Pen** button is the product entry point for the Fountain Pen handwriting experience described in §6.10.1.
+- The visible **Highlighter** button is the product entry point for the Watercolor Brush highlighting experience described in §6.10.2.
+- Do **not** add separate Fountain Pen and Watercolor Brush buttons beside Pen/Highlighter in the primary toolbar.
+- Do **not** add a third "Ink Wash" / Chinese-ink brush to solve the highlighting requirement; Watercolor is the intended expressive highlight behavior.
+- Historical generic `tool: pen` and flat `tool: highlighter` strokes remain supported for backward-compatible replay, but legacy utility rendering does not require a separate primary toolbar button.
+- New Pen strokes should persist Fountain semantics; new Highlighter strokes should persist Watercolor semantics once Watercolor V1 is implemented.
 
-The Fountain Pen and Watercolor Brush are the **quality target**; the utility brushes must not dictate their rendering model.
+This two-button mapping is a low-friction product rule: **Pen = beautiful writing; Highlighter = watercolor emphasis.**
 
 ### 6.10.4 Persistent Brush Semantics & Backward Compatibility
 
@@ -738,17 +740,17 @@ Manual structural edits and persistent ink synchronize across supported clients.
 
 # 10. Ink Input & Brush Requirements
 
-Primary target tools:
+Primary toolbar mapping is locked to the existing two ink controls:
 
 ```text
 👆 Select
-✒ Fountain Pen
-🖌 Watercolor Brush
-🧽 Stroke Eraser
+✒ Pen         = Fountain Pen behavior
+🖌 Highlighter = Watercolor Brush behavior
+🧽 Eraser
 ↩ Undo
 ```
 
-Utility Pen and classic Highlighter may remain available.
+Do not expand the main toolbar into separate generic/expressive variants. Legacy Pen/Highlighter rendering remains a backward-compatibility concern, not a reason to add more primary ink buttons.
 
 Browser pen input (`pointerType === "pen"`) should create ink from pressure-sensitive devices such as Wacom and Apple Pencil. Mouse input may remain as a functional fallback but is not expected to reproduce pressure/tilt expression.
 
