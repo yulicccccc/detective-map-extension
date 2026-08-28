@@ -2,7 +2,7 @@
 
 **Document status:** Living Source of Truth  
 **PRD version:** 2.0  
-**Last updated:** 2026-08-27  
+**Last updated:** 2026-08-28  
 **Product:** Detective Map / 侦探外脑  
 **Primary concept:** Living Learning Map  
 **Core principle:** *Minimum manual effort, maximum cognitive ownership.*
@@ -21,7 +21,7 @@ Detective Map is a **persistent, cross-device, AI-assisted visual learning works
 
 It helps a learner continuously convert new learning material—whether a sentence, paragraph, ChatGPT conversation, article, pasted text, or later a document/PDF—into **one evolving concept map for a topic**.
 
-The learner can continuously add new learning material, let AI propose how the new material changes the existing understanding, edit the concept map structurally on a computer, annotate the same map by hand on iPad with Apple Pencil, keep all changes synchronized, return to the source behind every important concept, and continue learning without starting over.
+The learner can continuously add new learning material, let AI propose how the new material changes the existing understanding, edit the concept map structurally on a computer, annotate the same map by hand with a pressure-sensitive desktop pen tablet or Apple Pencil, keep all changes synchronized, return to the source behind every important concept, and continue learning without starting over.
 
 The product must feel like a **living external model of understanding**, not a collection of disconnected notes.
 
@@ -38,7 +38,7 @@ Learn something
 → AI proposes incremental changes
 → User accepts / edits
 → User restructures on computer
-→ User annotates by hand on iPad
+→ User annotates by hand with pen input
 → Everything syncs
 → Learn something else
 → Add again
@@ -119,17 +119,17 @@ Captured Sources preserve source text, title, URL when available, timestamp, ori
 
 # 4. Primary User Experience
 
-## 4.1 Windows / Desktop Role: Structural Thinking
+## 4.1 Windows / Desktop Role: Structural Thinking + Pen Annotation
 
-Desktop is optimized for capturing new material, selecting Workspace, reviewing AI proposals, moving nodes, editing concept titles/descriptions, creating/deleting edges, merging concepts, pinning concepts, searching, undo, and managing sources.
+Desktop is optimized for capturing new material, selecting Workspace, reviewing AI proposals, moving nodes, editing concept titles/descriptions, creating/deleting edges, merging concepts, pinning concepts, searching, undo, managing sources, and pressure-sensitive handwriting with a pen tablet such as Wacom.
 
-Desktop is the primary **structural editing surface**.
+Desktop remains the primary **structural editing surface**, while a pen tablet may also act as a low-latency annotation surface without requiring a second device.
 
 ## 4.2 iPad Role: Cognitive Annotation
 
 iPad Safari is optimized for viewing the same live concept map, Apple Pencil handwriting, circling concepts, freehand arrows, highlighting, question marks, handwritten comments, erasing strokes, and pan/zoom.
 
-iPad is the primary **thinking / ink surface**.
+iPad is an optional **thinking / ink surface** rather than a required dependency for handwriting.
 
 Windows and iPad are two interfaces to the **same Workspace state**, not two copies.
 
@@ -307,8 +307,8 @@ Concept identity is semantic data and must remain readable.
 Rules:
 - no default ellipsis such as `Elaborative Rehe...`,
 - node width may adapt within bounded limits,
-- longer titles wrap to a second line when necessary,
-- target sizing: approximately `min-width: 160px`, adaptive preferred width, `max-width: 260px` unless later usability testing changes these values,
+- longer titles wrap naturally when necessary,
+- target sizing: approximately `min-width: 180px`, adaptive preferred width, `max-width: 260px` unless later usability testing changes these values,
 - title wrapping changes node height but must not hide part of the label.
 
 ### 6.8.3 Quick Expand = Temporary Summary View
@@ -384,14 +384,209 @@ Preferred behavior:
 
 The majority of canvas real estate must remain dedicated to **Concepts + Relationships + learner annotations**.
 
-## 6.9 Apple Pencil Ink Engine V1 (Pressure-Aware & Low-Latency Incremental Rendering)
+## 6.9 Ink Engine Foundation V1 — Low-Latency, Pressure-Aware, Replay-Safe
 
-- **Pressure-Aware Stroke Scaling**: Smooth, bounded width mapping curve (`0.4 + 1.2*p + 0.1*p^2`, bounded in `[1.0, 2.2 * baseWidth]`) allowing light strokes to render thin (~1.5px) and heavy strokes to render thick (~5.1px).
-- **Missing-Pressure Fallback**: Strokes with missing or standard pressure safely default to normal weight (3.0px).
-- **Incremental Active Rendering**: During active Apple Pencil input, newly stable segments are rendered incrementally without replaying the full stroke history on each pointer event.
+The existing ink foundation is device-agnostic. It must support any browser pen input that exposes Pointer Events, including Wacom-class desktop pen tablets and Apple Pencil where available.
+
+- **Pressure-Aware Stroke Scaling**: Pressure values may affect stroke rendering, with safe fallback for devices that report missing/constant pressure.
+- **Incremental Active Rendering**: During active pen input, newly stable segments are rendered incrementally without replaying the full stroke history on each pointer event.
 - **Tri-Layer Active Ink Rendering**: `inkCanvas` holds committed strokes; `activeStrokeCanvas` holds finalized segments of the current stroke; `scratchCanvas` holds only the replaceable live tail. Replacing the live tail must never erase finalized active ink.
-- **Replay Parity**: Incremental finalized segments + live tail use the same canonical geometry/width rules as persisted `renderStroke()` replay so pointer-up does not visibly change the final stroke shape.
-- **Palm & Gesture Separation**: Touch is strictly reserved for navigation; palm touch while Apple Pencil is drawing cannot interrupt the active pen stroke, and pinch-to-zoom is disabled while an active pen stroke is in progress.
+- **Replay Parity**: Incremental finalized segments + live tail use the same canonical geometry rules as persisted replay so pointer-up does not visibly change the final stroke shape.
+- **Palm & Gesture Separation**: On touch devices, touch is reserved for navigation; palm touch while pen input is active cannot interrupt the pen stroke.
+- **Local-First Input**: Pen rendering must never wait for cloud/network persistence before showing the stroke locally.
+
+## 6.10 Brush Engine V2 — Fountain Pen + Watercolor Brush — Locked
+
+The product must move beyond generic line drawing toward **beautiful, expressive handwriting and annotation**. The two priority brushes are locked as:
+
+1. **Fountain Pen** — the primary handwriting brush.
+2. **Watercolor Brush** — the primary expressive highlighting / emphasis brush.
+
+These are not cosmetic themes. Each brush has distinct input semantics, rendering behavior, persistence requirements, and manual acceptance criteria.
+
+### 6.10.1 Fountain Pen — Primary Handwriting Brush
+
+The Fountain Pen should evoke the attractive writing feel of a pressure-sensitive calligraphy/fountain-pen tool: clear stroke modulation, tapered entry/exit, and responsive pen dynamics.
+
+Required behavior:
+
+- **Strong Pressure Response**: Light pressure produces visibly thinner strokes; normal pressure produces the default writing weight; firm pressure produces visibly thicker strokes. The difference must be obvious to the eye rather than technically present but imperceptible.
+- **Pressure Curve, Not Raw Mapping**: Width must use a smooth calibrated curve with bounds and smoothing; raw pressure must never directly cause noisy width spikes.
+- **Velocity Influence**: Stroke speed contributes modestly to width/shape. Faster movement should generally feel lighter/finer and slower movement slightly fuller, without overwhelming pressure input.
+- **Start Taper**: The beginning of a stroke should naturally sharpen rather than begin as a blunt circular cap when sufficient motion exists.
+- **End Taper / Pen Lift**: The end of a stroke should narrow smoothly into a visible pen-lift point rather than terminate abruptly.
+- **Continuous Width Interpolation**: Width changes between points must interpolate smoothly; no per-point stair-step thickness changes.
+- **Tilt / Nib Orientation When Available**: If the device/browser reports reliable `tiltX` / `tiltY`, altitude/azimuth, or equivalent orientation data, the renderer should use it to alter nib aspect/orientation so angled strokes produce a more calligraphic pen edge.
+- **Graceful Tilt Fallback**: Tilt is an enhancement, not a dependency. Devices that do not provide stable tilt data must still produce an attractive Fountain Pen using pressure + velocity + taper.
+- **Device Calibration**: Provide at least a simple pressure-sensitivity control or preset curve so Wacom and Apple Pencil input can be tuned independently if their reported pressure ranges feel different.
+- **No New Perceptible Latency**: Fountain Pen quality must not reintroduce noticeable lag relative to the current low-latency Wacom baseline.
+
+Visual target:
+
+```text
+light pressure  → fine hairline
+normal pressure → comfortable handwriting weight
+firm pressure   → clearly fuller stroke
+fast exit       → tapered lift
+supported tilt  → directional nib / calligraphic variation
+```
+
+The target is **beautiful everyday handwriting and English/calligraphy-like stroke character**, not merely a round pen whose radius changes.
+
+### 6.10.2 Watercolor Brush — Primary Expressive Highlight Brush
+
+The Watercolor Brush should feel soft, translucent, layered, and slightly wet rather than like a rigid fluorescent marker.
+
+Required behavior:
+
+- **Semi-Transparent Pigment**: A single pass remains translucent so underlying Concepts, edges, and writing remain readable.
+- **Soft / Feathered Edge**: Brush edges should be visually softer than a standard highlighter; avoid a hard rectangular/solid marker boundary.
+- **Layer Accumulation**: Painting over the same area multiple times must visibly deepen the color.
+- **Natural Overlap Darkening**: Crossings between two watercolor strokes should become richer/darker at the overlap instead of visually replacing one another.
+- **Color Interaction**: When different watercolor colors overlap, ordinary alpha/pigment compositing should create a natural mixed/deeper region. Exact physical-fluid color simulation is not required.
+- **Wet-Looking Texture**: A subtle variation in opacity/edge density may be used to avoid a perfectly uniform digital marker appearance, but texture must not become distracting or noisy.
+- **Stable Local Preview**: The active brush preview must remain responsive. Expensive post-processing may happen after pointer-up only if the visible result does not jump dramatically.
+- **Performance Guardrail**: Do not implement full-canvas blur/diffusion or whole-stroke re-rendering on every pointer move. Watercolor quality may degrade gracefully before sacrificing writing responsiveness.
+
+Visual target:
+
+```text
+one pass       → soft translucent wash
+second pass    → visibly deeper color
+stroke crossing→ locally darker/richer overlap
+edge           → soft, not fluorescent-marker hard
+```
+
+### 6.10.3 Brush Palette & Interaction Model
+
+Primary creative tools:
+
+```text
+✒ Fountain Pen      — beautiful handwriting / arrows / notes
+🖌 Watercolor Brush — highlighting / emphasis / expressive marks
+🧽 Stroke Eraser
+↩ Undo
+```
+
+Utility brushes may remain available:
+
+```text
+Pen / Ball Pen      — simple predictable writing
+Highlighter         — classic flat marker
+```
+
+The Fountain Pen and Watercolor Brush are the **quality target**; the utility brushes must not dictate their rendering model.
+
+### 6.10.4 Persistent Brush Semantics & Backward Compatibility
+
+Brush output must remain stable after save/reload and across future renderer changes.
+
+New Ink Strokes should support additive metadata such as:
+
+```js
+{
+  brushType: 'fountain_pen' | 'watercolor' | 'pen' | 'highlighter',
+  brushVersion: 1,
+  brushParams: { ... },
+  seed: optionalDeterministicSeed,
+  points: [
+    {
+      x,
+      y,
+      pressure,
+      t,          // timestamp / monotonic time for velocity reconstruction
+      tiltX,      // optional
+      tiltY,      // optional
+      altitudeAngle, // optional when available
+      azimuthAngle   // optional when available
+    }
+  ]
+}
+```
+
+Rules:
+
+- Old strokes containing only `{x, y, pressure}` must continue rendering safely without migration.
+- Missing pressure falls back to a normal/default writing pressure.
+- Missing timestamps disable/reduce velocity effects rather than corrupting the stroke.
+- Missing tilt data disables tilt-specific nib behavior without changing stroke identity.
+- Persist `brushVersion` and brush parameters required for deterministic replay so changing future default brush settings does not silently change historical handwriting.
+- Watercolor randomness/texture, if used, must be deterministic from persisted data/seed so reloading does not visibly redraw a different stroke.
+
+### 6.10.5 Rendering Priority Order
+
+For both brushes, engineering priorities are locked to:
+
+1. **Input responsiveness / no perceptible lag**
+2. **Stable pointer-tip tracking**
+3. **No visual snap on pointer-up**
+4. **Deterministic persistence/replay**
+5. **Expressive brush aesthetics**
+6. **Advanced physical simulation**
+
+A more realistic brush that feels laggy is a product regression.
+
+### 6.10.6 Manual Acceptance — Fountain Pen
+
+Automated tests can verify math and replay invariants, but handwriting quality requires human pen testing.
+
+Manual test fixture:
+
+```text
+hello
+oooooo
+888888
+Spaced Repetition
+```
+
+Then draw:
+- one very light line,
+- one normal-pressure line,
+- one firm-pressure line,
+- one line that transitions continuously light → firm → light,
+- several quick flicks / check marks,
+- several slow curves,
+- tilted strokes when the hardware reports tilt.
+
+Acceptance:
+- pressure differences are immediately visible,
+- transitions remain smooth,
+- no obvious width spikes,
+- beginnings/endings show attractive taper,
+- quick writing remains responsive,
+- pointer-up does not change the visible stroke shape,
+- tilt affects nib character when supported,
+- the user judges the writing materially more attractive than the current generic Pen.
+
+### 6.10.7 Manual Acceptance — Watercolor Brush
+
+Manual test fixture:
+
+1. Paint one horizontal wash once.
+2. Paint over half of it a second time.
+3. Cross it with a vertical wash of the same color.
+4. Cross it with a second color.
+5. Highlight across Concept nodes and edge labels.
+
+Acceptance:
+- one pass is translucent,
+- repeated painting visibly deepens the color,
+- crossings visibly darken/richen,
+- different colors create a natural overlap region,
+- edges are visibly softer than the classic Highlighter,
+- underlying map content remains readable,
+- active brush motion remains fluid enough for normal annotation.
+
+### 6.10.8 Explicit Non-Goal for Brush Fidelity
+
+The target is **functionally and aesthetically similar brush behavior**, not a pixel-for-pixel clone of any proprietary native app brush engine.
+
+V2 Brush Engine does **not** require:
+- physically accurate fluid dynamics,
+- paper-fiber simulation,
+- pigment granulation physics,
+- exact reproduction of a specific proprietary brush,
+- GPU-heavy effects that compromise interaction latency.
 
 ---
 
@@ -460,13 +655,30 @@ The majority of canvas real estate must remain dedicated to **Concepts + Relatio
   id,
   workspaceId,
   tool,
+  brushType,
+  brushVersion,
+  brushParams,
+  seed,
   color,
   width,
   opacity,
-  points: [{ x, y, pressure }],
+  points: [
+    {
+      x,
+      y,
+      pressure,
+      t,
+      tiltX,
+      tiltY,
+      altitudeAngle,
+      azimuthAngle
+    }
+  ],
   createdAt
 }
 ```
+
+All new point-dynamics fields are optional for backward compatibility. Legacy strokes containing only `{x, y, pressure}` remain valid.
 
 ## Change Proposal
 
@@ -491,8 +703,9 @@ The majority of canvas real estate must remain dedicated to **Concepts + Relatio
 Infinite World Space
 │
 ├── Ink Layer
-│   ├── handwriting
-│   ├── highlighter
+│   ├── Fountain Pen handwriting
+│   ├── Watercolor Brush highlighting/emphasis
+│   ├── utility Pen / Highlighter
 │   ├── free arrows
 │   └── sketches
 ├── Edge Layer
@@ -509,7 +722,7 @@ The **default Concept Layer is structure-first**: Concept labels and relationshi
 
 # 9. Desktop Map Editing Requirements
 
-V2.0 must support drag Concept, edit label, edit description, delete Concept with confirmation, manually create Edge, delete Edge, edit relationship label, pin/unpin Concept, pan, zoom, Undo, fit map, select Concept, view supporting Sources, open original source URL, and apply/reject AI proposals.
+V2.0 must support drag Concept, edit label, edit description, delete Concept with confirmation, manually create Edge, delete Edge, edit relationship label, pin/unpin Concept, pan, zoom, Undo, fit map, select Concept, view supporting Sources, open original source URL, apply/reject AI proposals, and low-latency pressure-sensitive handwriting from Wacom-class pen tablets when available.
 
 Concept-map view requirements additionally include:
 - collapsed Concept nodes by default,
@@ -519,25 +732,29 @@ Concept-map view requirements additionally include:
 - no default internal body scrollbar on Concept nodes,
 - temporary expansion that does not mutate saved layout coordinates.
 
-Manual structural edits synchronize to iPad.
+Manual structural edits and persistent ink synchronize across supported clients.
 
 ---
 
-# 10. iPad Ink Requirements
+# 10. Ink Input & Brush Requirements
 
-Required tools:
+Primary target tools:
 
 ```text
 👆 Select
-✍️ Pen
-🖍 Highlighter
+✒ Fountain Pen
+🖌 Watercolor Brush
 🧽 Stroke Eraser
 ↩ Undo
 ```
 
-Apple Pencil (`pointerType === "pen"`) creates ink. Pen/Highlighter should ignore accidental single-finger ink. Touch is primarily navigation. Two-finger pan/zoom is preferred. While a pen stroke is active, unrelated touch pointers should not create ink.
+Utility Pen and classic Highlighter may remain available.
 
-Pressure may be stored; fixed-width drawing is acceptable in V2.0.
+Browser pen input (`pointerType === "pen"`) should create ink from pressure-sensitive devices such as Wacom and Apple Pencil. Mouse input may remain as a functional fallback but is not expected to reproduce pressure/tilt expression.
+
+On touch devices, Pen/Brush tools must ignore accidental single-finger ink. Touch is primarily navigation. Two-finger pan/zoom is preferred. While a pen stroke is active, unrelated touch pointers should not create ink.
+
+The ink system should capture pressure, timing, and tilt/orientation data when the device/browser exposes them. Missing advanced data must degrade gracefully.
 
 Touch users must have an explicit tap target for Concept Quick Expand / Details; desktop-only double-click interactions may not be the sole way to reveal Concept information.
 
@@ -671,9 +888,9 @@ Paste a multi-thousand-word article. Source is saved, processing happens in back
 
 User drags a node, edits its label, and creates an edge. Changes persist and sync. AI may not silently reverse them on the next ingestion.
 
-## Scenario 5 — iPad Handwriting
+## Scenario 5 — Handwriting Annotation
 
-Open the same Workspace on iPad Safari. Use Apple Pencil to circle, write, highlight, and erase. Ink uses map world coordinates and persists.
+Open the same Workspace on a pressure-sensitive input surface. On Windows, use a Wacom-class pen tablet; on iPad, use Apple Pencil. Circle, write, highlight/paint, and erase. Ink uses map world coordinates and persists.
 
 ## Scenario 6 — Continuous Growth
 
@@ -683,11 +900,19 @@ Capture five additional Sources over multiple sessions. The same Workspace keeps
 
 Open a mature Workspace containing many Concepts with long descriptions. By default, the canvas shows compact Concept identities and readable relationship labels rather than paragraph-heavy cards. No Concept title is truncated. Double-clicking or activating the expand control temporarily reveals a concise description; opening Details shows full description and Sources in a drawer without permanently changing the map layout. Closing details returns the learner to the same spatial structure.
 
+## Scenario 8 — Expressive Fountain Pen Writing
+
+Using a Wacom-class pen tablet, write `hello`, `oooooo`, `888888`, and `Spaced Repetition`, then draw light/normal/firm lines and fast flicks. Fountain Pen shows clearly visible pressure modulation, smooth taper, stable pointer-tip tracking, and no new perceptible lag versus the current low-latency Pen baseline. Reloading reproduces the same stroke geometry/character.
+
+## Scenario 9 — Watercolor Layering
+
+Paint one translucent wash, repaint half of it, and cross it with same-color and different-color washes. Repeated/overlapping regions visibly deepen, edges remain softer than classic Highlighter, underlying Concept Map content remains readable, and the brush stays responsive during normal annotation.
+
 ---
 
 # 18. V2.0 Non-Goals
 
-Do not implement yet: handwriting OCR, AI interpretation of handwritten symbols, automatic conversion of ink arrow to semantic Edge, collaborative multi-user editing, public sharing, complex knowledge graph analytics, spaced-repetition generation, automatic PDF OCR, full Obsidian integration, or autonomous large-scale AI rearrangement.
+Do not implement yet: handwriting OCR, AI interpretation of handwritten symbols, automatic conversion of ink arrow to semantic Edge, collaborative multi-user editing, public sharing, complex knowledge graph analytics, spaced-repetition generation, automatic PDF OCR, full Obsidian integration, autonomous large-scale AI rearrangement, physically accurate watercolor fluid simulation, or pixel-for-pixel cloning of a proprietary native brush engine.
 
 ---
 
