@@ -41,6 +41,19 @@ The Chrome extension supports:
 - infinite canvas pan/zoom,
 - stylus handwriting and annotation.
 
+### Locked Two-Button Ink Model
+
+The primary toolbar intentionally keeps only the existing two ink controls:
+
+```text
+Pen         = Fountain Pen behavior
+Highlighter = Watercolor Brush behavior
+```
+
+There is no separate Fountain button, no separate Watercolor button, and no third Ink Wash brush in the primary toolbar.
+
+Historical generic `tool: pen` / `tool: highlighter` strokes remain replay-compatible, but new strokes use the expressive brush semantics.
+
 ### Pen Input
 
 The browser ink engine accepts Pointer Events from devices such as:
@@ -51,9 +64,9 @@ The browser ink engine accepts Pointer Events from devices such as:
 
 **Manual baseline:** desktop Wacom input is low-latency enough for normal annotation. iPad Safari handwriting is optional rather than a required dependency.
 
-### Fountain Pen V2
+### Pen → Fountain Pen V2
 
-✒ **Fountain Pen V2 is implemented and CODE/CI VERIFIED; real Wacom feel acceptance is still required.**
+✒ **Fountain Pen V2 is implemented and CODE/CI VERIFIED; real Wacom feel remains user-authoritative.**
 
 New active Pen strokes use persistent `tool: fountain_pen` semantics while historical `tool: pen` strokes retain the legacy renderer.
 
@@ -67,11 +80,25 @@ Implemented Fountain behavior includes:
 - optional tilt/orientation variation when the device exposes it,
 - graceful missing-time/missing-tilt fallback,
 - deterministic replay,
-- O(1) incremental active rendering.
+- O(1) hydration + incremental active rendering.
 
-The next product decision is **manual Wacom acceptance/tuning**, not more Fountain implementation.
+### Highlighter → Watercolor Brush V1
 
-🖌 **Watercolor Brush** remains P2 and must not start until Fountain Pen feel is accepted. See `PRD.md §6.10`.
+🖌 **Watercolor Brush V1 is implemented behind the existing Highlighter button and is CODE/CI VERIFIED; visual similarity to iPad Freeform Watercolor requires manual comparison.**
+
+New active Highlighter strokes use persistent `tool: watercolor` semantics while historical `tool: highlighter` strokes retain the legacy flat-marker renderer.
+
+Implemented Watercolor behavior includes:
+
+- translucent layered pigment,
+- soft/feathered multi-layer edge,
+- natural darkening when strokes overlap,
+- modest pressure-sensitive width,
+- slightly richer pigment during slower movement,
+- deterministic micro-variation for a less uniform digital edge,
+- deterministic replay,
+- O(1) hydration and bounded incremental rendering,
+- no blur/diffusion/full-canvas processing on pointer move.
 
 ## Cloud Architecture
 
@@ -113,6 +140,7 @@ Current deterministic suites:
 node tests/verify-all.js
 node tests/verify-v2.js
 node tests/verify-fountain-v2.js
+node tests/verify-watercolor-v1.js
 node tests/verify-cloud.js   # live isolated cloud fixtures when intentionally run
 ```
 
@@ -126,7 +154,7 @@ Verification language:
 - **BROWSER PASS** — real browser UX manually observed.
 - **MANUAL REQUIRED** — physical/subjective device test pending.
 
-Automated tests do not prove handwriting feels good.
+Automated tests do not prove either brush feels like iPad Freeform.
 
 ## Multi-Computer / Multi-AI Safety
 
