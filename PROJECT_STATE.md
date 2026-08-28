@@ -3,7 +3,7 @@
 **Last reconciled:** 2026-08-28  
 **Product:** Living Learning Map  
 **Production:** `https://detectivemap.qchen9108.workers.dev`  
-**Status:** 🟢 Core Living Map stable; Structure-First UI browser-verified; Fountain Pen V2 is CODE/CI VERIFIED and awaiting real Wacom feel acceptance.
+**Status:** 🟢 Core Living Map stable; Structure-First UI browser-verified; Pen/Fountain and Highlighter/Watercolor are CODE/CI VERIFIED and awaiting real Wacom feel acceptance.
 
 > This file is the **current implementation / verification snapshot**. Product requirements live in `PRD.md`. Engineering rules live in `AGENTS.md`. The single next action lives in `.ai-bridge/current-plan.md`.
 
@@ -72,7 +72,22 @@ Agents must:
 - not copy its concrete credential value into docs, URLs, logs, screenshots, reports, or prompts,
 - not introduce additional hardcoded secrets because this exception exists.
 
-This exception is now also reflected in `PRD.md §13` without exposing the concrete credential.
+### Two-Button Ink Mapping — Locked
+
+The primary toolbar intentionally has only two ink buttons:
+
+```text
+Pen         = Fountain Pen behavior
+Highlighter = Watercolor Brush behavior
+```
+
+Rules:
+
+- do not add separate Fountain/Watercolor buttons beside Pen/Highlighter,
+- do not add a third Ink Wash / Chinese-ink brush to solve highlighting,
+- historical generic `tool: pen` and `tool: highlighter` strokes remain replay-compatible,
+- new Pen strokes persist Fountain semantics,
+- new Highlighter strokes persist Watercolor semantics.
 
 ---
 
@@ -118,7 +133,7 @@ Minor non-blocking polish still exists around fit-to-view/top-edge placement and
 
 Tri-layer baseline: `e4f39f9`.
 
-Manual findings before Fountain Pen V2:
+Manual findings before expressive brushes:
 
 - Windows Wacom latency: **MANUAL PASS ✅** — felt essentially as responsive as mouse input.
 - Generic Pen aesthetics/pressure expression: insufficient for the desired handwriting quality.
@@ -126,7 +141,7 @@ Manual findings before Fountain Pen V2:
 
 ---
 
-## 5. Fountain Pen V2 — Current Implementation
+## 5. Pen = Fountain Pen V2
 
 Requirements source: `PRD.md §6.10`.
 
@@ -134,78 +149,66 @@ Requirements source: `PRD.md §6.10`.
 **CI VERIFIED ✅**  
 **MANUAL WACOM FEEL: REQUIRED ⏳**
 
-Implementation lives in:
+Implementation:
 
 `shared/fountain-pen-v2.js`
 
-### Behavior Implemented
+Behavior:
 
-- Strong pressure modulation with a calibrated curve around normal pressure.
-- Three pressure presets:
-  - `Light Touch`
-  - `Balanced`
-  - `Expressive` — current default.
-- Velocity influence: faster movement becomes modestly finer; slow movement remains fuller.
-- Sharp start taper.
-- Tapered live/final pen-lift tip.
-- Continuous variable-width interpolation using bounded constant-step segments.
-- Optional tilt/azimuth-aware directional width variation when Pointer Events expose usable orientation data.
-- Graceful missing-time / missing-tilt fallback.
-- Captures pressure/time/tilt-orientation metadata through PointerEvent capture.
-- New active `Pen` strokes upgrade to persistent `tool: fountain_pen` semantics.
-- Fountain preset/version identity is stored inside the existing points JSON so reload can reproduce the same brush behavior without a Durable Object schema migration.
-- Historical persisted `tool: pen` strokes continue through the old renderer and do not silently change appearance.
-- Existing Highlighter remains unchanged until Watercolor work begins.
-
-### Rendering Invariants
-
-- Full Fountain replay is deterministic for the same persisted points.
-- Incremental finalized layer + replaceable live tail matches full replay geometry/width at the completed state.
-- Active rendering remains O(1) per appended point; no full-stroke replay regression.
-- Fountain rendering remains layered on top of the stable tri-layer Canvas architecture.
-
-### Automated Verification
-
-GitHub Actions workflow:
-
-`Verify and Rebuild Generated Assets`
-
-Independent runner evidence after Fountain implementation:
-
-- `tests/verify-all.js`: **9/9 passed**
-- `tests/verify-v2.js`: **22/22 passed**, zero network calls
-- `tests/verify-fountain-v2.js`: **11/11 passed**
-
-Fountain-specific coverage includes:
-
-- byte-for-byte legacy Pen renderer compatibility,
-- light/normal/firm pressure separation,
-- velocity effect,
+- strong pressure modulation,
+- Light Touch / Balanced / Expressive presets,
+- velocity influence,
 - start taper,
-- tilt-aware variation,
-- new-stroke Fountain upgrade,
-- pressure/time/tilt capture + fallback,
-- end taper,
+- tapered pen-lift tip,
+- continuous variable-width interpolation,
+- optional tilt/azimuth variation,
+- graceful missing-time / missing-tilt fallback,
+- captured pressure/time/tilt metadata,
+- new active Pen strokes persist `tool: fountain_pen`,
+- historical `tool: pen` strokes retain the legacy renderer,
 - deterministic replay,
 - incremental/replay parity,
-- O(1) behavior through a 500-point stroke.
+- O(1) hydration + rendering path.
+
+Automated Fountain suite: `tests/verify-fountain-v2.js`.
 
 Automated success is **not** handwriting-quality acceptance. Real Wacom testing is authoritative for feel.
 
 ---
 
-## 6. Watercolor Brush — P2, Not Started
+## 6. Highlighter = Watercolor Brush V1
 
-Only after Fountain Pen manual acceptance/tuning:
+Requirements source: `PRD.md §6.10.2`, §6.10.3, and §10.
 
-- translucent soft-edge wash,
-- repeated passes deepen color,
-- same/different-color overlaps become richer/darker,
-- subtle wet/organic appearance,
+**CODE VERIFIED ✅**  
+**CI VERIFIED ✅**  
+**MANUAL FREEFORM-LIKE FEEL: REQUIRED ⏳**
+
+Implementation:
+
+`shared/watercolor-brush-v1.js`
+
+The existing visible **Highlighter** button is the product entry point. No separate Watercolor button is added.
+
+Behavior:
+
+- semi-transparent layered pigment,
+- broad low-alpha outer wash + denser inner pigment for a soft/feathered edge,
+- repeated passes and crossings naturally deepen through normal source-over compositing,
+- modest pressure-sensitive width,
+- slow motion deposits slightly more pigment than fast motion,
+- deterministic micro-variation to avoid a perfectly uniform digital-marker edge,
+- persisted Watercolor preset/version/seed inside existing points JSON,
+- new active Highlighter strokes persist `tool: watercolor`,
+- historical `tool: highlighter` strokes retain the legacy flat-marker renderer,
 - deterministic replay,
-- no full-canvas expensive processing during pointer move.
+- incremental finalized layer + replaceable live tail parity,
+- O(1) hydration and bounded per-point rendering,
+- no full-canvas blur, diffusion, or whole-stroke re-render on pointer move.
 
-Do not implement Watercolor in parallel with unresolved Fountain feel tuning.
+Automated Watercolor suite: `tests/verify-watercolor-v1.js`.
+
+The target benchmark is **the same class of soft, translucent, layered Watercolor experience as iPad Freeform**, not a pixel-for-pixel proprietary brush clone. Human side-by-side judgment is required.
 
 ---
 
@@ -217,7 +220,7 @@ Legacy points remain valid:
 {x, y, pressure}
 ```
 
-New Fountain points may additionally contain:
+Expressive-brush points may additionally contain timing, tilt/orientation, and deterministic brush metadata such as:
 
 ```js
 {
@@ -230,11 +233,14 @@ New Fountain points may additionally contain:
   altitudeAngle,
   azimuthAngle,
   fountainPreset,
-  brushVersion
+  brushVersion,
+  watercolorPreset,
+  watercolorVersion,
+  watercolorSeed
 }
 ```
 
-Server persistence already stores `tool`, `width`, `opacity`, `color`, and the entire points JSON, so `tool: fountain_pen` and point dynamics survive cloud reload without a table migration.
+Server persistence already stores `tool`, `width`, `opacity`, `color`, and the entire points JSON, so `tool: fountain_pen` / `tool: watercolor` and point dynamics survive cloud reload without a table migration.
 
 Historical strokes must not change merely because future defaults change.
 
@@ -245,32 +251,32 @@ Historical strokes must not change merely because future defaults change.
 Current source/generated consistency safeguards:
 
 - `.github/workflows/verify-generated-assets.yml` runs build + tests on pushes to `main`.
-- `scripts/bundle-assets.js` includes Fountain Pen V2 and no longer bundles legacy PeerJS.
+- Current required suites include core V1/V2, Fountain, and Watercolor verification.
+- `scripts/bundle-assets.js` includes both expressive brush runtimes.
 - `scripts/build-public.js` removes/recreates `public/` from source on every build, preventing stale generated files from surviving across machines.
-- Legacy PeerJS runtime/download/public artifacts were removed.
-- Device-specific Canvas wording was generalized to Fountain Pen / Pen-Stylus / Second Device language.
-- The one-time PRD reconciliation script/workflow step was removed after successful exact patching; long-term CI is back to build/test/generated-asset verification only.
+- Legacy PeerJS runtime/download/public artifacts remain removed.
+- The one-time PRD mapping script was removed after reconciliation; long-term CI is back to normal build/test/generated-asset verification.
 
-Build commands remain:
+Build commands:
 
 ```text
 node scripts/bundle-assets.js
 node scripts/build-public.js
 ```
 
-Current V2 production deployment entrypoint remains:
+Current V2 production deployment entrypoint:
 
 ```text
 DetectiveMap_V2.0.0_detectivemap.qchen9108.workers.dev_一键更新网站.bat
 ```
 
-Do not deploy Fountain Pen as “accepted” merely because CI is green; manual Wacom feel should be checked first.
+Do not call either expressive brush MANUAL PASS merely because CI is green.
 
 ---
 
 ## 9. Cross-Device Documentation Alignment
 
-`PRD.md §11/§12` now reflects the actual supported model:
+`PRD.md §11/§12` reflects the actual supported model:
 
 - Windows/Mac clients share the authoritative cloud Workspace.
 - Connected clients receive structural updates without treating iPad as a mandatory dependency.
@@ -288,7 +294,7 @@ Use only evidence-backed labels:
 - **BROWSER PASS** — real browser UX observed.
 - **MANUAL REQUIRED** — physical/subjective device test pending.
 
-Automated tests never justify a claim that handwriting “feels good.”
+Automated tests never justify a claim that handwriting/highlighting “feels like Freeform.”
 
 Cloud fixtures must continue using isolated `__TEST__` workspaces and must never mutate `ws_default`.
 
@@ -310,6 +316,9 @@ Generated artifacts must come from the current source tree, not from a stale loc
 
 ## 12. Single Next Action
 
-**Manual Wacom acceptance of Fountain Pen V2.**
+**Manual Wacom acceptance of the locked Pen + Highlighter brush pair.**
 
-Do not start Watercolor, Obsidian/Excalidraw migration, or unrelated architecture work until Fountain Pen has been tested with the real Wacom and tuned if necessary.
+- Pen should be judged as Fountain handwriting.
+- Highlighter should be judged against iPad Freeform Watercolor behavior.
+
+Do not start a third brush, Obsidian/Excalidraw migration, or unrelated architecture work before this manual acceptance/tuning pass.
