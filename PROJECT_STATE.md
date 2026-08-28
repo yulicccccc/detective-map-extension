@@ -3,9 +3,9 @@
 **Last reconciled:** 2026-08-28  
 **Product:** Living Learning Map  
 **Production:** `https://detectivemap.qchen9108.workers.dev`  
-**Status:** 🟢 Core Living Map workflow stable; Structure-First UI browser-verified; expressive Brush Engine V2 is the next product priority.
+**Status:** 🟢 Core Living Map stable; Structure-First UI browser-verified; Fountain Pen V2 is CODE/CI VERIFIED and awaiting real Wacom feel acceptance.
 
-> This file is the **current implementation / verification snapshot**. Product requirements live in `PRD.md`. Engineering rules live in `AGENTS.md`. The single next task lives in `.ai-bridge/current-plan.md`.
+> This file is the **current implementation / verification snapshot**. Product requirements live in `PRD.md`. Engineering rules live in `AGENTS.md`. The single next action lives in `.ai-bridge/current-plan.md`.
 
 ---
 
@@ -27,136 +27,174 @@ Durable Object + SQLite
           └─ Workers AI
 ```
 
-Optional browser pen/touch clients can connect to the same Workspace state. Client local storage is cache/offline support; Durable Object state is authoritative for cross-device continuity.
+Optional browser pen/touch clients can connect to the same Workspace. Client storage is cache/offline support; Durable Object state is authoritative for cross-device continuity.
 
-Current real-world device workflow:
+Current device direction:
 
-- **Work:** Windows Chrome + Wacom-class pen tablet.
-- **Home:** Mac Chrome can use the same extension/repo and cloud Workspace.
-- **iPad:** optional secondary surface; not required for handwriting now that desktop Wacom input is usable.
-- **Obsidian / Excalidraw pivot:** paused. Excalidraw handwriting was smooth, but the additional cross-client architecture is not currently justified while Wacom solves the immediate low-latency handwriting need.
+- Windows Chrome + Wacom-class pen tablet is the immediate structural + handwriting workflow.
+- Mac Chrome can use the same repo/cloud Workspace.
+- iPad remains an optional secondary surface, not a required handwriting dependency.
+- Obsidian/Excalidraw migration is paused while Wacom satisfies the low-latency desktop need.
 
 ---
 
-## 2. Product Rules Already Locked
+## 2. Locked Product Rules
 
 ### Living Map / AI
 
 - Incremental merge, not whole-map regeneration.
 - Source ≠ Concept.
 - AI proposes; human commits.
-- Preserve IDs, manual edits, positions, accepted edges, ink, and source provenance.
+- Preserve Concept IDs, manual edits, positions, accepted edges, ink, and source provenance.
 - Proposal subset application prevents dangling temp-ID edges.
-- Durable stale proposal recovery and retry behavior.
-- Mutation audit trail with provenance guard and atomic map/proposal/audit transaction behavior.
+- Durable stale proposal recovery/retry remains active.
+- Mutation audit trail retains provenance guard and atomic map/proposal/audit commit behavior.
 
 ### Concept Boundary / Grounding
 
-Current reasoning policy includes:
+Current AI reasoning policy includes:
 
 1. Explicit Source Subject Preservation.
 2. Positive identity evidence + contrastive identity check.
 3. Attachment vs independent Concept boundary.
-4. Source-Grounded Edge policy: current Source is the evidence authority for emitted relationships; map context is interpretation only.
+4. Source-Grounded Edge policy: current Source is evidence authority for emitted relationships; map context is interpretation only.
 5. Proposal summary consistency.
 
-Important implementation note: the Source-Grounded Edge protection is **prompt-enforced + cloud/browser regression verified**, not a deterministic semantic post-validator. Do not describe it as an impossible-to-bypass code-level evidence validator.
-
-Browser generalization evidence includes the unseen `Method of Loci` source producing a standalone Concept with no invented relationship to existing learning-method nodes.
+The Source-Grounded Edge protection is **prompt-enforced + regression verified**, not a deterministic semantic post-validator.
 
 ### Accepted Pairing Implementation Exception
 
-The current product intentionally retains one **permanent convenience auto-pair mechanism** as an accepted usability/security tradeoff. This is an explicit implementation exception to the idealized PRD rule against hardcoded pairing credentials.
+The current product intentionally retains one permanent convenience auto-pair mechanism as an accepted usability/security tradeoff.
 
-Rules for agents:
+Agents must:
 
-- do not remove/redesign this accepted convenience behavior unless the user explicitly reopens the decision,
-- do not copy the concrete credential value into documentation, URLs, logs, screenshots, reports, prompts, or new code paths,
-- do not introduce any additional hardcoded secrets because this one exception exists.
+- not remove/redesign that accepted behavior unless the user explicitly reopens the decision,
+- not copy its concrete credential value into docs, URLs, logs, screenshots, reports, or prompts,
+- not introduce additional hardcoded secrets because this exception exists.
 
 ---
 
-## 3. Structure-First Concept Map UI — Current Baseline
+## 3. Structure-First Concept Map UI
 
-**Status: BROWSER PASS ✅**
+**BROWSER PASS ✅**
 
-The production Canvas now behaves as a Concept Map rather than a wall of note cards:
+Production baseline:
 
-- Concept nodes are collapsed by default.
-- Default view emphasizes **Concept identity + relationships**.
-- Description/body is hidden by default.
-- Concept labels are fully visible; no ellipsis/line-clamp truncation.
+- Concept nodes collapsed by default.
+- Default view prioritizes Concept identity + relationships.
+- Description/body hidden by default.
+- Complete labels; no ellipsis/line-clamp truncation.
 - Long titles wrap naturally.
-- Double-click Concept/title or use the explicit chevron to Quick Expand.
-- Quick Expand is temporary in-memory view state and does not mutate revision or saved `(x, y)` layout.
-- Complete Concept description + supporting Sources live in the Detail Drawer.
-- Relationship labels retain the edge text halo for readability.
-- Operational failure/retry state is a compact corner toast rather than a wide permanent banner.
+- Double-click Concept/title or use chevron for Quick Expand.
+- Quick Expand is temporary view state; no revision or saved `(x, y)` mutation.
+- Complete description + supporting Sources belong in Detail Drawer.
+- Edge labels retain text halo.
+- Failure/retry state is a compact corner toast.
 - Existing ink survived the UI migration.
 
-Current UI code baseline for this work: `87f27a4`.
+Structure-First implementation baseline: `87f27a4`.
 
-Minor non-blocking polish items observed:
-
-- Fit/viewport can still leave a node near the top edge in some layouts.
-- Top toolbar can overflow horizontally at narrower widths.
-
-Neither blocks current product work.
+Minor non-blocking polish still exists around fit-to-view/top-edge placement and narrow-toolbar overflow.
 
 ---
 
-## 4. Ink Engine — What Is Actually True
-
-### Foundation V1
+## 4. Ink Foundation V1
 
 **CODE VERIFIED ✅**
 
 - Pointer Events pen input.
-- `getCoalescedEvents()` capture when available.
-- Pressure data capture with safe fallback.
+- `getCoalescedEvents()` when available.
+- Pressure capture with fallback.
 - Tri-layer active rendering:
   - `inkCanvas` = committed strokes,
-  - `activeStrokeCanvas` = finalized segments of active stroke,
+  - `activeStrokeCanvas` = finalized active segments,
   - `scratchCanvas` = replaceable live tail.
-- Incremental active rendering does not replay the entire historical stroke every pointer move.
-- Incremental/replay geometry parity tests exist.
-- Pointer-up paints the completed stroke before awaiting persistence, avoiding a blank frame.
-- Touch/palm separation is preserved on touch devices.
+- Incremental active rendering avoids full historical-stroke replay per move.
+- Incremental/replay parity tests exist.
+- Pointer-up paints before awaiting persistence.
+- Touch/palm separation remains preserved.
 
-Tri-layer ink baseline commit: `e4f39f9`.
+Tri-layer baseline: `e4f39f9`.
 
-### Manual Findings
+Manual findings before Fountain Pen V2:
 
-- **Windows Wacom latency:** MANUAL PASS ✅ — handwriting felt essentially as responsive as mouse input.
-- **Current expressive pressure feel:** NOT ACCEPTED 🟡 — present generic pressure behavior does not look like the desired fountain-pen writing tool.
-- **iPad Safari Apple Pencil latency:** MANUAL FAIL / POOR ❌ — severe latency was observed on the current native Canvas implementation.
-
-The iPad result is why platform alternatives were investigated, but Wacom makes an immediate platform migration unnecessary.
+- Windows Wacom latency: **MANUAL PASS ✅** — felt essentially as responsive as mouse input.
+- Generic Pen aesthetics/pressure expression: insufficient for the desired handwriting quality.
+- iPad Safari Apple Pencil latency on current native Canvas route: **MANUAL FAIL / POOR ❌**.
 
 ---
 
-## 5. Brush Engine V2 — Locked Next Product Direction
+## 5. Fountain Pen V2 — Current Implementation
 
-Requirements are defined in `PRD.md §6.10`.
+Requirements source: `PRD.md §6.10`.
 
-### P1 — Fountain Pen
+**CODE VERIFIED ✅**  
+**CI VERIFIED ✅**  
+**MANUAL WACOM FEEL: REQUIRED ⏳**
 
-Target:
+Implementation lives in:
 
-- strong visible pressure modulation,
-- smooth calibrated pressure curve,
-- modest velocity influence,
-- start/end taper and pen-lift character,
-- optional tilt/nib orientation when device/browser data is reliable,
-- device calibration/preset for Wacom vs Apple Pencil,
-- deterministic replay/backward compatibility,
-- **no perceptible latency regression from the current Wacom baseline**.
+`shared/fountain-pen-v2.js`
 
-Manual acceptance must use real pen input; automated math tests are not sufficient.
+### Behavior Implemented
 
-### P2 — Watercolor Brush
+- Strong pressure modulation with a true calibrated curve around normal pressure.
+- Three pressure presets:
+  - `Light Touch`
+  - `Balanced`
+  - `Expressive` — current default.
+- Velocity influence: faster movement becomes modestly finer; slow movement remains fuller.
+- Sharp start taper.
+- Tapered live/final pen-lift tip.
+- Continuous variable-width interpolation using bounded constant-step segments.
+- Optional tilt/azimuth-aware directional width variation when Pointer Events expose usable orientation data.
+- Graceful missing-time / missing-tilt fallback.
+- Captures pressure/time/tilt-orientation metadata through PointerEvent capture.
+- New active `Pen` strokes upgrade to persistent `tool: fountain_pen` semantics.
+- Fountain preset/version identity is stored inside the existing points JSON so reload can reproduce the same brush behavior without a Durable Object schema migration.
+- Historical persisted `tool: pen` strokes continue through the old renderer and do not silently change appearance.
+- Existing Highlighter remains unchanged until Watercolor work begins.
 
-After Fountain Pen manual acceptance:
+### Rendering Invariants
+
+- Full Fountain replay is deterministic for the same persisted points.
+- Incremental finalized layer + replaceable live tail matches full replay geometry/width at the completed state.
+- Active rendering remains O(1) per appended point; no full-stroke replay regression.
+- Fountain rendering remains layered on top of the stable tri-layer Canvas architecture.
+
+### Automated Verification
+
+GitHub Actions workflow:
+
+`Verify and Rebuild Generated Assets`
+
+Independent runner evidence after Fountain implementation:
+
+- `tests/verify-all.js`: **9/9 passed**
+- `tests/verify-v2.js`: **22/22 passed**, zero network calls
+- `tests/verify-fountain-v2.js`: **11/11 passed**
+
+Fountain-specific coverage includes:
+
+- byte-for-byte legacy Pen renderer compatibility,
+- light/normal/firm pressure separation,
+- velocity effect,
+- start taper,
+- tilt-aware variation,
+- new-stroke Fountain upgrade,
+- pressure/time/tilt capture + fallback,
+- end taper,
+- deterministic replay,
+- incremental/replay parity,
+- O(1) behavior through a 500-point stroke.
+
+Automated success is **not** handwriting-quality acceptance. Real Wacom testing is authoritative for feel.
+
+---
+
+## 6. Watercolor Brush — P2, Not Started
+
+Only after Fountain Pen manual acceptance/tuning:
 
 - translucent soft-edge wash,
 - repeated passes deepen color,
@@ -165,83 +203,85 @@ After Fountain Pen manual acceptance:
 - deterministic replay,
 - no full-canvas expensive processing during pointer move.
 
-**Do not implement Watercolor in parallel with Fountain Pen unless explicitly requested.**
+Do not implement Watercolor in parallel with unresolved Fountain feel tuning.
 
 ---
 
-## 6. Current Data / Persistence Direction
+## 7. Ink Persistence Compatibility
 
-Legacy Ink points remain valid:
+Legacy points remain valid:
 
 ```js
 {x, y, pressure}
 ```
 
-Brush Engine V2 may add backward-compatible fields:
+New Fountain points may additionally contain:
 
 ```js
 {
-  brushType,
-  brushVersion,
-  brushParams,
-  seed,
-  points: [{x, y, pressure, t, tiltX, tiltY, altitudeAngle, azimuthAngle}]
+  x,
+  y,
+  pressure,
+  t,
+  tiltX,
+  tiltY,
+  altitudeAngle,
+  azimuthAngle,
+  fountainPreset,
+  brushVersion
 }
 ```
 
-Historical strokes must not visually change merely because future default brush parameters change.
+Server persistence already stores `tool`, `width`, `opacity`, `color`, and the entire points JSON, so `tool: fountain_pen` and point dynamics survive cloud reload without a table migration.
+
+Historical strokes must not change merely because future defaults change.
 
 ---
 
-## 7. Verification Snapshot
+## 8. Build / Generated Asset Discipline
 
-Use evidence labels rather than self-scored claims:
+Current source/generated consistency safeguards:
 
-- **CODE VERIFIED** — implementation/test inspection.
-- **CLOUD VERIFIED** — live cloud fixture/API execution.
-- **BROWSER PASS** — real browser UX observed.
-- **MANUAL REQUIRED** — physical/subjective device test pending.
+- `.github/workflows/verify-generated-assets.yml` runs build + tests on pushes to `main`.
+- `scripts/bundle-assets.js` includes Fountain Pen V2 and no longer bundles legacy PeerJS.
+- `scripts/build-public.js` now removes/recreates `public/` from source on every build, preventing stale generated files from surviving across machines.
+- Legacy PeerJS runtime/download/public artifacts were removed.
+- Device-specific Canvas wording was generalized to Fountain Pen / Pen-Stylus / Second Device language.
 
-Last explicit final-working-tree UI test report:
-
-- `tests/verify-all.js`: 9/9 passed.
-- `tests/verify-v2.js`: 22/22 passed with zero network calls.
-
-The cloud regression suite evolves as new AI/backend fixtures are added. **Run the current `tests/verify-cloud.js`; do not copy an old fixed test count from this or another report.**
-
-Automated tests must never mutate `ws_default`; live fixtures use isolated `__TEST__` workspaces and clean up after themselves.
-
----
-
-## 8. Build / Deploy
-
-Build generated assets before deploy:
+Build commands remain:
 
 ```text
 node scripts/bundle-assets.js
 node scripts/build-public.js
 ```
 
-Current V2 deploy workflow:
+Current V2 production deployment entrypoint remains:
 
 ```text
 DetectiveMap_V2.0.0_detectivemap.qchen9108.workers.dev_一键更新网站.bat
 ```
 
-Legacy `V1`, `V1.1`, `pages.dev`, `spacedesk`, old local-LAN `server.js`, and old `Pre-iPad` files/scripts are historical artifacts under `legacy/` and must not be treated as current instructions.
-
-### Coordinated Cleanup Still Pending
-
-Two non-blocking leftovers should be cleaned during the **next real frontend build**, not by half-editing generated files now:
-
-1. `canvas.html` still contains a few Apple-Pencil/iPad-specific labels (`Apple Pencil / Pen`, `Pair Another Device (iPad)`, `Apple Pencil Optimized`). Replace with device-neutral Pen/Stylus/Second Device wording, then rebuild `public/*` and `src/assets-bundle.js`.
-2. PeerJS-era assets are no longer referenced by current Canvas/Side Panel/storage code, but `scripts/bundle-assets.js` still bundles `shared/peerjs.min.js`. Remove the PeerJS source/download/build entries only as one coordinated source + generated-assets cleanup.
-
-These leftovers do **not** define current architecture and should not be used as guidance by another AI.
+Do not deploy Fountain Pen as “accepted” merely because CI is green; manual Wacom feel should be checked first.
 
 ---
 
-## 9. Multi-Computer / Multi-AI Handoff Rule
+## 9. Verification Language
+
+Use only evidence-backed labels:
+
+- **CODE VERIFIED** — implementation/test inspection.
+- **CI VERIFIED** — independent GitHub runner executed and passed the specified suites.
+- **CLOUD VERIFIED** — live cloud fixture/API execution.
+- **BROWSER PASS** — real browser UX observed.
+- **MANUAL REQUIRED** — physical/subjective device test pending.
+
+Automated tests never justify a claim that handwriting “feels good.”
+
+Cloud fixtures must continue using isolated `__TEST__` workspaces and must never mutate `ws_default`.
+
+---
+
+## 10. Multi-Computer / Multi-AI Handoff
 
 Before any agent starts work:
 
@@ -249,14 +289,16 @@ Before any agent starts work:
 2. Read `PRD.md`.
 3. Read this `PROJECT_STATE.md`.
 4. Read `.ai-bridge/current-plan.md`.
-5. Confirm the requested work has not already been implemented by another machine/agent.
+5. Confirm another machine/agent has not already completed the requested change.
 
-After requirement/architecture changes, update the appropriate source-of-truth docs in the same change. Never let a local clone or old AI report become the de facto project memory.
+Generated artifacts must come from the current source tree, not from a stale local clone.
 
 ---
 
-## 10. Single Next Engineering Priority
+## 11. Single Next Action
 
-**Fountain Pen V2 only.**
+**Manual Wacom acceptance of Fountain Pen V2.**
 
-Do not start Watercolor, Obsidian/Excalidraw migration, or unrelated architecture work until Fountain Pen has been implemented and manually tested with the desktop Wacom baseline.
+Do not start Watercolor, Obsidian/Excalidraw migration, or unrelated architecture work until Fountain Pen has been tested with the real Wacom and tuned if necessary.
+
+Two small wording-only PRD reconciliation items remain queued in `.ai-bridge/current-plan.md`; they do not block the manual brush test.
