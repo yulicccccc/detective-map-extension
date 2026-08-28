@@ -1,7 +1,7 @@
 # Current Plan — Detective Map V2.0
 
 **Last updated:** 2026-08-28  
-**Single next priority:** **Manual Wacom acceptance of Fountain Pen V2**
+**Single next priority:** **Manual Wacom acceptance of the two locked ink tools: Pen + Highlighter**
 
 ## Read Before Work
 
@@ -10,6 +10,17 @@
 3. `AGENTS.md` — multi-agent engineering rules.
 4. Pull/fetch latest `main` and confirm remote HEAD before editing.
 
+## Locked Toolbar Mapping
+
+The primary toolbar has exactly two ink buttons:
+
+```text
+Pen         = Fountain Pen behavior
+Highlighter = Watercolor Brush behavior
+```
+
+Do not add separate Fountain/Watercolor buttons. Do not add a third Ink Wash brush. Legacy generic Pen/Highlighter rendering exists only for historical-stroke compatibility.
+
 ## Current Baseline
 
 - Living Learning Map incremental AI workflow: stable.
@@ -17,101 +28,109 @@
 - Default Concept nodes: collapsed; descriptions hidden; complete labels; Quick Expand + Detail Drawer.
 - Tri-layer low-latency ink foundation: implemented.
 - Windows Wacom latency on the prior generic pen: **MANUAL PASS ✅**.
-- iPad Safari Pencil latency on the native Canvas path: poor; iPad/Obsidian/Excalidraw migration remains paused.
-- Old V1 deploy/LAN scripts and `server.js` are archived under `legacy/`.
-- `docs/PRD.md` is only a pointer to root `PRD.md`; there is one authoritative full PRD.
-- Legacy PeerJS runtime/download/generated assets were removed from the current V2 build.
-- `public/` is rebuilt as a clean generated directory rather than an accumulating copy target.
-- PRD §11/§12 now reflects Windows/Mac cloud clients with iPad as an optional secondary client.
-- PRD §13 now records the accepted permanent convenience auto-pair exception without exposing its concrete credential.
+- iPad Safari native Canvas Pencil latency remains poor; iPad/Obsidian/Excalidraw migration is paused.
+- Fountain Pen V2: **CODE / CI VERIFIED ✅**, real handwriting feel remains user-authoritative.
+- Watercolor Brush V1 behind the existing Highlighter button: **CODE / CI VERIFIED ✅**, visual feel requires manual comparison with iPad Freeform Watercolor.
+- `public/` is rebuilt from source; generated asset consistency is CI-enforced.
 
-## Fountain Pen V2 — Implemented, Awaiting Human Feel Test
-
-**CODE / CI VERIFIED ✅**
+## Fountain Pen V2
 
 Implementation: `shared/fountain-pen-v2.js`.
 
-The current Pen tool upgrades a newly drawn stroke to persistent `tool: fountain_pen` semantics while historical `tool: pen` strokes retain the previous renderer.
+New active Pen strokes persist `tool: fountain_pen`; historical `tool: pen` strokes retain the legacy renderer.
 
-Implemented behavior:
+Implemented:
 
-- strong visible pressure modulation,
-- calibrated pressure presets: `Light Touch / Balanced / Expressive`,
-- `Expressive` is the default,
-- modest velocity influence so fast movement is slightly finer,
-- sharp start taper,
-- tapered live/final pen-lift tip,
-- continuous width interpolation through constant-step variable-width segments,
-- optional tilt/orientation width modulation when Pointer Events expose usable tilt/azimuth data,
-- graceful no-tilt/no-time fallback,
-- captured pressure/time/tilt metadata persisted inside the existing points JSON,
-- Fountain preset/version identity persisted with the stroke points for stable replay,
-- deterministic full replay,
+- strong pressure modulation,
+- Light Touch / Balanced / Expressive presets,
+- velocity influence,
+- start/end taper,
+- optional tilt/orientation variation,
+- deterministic replay,
+- incremental/replay parity,
+- O(1) hydration + rendering path.
+
+## Watercolor Brush V1
+
+Implementation: `shared/watercolor-brush-v1.js`.
+
+The visible **Highlighter** button now upgrades newly drawn strokes to persistent `tool: watercolor` semantics while historical `tool: highlighter` strokes retain the legacy flat-marker renderer.
+
+Implemented:
+
+- semi-transparent layered pigment,
+- broad low-alpha outer wash + denser inner pigment for a soft/feathered edge,
+- repeated passes and crossings naturally deepen through source-over compositing,
+- modest pressure-sensitive width,
+- slow movement deposits slightly more pigment than fast movement,
+- deterministic micro-variation for a less perfectly uniform digital edge,
+- persisted Watercolor preset/version/seed inside points JSON,
+- deterministic replay,
 - incremental finalized layer + replaceable live tail parity,
-- O(1) per-point incremental work,
-- existing Highlighter remains unchanged until Watercolor work begins.
+- O(1) hydration and bounded per-point rendering,
+- no blur, diffusion, or full-canvas re-render on pointer move.
 
 ### Automated Evidence
 
 GitHub Actions workflow: `Verify and Rebuild Generated Assets`.
 
-Verified on an independent GitHub runner after Fountain implementation:
+Current required suites:
 
-- `tests/verify-all.js`: **9/9 passed**
-- `tests/verify-v2.js`: **22/22 passed**, zero network calls
-- `tests/verify-fountain-v2.js`: **11/11 passed**
+- `tests/verify-all.js`
+- `tests/verify-v2.js`
+- `tests/verify-fountain-v2.js`
+- `tests/verify-watercolor-v1.js`
 
-Fountain-specific tests cover:
+Watercolor-specific deterministic tests cover:
 
-- legacy `tool: pen` replay unchanged,
-- pressure separation,
-- velocity influence,
-- start taper,
-- tilt-aware variation,
-- new-stroke `fountain_pen` upgrade,
-- pressure/time/tilt capture fallback,
-- end taper,
+- legacy Highlighter replay unchanged,
+- feathered multi-layer profile,
+- repeated-pass darkening,
+- pressure width modulation,
+- slow/fast pigment difference,
+- deterministic organic variation,
+- new Highlighter → Watercolor upgrade,
+- incremental dynamics hydration,
 - deterministic replay,
-- incremental/replay segment parity,
-- O(1) behavior through a 500-point stroke.
+- incremental/replay parity,
+- O(1) 500-point active path,
+- exact two-button toolbar mapping.
 
-**Do not call this MANUAL PASS yet.** Beautiful handwriting is subjective and requires the real Wacom device.
+## Single Next Action — Manual Wacom Brush Acceptance
 
-## Single Next Action — Wacom Manual Acceptance
+On the Windows Wacom machine, pull latest `main`, reload the unpacked extension, then test both existing buttons.
 
-On the Windows machine with the Wacom tablet, pull latest `main`, reload the unpacked Detective Map extension, open Full Canvas, select **Fountain**, leave the preset on **Expressive**, and write:
+### Pen
 
-```text
-hello
-oooooo
-888888
-Spaced Repetition
-```
+Use the **Pen** button and confirm ordinary handwriting still feels attractive and low-latency.
 
-Then test:
+### Highlighter
 
-- one very light line,
-- one normal line,
-- one firm line,
-- light → firm → light in one continuous stroke,
-- a few quick flicks,
-- several slow curves,
-- tilt only if the Wacom/browser actually reports usable tilt.
+Use the **Highlighter** button and test:
 
-Human acceptance questions:
+1. one single pass,
+2. paint over half of that pass again,
+3. cross two strokes of the same color,
+4. cross strokes of different colors if the current color control permits,
+5. draw over/behind Concept nodes and Edge areas,
+6. make fast sweeps and slow sweeps,
+7. scribble loops/figure-eights to expose gaps or destructive clearing.
 
-1. Is pressure variation immediately obvious?
-2. Do starts/finishes look pointed rather than blunt?
-3. Does normal English handwriting look materially prettier than the old Pen?
-4. Is there still effectively no perceptible Wacom lag?
-5. Does `Expressive` feel too dramatic, too weak, or about right?
+Acceptance questions:
 
-Do not tune Watercolor until these answers are known.
+- Does one pass look translucent and soft rather than like a rigid fluorescent marker?
+- Does repeated painting visibly deepen the color?
+- Are crossings richer/darker?
+- Does the edge feel softly feathered/wet rather than hard?
+- Is Wacom latency still effectively imperceptible?
+- Most importantly: when compared with **iPad Freeform Watercolor**, does this feel like the same class of brush?
+
+Do not call Watercolor MANUAL PASS until the user performs this comparison.
 
 ## Do Not Start Yet
 
-- Watercolor Brush — P2 only after Fountain Pen manual acceptance/tuning.
-- Obsidian / Excalidraw migration.
-- iPad realtime POC.
-- unrelated AI/provider refactors.
-- production-map test ingestion into `ws_default`.
+- no third Ink Wash brush,
+- no Obsidian / Excalidraw migration,
+- no iPad realtime POC,
+- no unrelated AI/provider refactor,
+- no production-map test ingestion into `ws_default`.
