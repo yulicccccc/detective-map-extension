@@ -1,0 +1,50 @@
+name: Verify and Rebuild Generated Assets
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'legacy/**'
+      - 'docs/**'
+
+permissions:
+  contents: write
+
+jobs:
+  verify-build:
+    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout current main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build generated assets
+        run: |
+          node scripts/bundle-assets.js
+          node scripts/build-public.js
+
+      - name: Verify core suites
+        run: |
+          node tests/verify-all.js
+          node tests/verify-v2.js
+          if [ -f tests/verify-fountain-v2.js ]; then node tests/verify-fountain-v2.js; fi
+
+      - name: Commit generated artifacts if needed
+        shell: bash
+        run: |
+          if git diff --quiet -- public src/assets-bundle.js; then
+            echo 'Generated assets already aligned.'
+            exit 0
+          fi
+          git config user.name 'detective-map-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add public src/assets-bundle.js
+          git commit -m 'chore: rebuild generated assets [skip ci]'
+          git push origin HEAD:main
