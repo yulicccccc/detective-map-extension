@@ -46,7 +46,7 @@ function addFile(relPath) {
   }
 }
 
-// Add files
+// Add current production assets. PeerJS/LAN sync is legacy and intentionally excluded.
 [
   'canvas.html',
   'canvas.css',
@@ -55,9 +55,9 @@ function addFile(relPath) {
   'sidepanel.css',
   'sidepanel.js',
   'shared/canvas-core.js',
+  'shared/fountain-pen-v2.js',
   'shared/storage.js',
   'shared/engine-core.js',
-  'shared/peerjs.min.js',
   'icons/icon16.png',
   'icons/icon32.png',
   'icons/icon48.png',
