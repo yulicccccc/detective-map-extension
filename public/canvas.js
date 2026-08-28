@@ -273,10 +273,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       const headerEl = node.querySelector('.concept-header');
       headerEl.addEventListener('pointerdown', (e) => handleConceptPointerDown(e, c));
 
-      // Double-click to toggle quick expansion
+      // Double-click to toggle quick expansion (works on card and Concept Title)
       node.addEventListener('dblclick', (e) => {
-        if (e.target.getAttribute('contenteditable') === 'true' || e.target.closest('[contenteditable="true"]') || e.target.closest('.badge-sources') || e.target.closest('.btn-card-close') || e.target.closest('.btn-toggle-expand')) return;
+        if (e.target.closest('.badge-sources') || e.target.closest('.btn-card-close') || e.target.closest('.btn-toggle-expand')) return;
+        // If double-clicking inside the expanded description body, allow normal text selection
+        if (e.target.closest('.concept-body')) return;
+
+        e.stopPropagation();
         toggleConceptExpansion(c.id);
+        if (window.getSelection) {
+          try { window.getSelection().removeAllRanges(); } catch {}
+        }
       });
 
       // Toggle expand chevron button

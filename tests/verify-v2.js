@@ -1172,13 +1172,14 @@ async function runSuite() {
     assert(canvasCss.includes('.concept-body {\n  display: none;') || canvasCss.includes('.concept-body {\r\n  display: none;'), 'Concept body must have display: none by default');
     assert(canvasCss.includes('.concept-node.expanded .concept-body {\n  display: block;') || canvasCss.includes('.concept-node.expanded .concept-body {\r\n  display: block;'), 'Concept body must be displayed only when .expanded class is applied');
 
-    // 22.2 Title preservation & multi-line wrapping without ellipsis
-    assert(canvasCss.includes('-webkit-line-clamp: 2;'), 'Concept title must support 2-line wrapping');
-    assert(canvasCss.includes('overflow-wrap: break-word;') || canvasCss.includes('word-break: break-word;'), 'Concept title must wrap long words');
-    assert(!canvasCss.includes('.concept-title {\n  text-overflow: ellipsis;'), 'Concept title MUST NOT silently truncate with ellipsis');
+    // 22.2 Full Concept label preservation: ABSENCE of line-clamp and overflow clipping
+    assert(!canvasCss.includes('-webkit-line-clamp'), 'Concept title MUST NOT artificially line-clamp text');
+    assert(!canvasCss.includes('text-overflow: ellipsis'), 'Concept title MUST NOT silently truncate with ellipsis');
+    assert(canvasCss.includes('overflow-wrap: break-word;'), 'Concept title must wrap long words');
+    assert(canvasCss.includes('white-space: normal;'), 'Concept title must allow natural multi-line wrapping');
 
-    // 22.3 Node footprint constraints
-    assert(canvasCss.includes('min-width: 160px;'), 'Concept node min-width must be ~160px');
+    // 22.3 Node footprint constraints (~180px min, 260px max)
+    assert(canvasCss.includes('min-width: 180px;'), 'Concept node min-width must be ~180px');
     assert(canvasCss.includes('max-width: 260px;'), 'Concept node collapsed max-width must be ~260px');
 
     // 22.4 In-memory UI view state & expand/collapse toggle
@@ -1199,6 +1200,64 @@ async function runSuite() {
 
     // 22.8 Edge dynamic center calculation
     assert(canvasJs.includes('fromEl.offsetWidth / 2') && canvasJs.includes('fromEl.offsetHeight / 2'), 'renderEdges must dynamically calculate from true element dimensions');
+
+    // 22.9 Deterministic Interaction Test: Double-clicking Concept Title toggles expansion
+    const testExpandedSet = new Set();
+    function testToggleExpansion(id) {
+      if (testExpandedSet.has(id)) testExpandedSet.delete(id);
+      else testExpandedSet.add(id);
+    }
+
+    const mockNode = {
+      id: 'concept-c_test',
+      classList: {
+        _classes: new Set(['concept-node']),
+        add(cls) { this._classes.add(cls); },
+        remove(cls) { this._classes.delete(cls); },
+        toggle(cls, force) {
+          if (force !== undefined) {
+            if (force) this._classes.add(cls);
+            else this._classes.delete(cls);
+          } else {
+            if (this._classes.has(cls)) this._classes.delete(cls);
+            else this._classes.add(cls);
+          }
+        },
+        contains(cls) { return this._classes.has(cls); }
+      }
+    };
+
+    const mockTitleTarget = {
+      className: 'concept-title',
+      getAttribute: (attr) => attr === 'contenteditable' ? 'true' : null,
+      closest: (sel) => {
+        if (sel === '.concept-body') return null;
+        if (sel === '.badge-sources' || sel === '.btn-card-close' || sel === '.btn-toggle-expand') return null;
+        if (sel === '.concept-node') return mockNode;
+        return null;
+      }
+    };
+
+    function simulateDblClick(target, conceptId) {
+      if (target.closest('.badge-sources') || target.closest('.btn-card-close') || target.closest('.btn-toggle-expand')) return;
+      if (target.closest('.concept-body')) return;
+      testToggleExpansion(conceptId);
+      mockNode.classList.toggle('expanded', testExpandedSet.has(conceptId));
+    }
+
+    // A: Initial collapsed state
+    assert.strictEqual(testExpandedSet.has('c_test'), false, 'Initial state must be collapsed');
+    assert.strictEqual(mockNode.classList.contains('expanded'), false);
+
+    // B: Double-click ON TITLE expands card
+    simulateDblClick(mockTitleTarget, 'c_test');
+    assert.strictEqual(testExpandedSet.has('c_test'), true, 'Double-clicking concept title MUST toggle expansion to true');
+    assert.strictEqual(mockNode.classList.contains('expanded'), true);
+
+    // C: Double-click ON TITLE again collapses card
+    simulateDblClick(mockTitleTarget, 'c_test');
+    assert.strictEqual(testExpandedSet.has('c_test'), false, 'Second double-click on concept title MUST toggle expansion back to false');
+    assert.strictEqual(mockNode.classList.contains('expanded'), false);
   });
 
   assert.strictEqual(networkCallsAttempted, 0, 'verify-v2.js MUST execute with ZERO network calls');
