@@ -72,6 +72,8 @@ Agents must:
 - not copy its concrete credential value into docs, URLs, logs, screenshots, reports, or prompts,
 - not introduce additional hardcoded secrets because this exception exists.
 
+This exception is now also reflected in `PRD.md §13` without exposing the concrete credential.
+
 ---
 
 ## 3. Structure-First Concept Map UI
@@ -138,7 +140,7 @@ Implementation lives in:
 
 ### Behavior Implemented
 
-- Strong pressure modulation with a true calibrated curve around normal pressure.
+- Strong pressure modulation with a calibrated curve around normal pressure.
 - Three pressure presets:
   - `Light Touch`
   - `Balanced`
@@ -244,9 +246,10 @@ Current source/generated consistency safeguards:
 
 - `.github/workflows/verify-generated-assets.yml` runs build + tests on pushes to `main`.
 - `scripts/bundle-assets.js` includes Fountain Pen V2 and no longer bundles legacy PeerJS.
-- `scripts/build-public.js` now removes/recreates `public/` from source on every build, preventing stale generated files from surviving across machines.
+- `scripts/build-public.js` removes/recreates `public/` from source on every build, preventing stale generated files from surviving across machines.
 - Legacy PeerJS runtime/download/public artifacts were removed.
 - Device-specific Canvas wording was generalized to Fountain Pen / Pen-Stylus / Second Device language.
+- The one-time PRD reconciliation script/workflow step was removed after successful exact patching; long-term CI is back to build/test/generated-asset verification only.
 
 Build commands remain:
 
@@ -265,7 +268,17 @@ Do not deploy Fountain Pen as “accepted” merely because CI is green; manual 
 
 ---
 
-## 9. Verification Language
+## 9. Cross-Device Documentation Alignment
+
+`PRD.md §11/§12` now reflects the actual supported model:
+
+- Windows/Mac clients share the authoritative cloud Workspace.
+- Connected clients receive structural updates without treating iPad as a mandatory dependency.
+- iPad remains an optional supported browser/pen client and acceptance path.
+
+---
+
+## 10. Verification Language
 
 Use only evidence-backed labels:
 
@@ -281,7 +294,7 @@ Cloud fixtures must continue using isolated `__TEST__` workspaces and must never
 
 ---
 
-## 10. Multi-Computer / Multi-AI Handoff
+## 11. Multi-Computer / Multi-AI Handoff
 
 Before any agent starts work:
 
@@ -295,10 +308,8 @@ Generated artifacts must come from the current source tree, not from a stale loc
 
 ---
 
-## 11. Single Next Action
+## 12. Single Next Action
 
 **Manual Wacom acceptance of Fountain Pen V2.**
 
 Do not start Watercolor, Obsidian/Excalidraw migration, or unrelated architecture work until Fountain Pen has been tested with the real Wacom and tuned if necessary.
-
-Two small wording-only PRD reconciliation items remain queued in `.ai-bridge/current-plan.md`; they do not block the manual brush test.
