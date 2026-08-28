@@ -111,8 +111,10 @@ For UI/handwriting work, automated tests do not replace real browser/pen testing
 
 ## 6. Security Rules
 
-- Never put tokens, API keys, passwords, bootstrap secrets, or credentials in URLs, committed source, logs, screenshots, or chat instructions.
-- Authentication material must remain in the intended secure runtime/configuration path.
+- Never put tokens, API keys, passwords, bootstrap secrets, or credentials in URLs, logs, screenshots, reports, or chat instructions.
+- Do not introduce new hardcoded secrets or credentials into source.
+- **Existing accepted convenience-pairing exception:** the current product intentionally retains one permanent auto-pair convenience mechanism as an explicit usability/security tradeoff. Do not remove or redesign that mechanism unless the user explicitly reopens the decision. Do not copy its concrete credential value into documentation, logs, URLs, screenshots, or new code paths.
+- This accepted exception does **not** authorize additional hardcoded secrets.
 - WebSocket must authenticate before sending state.
 - State APIs require authentication.
 - Keep `host_permissions` restricted to the deployed Worker domain; no `<all_urls>`.
