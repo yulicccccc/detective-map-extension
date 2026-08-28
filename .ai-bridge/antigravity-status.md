@@ -1,50 +1,86 @@
-# Detective Map V2.0 Final Pre-iPad Patch Report
+# Antigravity Handoff Status — Detective Map V2.0
 
-## 1. Executive Summary
-- **Version**: 2.0 (Living Learning Map — Pre-iPad Reliability Certified)
-- **Status**: 100% Tests Passed (Cloud + Storage + Core Engine + Sync). Ready for physical iPad testing.
+**Last reconciled:** 2026-08-28
 
----
+> This file is a convenience handoff for Antigravity. It is **not** the product source of truth. If it conflicts with `PRD.md`, `PROJECT_STATE.md`, or `AGENTS.md`, follow those files in that order.
 
-## 2. The 4 Critical Blockers Resolved
+## Current Verified Baseline
 
-### 🔴 1. Complete First-Host Onboarding Flow
-- Cloudflare environment Secret `DM_BOOTSTRAP_SECRET` configured and encrypted on Cloudflare Workers via Wrangler.
-- Full authenticated bootstrap lifecycle verified in automated Cloud test:
-  - `POST /api/auth/bootstrap-pin` with `X-Bootstrap-Secret` $\rightarrow$ returns dynamic one-time PIN (200).
-  - Windows client pairs with this PIN $\rightarrow$ issues authorized `dt_` device token (200).
-  - Subsequent `/api/state` and `/api/workspaces` calls succeed with HTTP 200.
-  - Zero secrets, zero PINs, and zero tokens printed to terminal logs.
-  - Pairing modal on canvas supports entering the bootstrap secret directly for the first host.
+### Living Map / AI
 
-### 🔴 2. Cross-Device Workspace List Sync (Windows $\leftrightarrow$ iPad)
-- Implemented `Storage.fetchRemoteWorkspaces()` calling `GET /api/workspaces`.
-- Triggered automatically on WebSocket `AUTH_SUCCESS`, `INIT_STATE`, `WORKSPACE_SWITCHED`, and client load.
-- Workspaces created on Windows (e.g. "AI Learning") immediately sync to newly connected clients (Safari / localStorage) upon pairing.
+- Incremental merge workflow is active.
+- Explicit Source Subject Preservation has browser evidence.
+- Source-Grounded Edge policy has live cloud regression fixtures and an unseen browser generalization pass (`Method of Loci` created as a standalone Concept with no invented edge).
+- The Source-Grounded Edge protection is prompt-enforced + regression verified; do not describe it as a deterministic semantic post-validator.
+- AI proposal application remains human-initiated with server-side provenance/audit protection.
 
-### 🟠 3. Unified Single Engine Core
-- Production `src/worker.js` now directly imports `chunkSourceText`, `validateAndSanitizeOperations`, and `validateProposalSubset` from `../shared/engine-core.js`.
-- Completely removed all duplicate helper function declarations from `src/worker.js`.
-- Tests and production Worker now execute the exact same codebase.
+### Structure-First UI
 
-### 🔴 4. Dangling Edge Prevention in Partial Proposal Review
-- Implemented `validateProposalSubset(selectedOps, existingConcepts)` in `shared/engine-core.js`.
-- If an `add_concept` is deselected in the review modal, any dependent `add_edge` pointing to its `tempId` is:
-  1. Automatically disabled and unchecked in the UI with a tooltip warning.
-  2. Server-side dropped before database insertion, guaranteeing 0 dangling edges.
-- Production deterministic test added and passing.
+**BROWSER PASS ✅**
 
----
+- Concept nodes collapsed by default.
+- Descriptions hidden in default graph view.
+- Complete Concept titles; no ellipsis/line-clamp clipping.
+- Quick Expand via double-click/title/card or explicit control.
+- Complete description + Sources in Detail Drawer.
+- Temporary expansion does not alter stored layout/revision.
+- Failure/retry notices are compact corner toasts.
+- Relationship labels remain visible/readable.
 
-## 3. Verification Summary Matrix
+UI baseline commit: `87f27a4`.
 
-| Verification Item | Classification | Verification Detail |
-|---|---|---|
-| Complete First-Host Bootstrap | **CLOUD VERIFIED** | Valid secret $\rightarrow$ PIN $\rightarrow$ Token $\rightarrow$ `/api/state` 200 (0 secrets logged) |
-| Workspace List Cloud Sync | **CLOUD VERIFIED** | Authenticated client syncs `GET /api/workspaces` seamlessly |
-| Unified Engine Core | **CODE VERIFIED** | `worker.js` imports `shared/engine-core.js` without duplicate code |
-| Partial Proposal Dependency Guard | **CODE VERIFIED** | Deselected concept automatically drops dependent edges (0 dangling edges) |
-| Multi-workspace Isolation | **CODE VERIFIED** | Verified separate concept/stroke collections per workspace |
-| Safari localStorage Edge Key | **CODE VERIFIED** | Tested `STORAGE_KEYS.EDGES` in localStorage environment |
-| Resting Palm Rejection | **CODE VERIFIED** | Tested concurrent touch does not interrupt active pen stroke |
-| Apple Pencil Physical Experience | **MANUAL REQUIRED** | To be tested on physical iPad Safari with Apple Pencil |
+### Ink Foundation
+
+**CODE VERIFIED ✅**
+
+- Tri-layer active rendering: committed ink / finalized active stroke / live-tail scratch.
+- Incremental active rendering avoids whole-stroke replay on each pointer move.
+- Pointer-up paints before persistence wait.
+- Old `{x,y,pressure}` stroke data remains supported.
+
+Tri-layer baseline commit: `e4f39f9`.
+
+### Physical Input Findings
+
+- Windows + Wacom latency: **MANUAL PASS ✅** — effectively no noticeable lag for normal handwriting.
+- Current generic pressure aesthetics: **NOT ACCEPTED 🟡** — does not yet produce the desired fountain-pen look.
+- iPad Safari + Apple Pencil on the current Canvas: **MANUAL FAIL / POOR ❌** due to severe latency.
+- Excalidraw on iPad was manually observed to be smooth, but the Obsidian/Excalidraw architecture pivot is paused because Wacom removes the immediate need for it.
+
+## Current Product Decision
+
+The next priority is **Brush Engine V2**, in this order:
+
+1. ✒ **Fountain Pen** — implement and manually accept first.
+2. 🖌 **Watercolor Brush** — only after Fountain Pen passes manual Wacom testing.
+
+See `PRD.md §6.10` for locked behavior and acceptance fixtures.
+
+## Single Next Task
+
+Implement Fountain Pen V2 only:
+
+- strong visible pressure modulation,
+- smoothed calibrated pressure curve,
+- modest velocity influence,
+- attractive start/end taper,
+- continuous width interpolation,
+- optional tilt/nib orientation when available,
+- device sensitivity calibration/preset,
+- deterministic replay and old-stroke compatibility,
+- no perceptible latency regression from the current Wacom baseline.
+
+Do **not** start Watercolor, Obsidian/Excalidraw migration, iPad realtime POC, or unrelated AI-provider work.
+
+## Verification Rules
+
+Use:
+
+- CODE VERIFIED
+- CLOUD VERIFIED
+- BROWSER PASS
+- MANUAL REQUIRED
+
+Do not use `100/100`, `remaining risks: none`, or a green test count as a substitute for inspecting the final commit and performing required manual UX tests.
+
+Run tests on the final working tree. Cloud test fixtures must stay isolated from `ws_default`.
