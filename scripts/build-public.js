@@ -5,9 +5,10 @@ const path = require('path');
 const rootDir = path.join(__dirname, '..');
 const publicDir = path.join(rootDir, 'public');
 
-if (!fs.existsSync(publicDir)) {
-  fs.mkdirSync(publicDir, { recursive: true });
-}
+// public/ is a generated artifact directory. Recreate it from source every build so
+// removed/renamed assets cannot survive as stale files across machines or AI agents.
+fs.rmSync(publicDir, { recursive: true, force: true });
+fs.mkdirSync(publicDir, { recursive: true });
 
 function copyRecursive(src, dest) {
   const stats = fs.statSync(src);
@@ -23,7 +24,7 @@ function copyRecursive(src, dest) {
   }
 }
 
-// Copy single files
+// Copy single source files
 const files = [
   'canvas.html',
   'canvas.css',
@@ -41,7 +42,7 @@ files.forEach(file => {
   }
 });
 
-// Copy directories
+// Copy source directories
 ['shared', 'icons'].forEach(dir => {
   const src = path.join(rootDir, dir);
   if (fs.existsSync(src)) {
@@ -54,4 +55,4 @@ if (fs.existsSync(path.join(publicDir, 'canvas.html'))) {
   fs.copyFileSync(path.join(publicDir, 'canvas.html'), path.join(publicDir, 'index.html'));
 }
 
-console.log('Public directory prepared successfully.');
+console.log('Public directory rebuilt cleanly from source.');
