@@ -35,6 +35,7 @@ jobs:
           node tests/verify-all.js
           node tests/verify-v2.js
           if [ -f tests/verify-fountain-v2.js ]; then node tests/verify-fountain-v2.js; fi
+          if [ -f tests/verify-watercolor-v1.js ]; then node tests/verify-watercolor-v1.js; fi
 
       - name: Commit generated artifacts if needed
         shell: bash
