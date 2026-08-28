@@ -17,6 +17,7 @@ Archived here:
 
 - `DetectiveMap_V1.0.0_detectivemap.pages.dev_一键更新网站.bat` — obsolete Cloudflare Pages deployment.
 - `DetectiveMap_V1.1.0_detectivemap.qchen9108.workers.dev_一键更新网站.bat` — superseded V1.1 Worker script.
-- `DetectiveMap_V1_iPad_Sync.bat` — obsolete local/LAN iPad sync server flow; current product uses authenticated cloud Workspace state.
+- `DetectiveMap_V1_iPad_Sync.bat` — obsolete local/LAN iPad sync entrypoint.
+- `server.js` — obsolete V1 local port-3000/SSE quote+stroke sync server; current V2 uses authenticated Cloudflare Worker + Durable Object Workspace state.
 
 Do not infer current architecture, device priority, security posture, test status, or next work from files in this folder.
