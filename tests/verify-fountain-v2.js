@@ -271,13 +271,13 @@ test('10. Incremental finalized + live tail matches full replay segment geometry
   assert.strictEqual(state.liveTail.to.y, points[points.length - 1].y);
 });
 
-test('11. Incremental work stays O(1) as stroke grows to 500 points', () => {
+test('11. Full active path stays O(1) as stroke grows to 500 points', () => {
   const stroke = {
-    tool: 'fountain_pen',
+    tool: 'pen',
     width: 3,
     opacity: 1,
     color: '#38bdf8',
-    points: [{ x: 0, y: 0, pressure: 0.5, t: 0, fountainPreset: 'expressive' }]
+    points: [{ x: 0, y: 0, pressure: 0.5 }]
   };
   const active = createMockCtx();
   const scratch = createMockCtx();
@@ -285,13 +285,37 @@ test('11. Incremental work stays O(1) as stroke grows to 500 points', () => {
   let opsAt20 = null;
   let opsAt500 = null;
 
+  FountainPenV2._inputCapture.queue = [{
+    pressure: 0.5, t: 0, tiltX: null, tiltY: null, altitudeAngle: null, azimuthAngle: null
+  }];
+  assert.strictEqual(FountainPenV2.ensureActiveFountainStroke(stroke), true);
+  assert.strictEqual(stroke._fountainLastHydratedCount, 1, 'Initial hydration must touch only the initial point');
+  state = FountainPenV2.renderIncrementalFountain(active, scratch, stroke, state);
+
   for (let i = 1; i <= 500; i++) {
+    const pressure = 0.2 + (i % 7) * 0.1;
     stroke.points.push({
       x: i * 2,
       y: Math.sin(i / 12) * 20,
-      pressure: 0.2 + (i % 7) * 0.1,
-      t: i * 8
+      pressure
     });
+    FountainPenV2._inputCapture.queue.push({
+      pressure,
+      t: i * 8,
+      tiltX: null,
+      tiltY: null,
+      altitudeAngle: null,
+      azimuthAngle: null
+    });
+
+    assert.strictEqual(FountainPenV2.ensureActiveFountainStroke(stroke), true);
+    assert.strictEqual(
+      stroke._fountainLastHydratedCount,
+      1,
+      `Hydration at point ${i} must process only the newly appended point`
+    );
+    assert.strictEqual(stroke._fountainHydratedCount, stroke.points.length);
+
     const before = active.ops.length + scratch.ops.length;
     state = FountainPenV2.renderIncrementalFountain(active, scratch, stroke, state);
     const delta = active.ops.length + scratch.ops.length - before;
@@ -299,9 +323,10 @@ test('11. Incremental work stays O(1) as stroke grows to 500 points', () => {
     if (i === 500) opsAt500 = delta;
   }
 
-  assert.strictEqual(opsAt500, opsAt20, `Point 500 work (${opsAt500}) must equal point 20 (${opsAt20})`);
-  assert(opsAt500 < 100, 'Per-point operation budget must remain constant and bounded');
+  assert.strictEqual(opsAt500, opsAt20, `Point 500 render work (${opsAt500}) must equal point 20 (${opsAt20})`);
+  assert(opsAt500 < 100, 'Per-point render operation budget must remain constant and bounded');
   assert.strictEqual(state.finalizedCount, stroke.points.length - 2);
+  assert.strictEqual(FountainPenV2._inputCapture.queue.length, 0, 'Captured sample queue must remain aligned/drained');
 });
 
 console.log(`\nVerification Complete: ${passed}/${total} tests passed.`);

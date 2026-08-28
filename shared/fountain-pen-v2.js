@@ -362,26 +362,44 @@ const FountainPenV2 = (() => {
 
   function hydratePointDynamics(stroke) {
     const pts = stroke.points || [];
-    for (let i = 0; i < pts.length; i++) {
-      const point = pts[i];
-      if (Number.isFinite(point.t)) continue;
 
+    // Active strokes only grow by appending points. Keep a transient cursor on the
+    // in-memory stroke so pointermove work is O(new points), never O(total history).
+    // Storage.addStroke persists an explicit field subset, so these underscore fields
+    // never enter durable stroke JSON.
+    let start = Number.isInteger(stroke._fountainHydratedCount)
+      ? stroke._fountainHydratedCount
+      : 0;
+    if (start < 0 || start > pts.length) start = 0;
+
+    let hydratedThisCall = 0;
+    for (let i = start; i < pts.length; i++) {
+      const point = pts[i];
+      // Consume exactly one captured sample per newly appended Canvas point so the
+      // capture queue stays aligned even if a future Canvas point already has time data.
       const sample = inputCapture.queue.length ? inputCapture.queue.shift() : null;
       const prevT = i > 0 && Number.isFinite(pts[i - 1].t) ? pts[i - 1].t : null;
-      const fallbackNow = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
 
-      point.t = sample && Number.isFinite(sample.t)
-        ? sample.t
-        : (prevT !== null ? prevT + 8 : fallbackNow);
+      if (!Number.isFinite(point.t)) {
+        const fallbackNow = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+        point.t = sample && Number.isFinite(sample.t)
+          ? sample.t
+          : (prevT !== null ? prevT + 8 : fallbackNow);
+      }
 
       if (sample) {
-        point.pressure = sample.pressure;
+        if (typeof sample.pressure === 'number' && sample.pressure > 0) point.pressure = sample.pressure;
         if (sample.tiltX !== null) point.tiltX = sample.tiltX;
         if (sample.tiltY !== null) point.tiltY = sample.tiltY;
         if (sample.altitudeAngle !== null) point.altitudeAngle = sample.altitudeAngle;
         if (sample.azimuthAngle !== null) point.azimuthAngle = sample.azimuthAngle;
       }
+      hydratedThisCall++;
     }
+
+    stroke._fountainHydratedCount = pts.length;
+    stroke._fountainLastHydratedCount = hydratedThisCall;
+    return hydratedThisCall;
   }
 
   function ensureActiveFountainStroke(stroke) {
