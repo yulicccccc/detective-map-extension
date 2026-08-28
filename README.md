@@ -11,9 +11,9 @@ The map is not a one-shot mind-map export. New sources are compared against the 
 When working from a new computer or with a new AI agent, read these files in this order:
 
 1. [`PRD.md`](PRD.md) — product requirements and locked product rules.
-2. [`PROJECT_STATE.md`](PROJECT_STATE.md) — current implementation/verification snapshot and next engineering priority.
+2. [`PROJECT_STATE.md`](PROJECT_STATE.md) — current implementation/verification snapshot.
 3. [`AGENTS.md`](AGENTS.md) — engineering and multi-agent collaboration rules.
-4. [`.ai-bridge/current-plan.md`](.ai-bridge/current-plan.md) — short current task/next-action handoff.
+4. [`.ai-bridge/current-plan.md`](.ai-bridge/current-plan.md) — the single current next action.
 
 If another document, old report, local clone, or AI memory conflicts with these files, **do not guess**. Pull latest `main` and follow the hierarchy above.
 
@@ -43,20 +43,35 @@ The Chrome extension supports:
 
 ### Pen Input
 
-The current browser ink engine accepts Pointer Events from devices such as:
+The browser ink engine accepts Pointer Events from devices such as:
 
 - Wacom-class desktop pen tablets,
 - Apple Pencil where the browser/device exposes pen input,
 - mouse as a basic fallback.
 
-**Current manual finding:** desktop Wacom input is low-latency enough for normal annotation. iPad Safari handwriting is optional rather than a required dependency.
+**Manual baseline:** desktop Wacom input is low-latency enough for normal annotation. iPad Safari handwriting is optional rather than a required dependency.
 
-The next brush-quality target is **Brush Engine V2**:
+### Fountain Pen V2
 
-- ✒ **Fountain Pen** — strong pressure response, velocity influence, taper, optional tilt/nib orientation, attractive handwriting/calligraphic character.
-- 🖌 **Watercolor Brush** — translucent soft-edge wash, natural overlap darkening, layered color, low-latency annotation.
+✒ **Fountain Pen V2 is implemented and CODE/CI VERIFIED; real Wacom feel acceptance is still required.**
 
-See `PRD.md §6.10` for the locked requirements and manual acceptance criteria.
+New active Pen strokes use persistent `tool: fountain_pen` semantics while historical `tool: pen` strokes retain the legacy renderer.
+
+Implemented Fountain behavior includes:
+
+- strong pressure modulation,
+- `Light Touch / Balanced / Expressive` pressure presets (`Expressive` default),
+- modest velocity influence,
+- start and pen-lift taper,
+- smooth variable-width interpolation,
+- optional tilt/orientation variation when the device exposes it,
+- graceful missing-time/missing-tilt fallback,
+- deterministic replay,
+- O(1) incremental active rendering.
+
+The next product decision is **manual Wacom acceptance/tuning**, not more Fountain implementation.
+
+🖌 **Watercolor Brush** remains P2 and must not start until Fountain Pen feel is accepted. See `PRD.md §6.10`.
 
 ## Cloud Architecture
 
@@ -83,42 +98,55 @@ Production deployment:
 
 ## Development / Verification
 
-Build generated assets before deployment:
+Generated assets are rebuilt from source by GitHub Actions on pushes to `main`. `public/` is treated as a clean generated directory, and `src/assets-bundle.js` is rebuilt from the same source tree.
+
+Local build commands remain:
 
 ```text
 node scripts/bundle-assets.js
 node scripts/build-public.js
 ```
 
-Run the current test suites from the latest checkout. **Do not rely on test counts copied from old reports** because the suites evolve:
+Current deterministic suites:
 
 ```text
 node tests/verify-all.js
 node tests/verify-v2.js
-node tests/verify-cloud.js
+node tests/verify-fountain-v2.js
+node tests/verify-cloud.js   # live isolated cloud fixtures when intentionally run
 ```
 
 Tests must not mutate the real production Workspace. Cloud fixtures use isolated `__TEST__` workspaces and clean them up.
+
+Verification language:
+
+- **CODE VERIFIED** — implementation/test inspection.
+- **CI VERIFIED** — independent GitHub runner actually executed the specified suites.
+- **CLOUD VERIFIED** — live cloud fixture/API execution.
+- **BROWSER PASS** — real browser UX manually observed.
+- **MANUAL REQUIRED** — physical/subjective device test pending.
+
+Automated tests do not prove handwriting feels good.
 
 ## Multi-Computer / Multi-AI Safety
 
 Before editing:
 
-- `git fetch` / pull latest `main`.
-- Check the latest commit SHA.
-- Read the source-of-truth files above.
-- Never overwrite newer remote work from a stale local clone.
+- pull/fetch latest `main`,
+- check remote HEAD,
+- read the source-of-truth files above,
+- verify another agent did not already implement the task,
+- never overwrite newer remote work from a stale clone.
 
 After meaningful product/architecture changes:
 
 - update `PRD.md` if requirements changed,
 - update `PROJECT_STATE.md` if implementation/verification status changed,
-- update `.ai-bridge/current-plan.md` so the next agent knows the single next task,
-- report verification using **CODE VERIFIED / CLOUD VERIFIED / BROWSER PASS / MANUAL REQUIRED** rather than self-scored “100/100” claims.
+- update `.ai-bridge/current-plan.md` so the next agent has one next action.
 
 ## Legacy Files
 
-Files/scripts with `V1`, `V1.1`, `pages.dev`, `spacedesk`, or old “Pre-iPad” wording are **legacy historical artifacts** and are not current product guidance. The current deploy script is the V2 Worker deploy workflow.
+V1/V1.1 Pages/LAN/spacedesk-era scripts and the former local `server.js` live under `legacy/` and are historical only. PeerJS-era runtime/build assets are no longer part of the current V2 production source tree.
 
 ## License
 
