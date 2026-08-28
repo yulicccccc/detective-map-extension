@@ -1,122 +1,243 @@
-# Detective Map V2.0 — Project State & Memory
+# Detective Map V2.0 — Current Project State
 
-**Last Verified:** 2026-08-27  
-**Status:** 🟢 Production Stable & Live Verified  
-**Cloud Deployment:** `https://detectivemap.qchen9108.workers.dev`  
-**Master Pairing Code:** `KIRA-2026`  
+**Last reconciled:** 2026-08-28  
+**Product:** Living Learning Map  
+**Production:** `https://detectivemap.qchen9108.workers.dev`  
+**Status:** 🟢 Core Living Map workflow stable; Structure-First UI browser-verified; expressive Brush Engine V2 is the next product priority.
+
+> This file is the **current implementation / verification snapshot**. Product requirements live in `PRD.md`. Engineering rules live in `AGENTS.md`. The single next task lives in `.ai-bridge/current-plan.md`.
 
 ---
 
-## 1. Architecture Summary
+## 1. Current Architecture
 
 ```text
-Chrome Extension (ChatGPT Context Menu / Side Panel / Standalone Canvas)
-       │ (REST /api/sources, /api/concepts, /api/edges, /api/state)
-       ▼ (WebSocket /api/ws for real-time ink & live event broadcast)
-Cloudflare Worker + Durable Object SQLite (Durable State & Single Authoritative Source)
-       │ (Durable Object calling this.env.AI)
-       ▼
-Cloudflare Workers AI (@cf/meta/llama-3.1-8b-instruct-fast)
-       │ (Structured JSON operations)
-       ▼
-SQLite proposals table (status = 'pending' | 'stale' | 'archived')
-       │ (Broadcast PROPOSAL_CREATED & auto-hydrated on /api/state)
-       ▼
-Side Panel / Canvas UI (Interactive Map + Apply All / Review + Durable Stale Recovery)
+Windows / Mac Chrome Extension + Full Canvas
+          │
+          │ HTTPS / authenticated WSS
+          ▼
+Cloudflare Worker
+          │
+          ▼
+Durable Object + SQLite
+(authoritative Workspace state)
+          │
+          ├─ Concepts / Edges / Sources / Ink
+          ├─ Revisions / Proposals / Audit
+          └─ Workers AI
 ```
 
----
+Optional browser pen/touch clients can connect to the same Workspace state. Client local storage is cache/offline support; Durable Object state is authoritative for cross-device continuity.
 
-## 2. Locked & Finalized Features
+Current real-world device workflow:
 
-- **Side Panel Interactive Living Map**:
-  - Two Tabs: `[ 🗺️ Map ]` (Default) and `[ 📚 Sources ]`.
-  - Full pan/zoom viewport in narrow Side Panel with responsive card widths.
-  - Live concept node dragging with dedicated grab handles (`⋮⋮`), inline title/description editing, evidence drawer, and connection edges.
-  - `↗ Expand` button in header opens full standalone dual-canvas workspace.
-  - **Concept Card Drag Handles & Edge Visual Clarity**:
-    - Dedicated `.concept-drag-handle` (`⋮⋮`) in Concept headers with `cursor: grab` / `cursor: grabbing`.
-    - Strict `activeTool === 'select'` gating prevents accidental node drags in Pen, Highlighter, Eraser, and Connect modes.
-    - Protected `contenteditable="true"` title and description editing so text clicks never accidentally trigger card movement.
-    - Real-time SVG edge rerendering during drag and persistent cloud/local storage on pointerup.
-    - SVG text stroke halo (`paint-order: stroke fill; stroke: #0f172a; stroke-width: 4px;`) ensures edge labels remain legible over grid lines and canvas background.
-  - **Human-Readable Proposal Review UI ("AI Proposes; Human Commits")**:
-    - Automatic resolution of `add_edge` and `suggest_merge` operations from raw IDs (`tmp_1`, `c_5d6601f0d6`) to human-readable concept labels (`Distributed Practice → Spaced Repetition`).
-    - Full visual clarity preserving direction (`From → To`), relation type badge (`Relation: is a type of`), and semantic label explanation (`"specialized application"`).
-  - **Apple Pencil Ink Engine V1 (Pressure-Aware & Low-Latency Incremental Rendering)**:
-    - *Variable-Width Pressure Response*: Smooth, deterministic curve mapping pressure $p \in [0.05, 1.0]$ to width (light $\sim 1.5\text{px}$, normal $\sim 3.0\text{px}$, firm $\sim 5.1\text{px}$, bounded in $[1.0, 2.2 \times \text{baseWidth}]$). Missing pressure safely defaults to $0.5$.
-    - *Low-Latency Incremental Rendering ($O(1)$ per pointermove)*: During active pen drawing on `scratchCanvas`, only newly arrived coalesced segments are drawn without clearing or replaying historical points.
-    - *Dual Canvas Replay Parity*: Replaying persisted strokes on `inkCanvas` via `renderStroke` produces identical quadratic bezier segment geometry and smooth width interpolation.
-    - *Palm & Touch Separation Safety*: Touch is strictly isolated for pan/pinch gestures. Palm touch while Pencil is drawing is completely ignored and cannot interrupt the active stroke or trigger pinch zoom.
-    - *Durable Stroke Compatibility*: Stored stroke schema remains unchanged (`{ tool, color, width, opacity, points: [{ x, y, pressure }] }`).
-- **Workers AI Ingestion Engine & Explicit Source Subject Preservation**:
-  - Model: `@cf/meta/llama-3.1-8b-instruct-fast` (with automatic fallback to `@cf/meta/llama-3.3-70b-instruct-fp8-fast`, `@cf/meta/llama-3-8b-instruct`).
-  - Structured JSON Mode: `response_format: { type: 'json_object' }`.
-  - **Reasoning Order (Explicit Subject $\rightarrow$ Positive Identity & Contrastive Check $\rightarrow$ Three-Pillars $\rightarrow$ Grounded Operations $\rightarrow$ Consistent Summary)**:
-    - *Precondition 1 — Explicit Source Subject Preservation*: When the source explicitly introduces/names candidate concept $A$ ("A improves...", "A is...", "A refers to..."), $A$'s identity is strictly preserved.
-    - *Precondition 2 — Positive Identity & Contrastive Check*: Only map $A$ to existing $X$ if positive identity evidence exists (exact name, true alias like `PCR` $\leftrightarrow$ `Polymerase Chain Reaction`, explicit equivalence). **Contrastive test**: "If $A$ was replaced with $X$, would the technical meaning be distorted?" If yes $\rightarrow$ $A \neq X$.
-    - *Critical Sibling-Concept Anti-Collapse Rule*: Close conceptual siblings (e.g. `Self-Explanation` vs `Elaborative Interrogation`, `Retrieval Practice` vs `Spaced Repetition`, `Accuracy` vs `Precision`, `Sensitivity` vs `Specificity`, `Validation` vs `Verification`) are never collapsed into each other.
-    - *Three-Pillar Decision & Hard Source-Grounded Edge Gate*:
-      - *1. Attachment Test*: Property/mechanism of $X$ itself $\rightarrow$ `enrich_concept X`.
-      - *2. Independence Test*: Standalone/sibling entity $A$ $\rightarrow$ `add_concept A`.
-      - *3. Relational / Composability Signal*: Explicit combination/synergy between $A$ and $X$ $\rightarrow$ `add_concept A` + `add_edge (A <-> X)`.
-      - *4. Source-Grounded Edge Gate (Evidence Authority)*: Map context is for interpretation ONLY. The current Source is the EXCLUSIVE authority for relationships. If the source does not assert an interaction between $A$ and $X$, AI MUST NOT hallucinate edges from general background knowledge (emit 0 edges).
-    - *Proposal Consistency Invariant*: The summary field must accurately describe the emitted operations (e.g., never claim "Added..." when only emitting `enrich_concept`).
-  - Zero mock AI: Live end-to-end verified with real text ingestion and proposal extraction in 1.5–2.0s.
-- **Durable Proposal Lifecycle & Stale Recovery Across Reloads**:
-  - Automatic `fetchRemoteState()` on startup and workspace switch.
-  - Workspace-scoped local storage: saving proposals, stale proposals, dismissed failures, sources, concepts, edges, and ink isolates data per workspace.
-  - **Durable Server Stale State (`GET /api/state`)**: Server isolates pending proposals (`status = 'pending'`) from stale proposals (`status = 'stale'`), returning both in distinct properties (`proposals` vs `staleProposals`).
-  - **Durable Stale Recovery**: Survives Side Panel close/re-open, Chrome extension reload, browser restart, and multi-device sync. When a 409 `PROPOSAL_STALE` occurs (baseRevision conflict), the proposal is durably persisted as stale with its original `sourceId`. The client displays the amber recovery banner: `"This proposal is outdated because the map changed." [Re-analyze Source]`.
-  - **Retry & Stale Archiving (`POST /api/sources/retry`)**: Retrying an outdated source automatically marks old stale proposals as `archived`, resets `source.processingStatus = 'processing'`, re-analyzes against the latest revision, and broadcasts `PROPOSALS_STALE_CLEARED`.
-  - **Stale & Failure Dismiss Persistence**: Dismissing stale proposals calls `POST /api/proposals/dismiss-stale` and persists across sessions; dismissing failed source alerts (`dismissedFailedSourceIds`) is durably persisted per workspace.
-  - **Banner Hierarchy**: `Pending Proposal (✨ Blue)` > `Stale Proposal Recovery (🔄 Amber)` > `Active Source Failure (⚠️ Yellow)`.
-- **Durable Auth & Pairing**:
-  - Master PIN: `KIRA-2026` (permanent, case-insensitive, repeatable).
-  - Auto-pairing fallback: Extension automatically pairs with `KIRA-2026` if token is missing.
-  - One-time PINs (`PIN-XXXXXX`) supported for pairing iPad devices with atomic single-use consumption.
-- **Server-Side Mutation Audit Trail ("AI Proposes; Human Commits" Durable Attribution)**:
-  - **SQLite table `mutation_audit`**: Durably logs every attempt, conflict, error, blocked request, and success for proposal applications.
-  - **Captured Fields**: `id`, `timestamp`, `workspaceId`, `action` (`proposal_apply_attempt`, `proposal_apply_stale_409`, `proposal_apply_blocked`, `proposal_apply_success`, `proposal_apply_error`), `proposalId`, `sourceId`, `baseRevision`, `revisionBefore`, `revisionAfter`, `requestId`, `clientActionId` (must be `act_sp_...` or `act_cv_...` from explicit clicks), `surface` (`sidepanel` | `canvas`), `deviceFingerprint` (SHA-256 one-way hash `fp_...`), `userAgent`, `result`, `httpStatus`, `metadata` (structural counts for created concepts, enriched concepts, and created edges).
-  - **Provenance Guard**: Missing or invalid provenance is blocked with HTTP 403 (`PROVENANCE_REQUIRED`), logged as `proposal_apply_blocked`, and produces ZERO map mutation.
-  - **Atomic Transaction Guarantee**: Map mutation (concepts, enrichments, edges, revision bump), proposal status change (`applied`), and `proposal_apply_success` audit insertion execute within a single atomic SQLite transaction (`executeTransaction`). Injected audit errors trigger full rollback to the exact prior state with accurate post-rollback revision logging.
-  - **Enrichment Audit (`enrich_concept`)**: Structural tracking of `enrichedConceptIds` and `enrichedConceptCount` ensures incremental learning operations are fully attributable without leaking raw text.
-  - **Privacy & Security Invariant**: Zero raw authentication tokens, pairing codes, source texts, concept content bodies, or summaries are ever recorded.
-  - **Authenticated Read-Only Endpoint (`GET /api/audit?workspaceId=...`)**: Allows durable verification of who/what/when/how a concept was committed to the authoritative map.
-  - **Client Headers**: Side Panel and Canvas pass unique `clientActionId` and `X-Detective-Surface` on explicit user click events only; startup/reload/fetch routines never call apply or attach mutation headers.
-- **Dual-Canvas Ink Layer (iPad & Desktop)**:
-  - World coordinate invariance, zoom anchor invariance, resting palm protection (`pointerType === 'touch'` does not cancel active stylus pen stroke).
-  - Stroke eraser with point-to-segment distance math.
+- **Work:** Windows Chrome + Wacom-class pen tablet.
+- **Home:** Mac Chrome can use the same extension/repo and cloud Workspace.
+- **iPad:** optional secondary surface; not required for handwriting now that desktop Wacom input is usable.
+- **Obsidian / Excalidraw pivot:** paused. Excalidraw handwriting was smooth, but the additional cross-client architecture is not currently justified while Wacom solves the immediate low-latency handwriting need.
 
 ---
 
-## 3. Test Matrix & Verification Status
+## 2. Product Rules Already Locked
 
-| Test Suite | Result | Details |
-|---|---|---|
-| `tests/verify-all.js` | **9/9 Passed** | MV3 structure, coordinate math, zoom invariance, eraser hit detection, export/import schema |
-| `tests/verify-v2.js` | **17/17 Passed** | **Pure In-Memory Test Isolation**: Strict 0-network guard (`DETECTIVE_TEST_MODE`), Workspace CRUD, Safari localStorage, palm rejection, cascading delete, tail chunking, proposal sanitization, subset validation, ink isolation, failure UI, scoped storage, durable stale recovery, dismissed failure persistence, Side Panel startup integrity, **Mutation Audit Invariant & Surface/Action-ID Header Propagation**, **Atomic Transaction Rollback Failure Injection & Provenance Guard** |
-| `tests/verify-cloud.js` | **13/13 Passed** | Live Cloudflare security, legacy token rejection, KIRA-2026 auth, atomic PIN, real Workers AI execution, retry endpoint, durable stale proposals in GET /api/state & dismiss-stale endpoint, 401 stale token auto-healing, strict `__TEST` deletion policy regression, **Live Server-Side Mutation Audit Trail Verification (provenance guard, atomic enrich_concept, 0 reload mutations, 0 content leaks, 0 pollution left behind)** |
+### Living Map / AI
+
+- Incremental merge, not whole-map regeneration.
+- Source ≠ Concept.
+- AI proposes; human commits.
+- Preserve IDs, manual edits, positions, accepted edges, ink, and source provenance.
+- Proposal subset application prevents dangling temp-ID edges.
+- Durable stale proposal recovery and retry behavior.
+- Mutation audit trail with provenance guard and atomic map/proposal/audit transaction behavior.
+
+### Concept Boundary / Grounding
+
+Current reasoning policy includes:
+
+1. Explicit Source Subject Preservation.
+2. Positive identity evidence + contrastive identity check.
+3. Attachment vs independent Concept boundary.
+4. Source-Grounded Edge policy: current Source is the evidence authority for emitted relationships; map context is interpretation only.
+5. Proposal summary consistency.
+
+Important implementation note: the Source-Grounded Edge protection is **prompt-enforced + cloud/browser regression verified**, not a deterministic semantic post-validator. Do not describe it as an impossible-to-bypass code-level evidence validator.
+
+Browser generalization evidence includes the unseen `Method of Loci` source producing a standalone Concept with no invented relationship to existing learning-method nodes.
 
 ---
 
-## 4. Operational Instructions
+## 3. Structure-First Concept Map UI — Current Baseline
 
-- **Rebuild Public & Bundle**: `node scripts/bundle-assets.js; node scripts/build-public.js`
-- **One-Click Deploy**: `cmd.exe /c "DetectiveMap_V2.0.0_detectivemap.qchen9108.workers.dev_一键更新网站.bat"`
-- **Run Tests**: `node tests/verify-cloud.js; node tests/verify-v2.js; node tests/verify-all.js`
+**Status: BROWSER PASS ✅**
+
+The production Canvas now behaves as a Concept Map rather than a wall of note cards:
+
+- Concept nodes are collapsed by default.
+- Default view emphasizes **Concept identity + relationships**.
+- Description/body is hidden by default.
+- Concept labels are fully visible; no ellipsis/line-clamp truncation.
+- Long titles wrap naturally.
+- Double-click Concept/title or use the explicit chevron to Quick Expand.
+- Quick Expand is temporary in-memory view state and does not mutate revision or saved `(x, y)` layout.
+- Complete Concept description + supporting Sources live in the Detail Drawer.
+- Relationship labels retain the edge text halo for readability.
+- Operational failure/retry state is a compact corner toast rather than a wide permanent banner.
+- Existing ink survived the UI migration.
+
+Current UI code baseline for this work: `87f27a4`.
+
+Minor non-blocking polish items observed:
+
+- Fit/viewport can still leave a node near the top edge in some layouts.
+- Top toolbar can overflow horizontally at narrower widths.
+
+Neither blocks current product work.
 
 ---
 
-## 5. V2.1 Roadmap: Pluggable AI Provider Layer & Benchmark A/B
+## 4. Ink Engine — What Is Actually True
 
-- **Target Architecture**:
-  - `Detective Map -> AI Provider Abstraction Layer`
-  - Adapters:
-    - `WorkersAIProvider` (Current default, `@cf/meta/llama-3.1-8b-instruct-fast`, 0-config)
-    - `AgnesFlashProvider` (OpenAI-compatible `/v1/chat/completions`, 512K context for mature maps)
-    - `OpenAIProvider` / `GeminiProvider`
-- **Benchmarking Plan**:
-  - Feed identical complex text + 50-node existing map to evaluate concept deduplication, relationship precision, and contradiction detection.
-- **Rule**: Do not refactor active AI engine until V2.0 user workflow is 100% verified.
+### Foundation V1
 
+**CODE VERIFIED ✅**
+
+- Pointer Events pen input.
+- `getCoalescedEvents()` capture when available.
+- Pressure data capture with safe fallback.
+- Tri-layer active rendering:
+  - `inkCanvas` = committed strokes,
+  - `activeStrokeCanvas` = finalized segments of active stroke,
+  - `scratchCanvas` = replaceable live tail.
+- Incremental active rendering does not replay the entire historical stroke every pointer move.
+- Incremental/replay geometry parity tests exist.
+- Pointer-up paints the completed stroke before awaiting persistence, avoiding a blank frame.
+- Touch/palm separation is preserved on touch devices.
+
+Tri-layer ink baseline commit: `e4f39f9`.
+
+### Manual Findings
+
+- **Windows Wacom latency:** MANUAL PASS ✅ — handwriting felt essentially as responsive as mouse input.
+- **Current expressive pressure feel:** NOT ACCEPTED 🟡 — present generic pressure behavior does not look like the desired fountain-pen writing tool.
+- **iPad Safari Apple Pencil latency:** MANUAL FAIL / POOR ❌ — severe latency was observed on the current native Canvas implementation.
+
+The iPad result is why platform alternatives were investigated, but Wacom makes an immediate platform migration unnecessary.
+
+---
+
+## 5. Brush Engine V2 — Locked Next Product Direction
+
+Requirements are defined in `PRD.md §6.10`.
+
+### P1 — Fountain Pen
+
+Target:
+
+- strong visible pressure modulation,
+- smooth calibrated pressure curve,
+- modest velocity influence,
+- start/end taper and pen-lift character,
+- optional tilt/nib orientation when device/browser data is reliable,
+- device calibration/preset for Wacom vs Apple Pencil,
+- deterministic replay/backward compatibility,
+- **no perceptible latency regression from the current Wacom baseline**.
+
+Manual acceptance must use real pen input; automated math tests are not sufficient.
+
+### P2 — Watercolor Brush
+
+After Fountain Pen manual acceptance:
+
+- translucent soft-edge wash,
+- repeated passes deepen color,
+- same/different-color overlaps become richer/darker,
+- subtle wet/organic appearance,
+- deterministic replay,
+- no full-canvas expensive processing during pointer move.
+
+**Do not implement Watercolor in parallel with Fountain Pen unless explicitly requested.**
+
+---
+
+## 6. Current Data / Persistence Direction
+
+Legacy Ink points remain valid:
+
+```js
+{x, y, pressure}
+```
+
+Brush Engine V2 may add backward-compatible fields:
+
+```js
+{
+  brushType,
+  brushVersion,
+  brushParams,
+  seed,
+  points: [{x, y, pressure, t, tiltX, tiltY, altitudeAngle, azimuthAngle}]
+}
+```
+
+Historical strokes must not visually change merely because future default brush parameters change.
+
+---
+
+## 7. Verification Snapshot
+
+Use evidence labels rather than self-scored claims:
+
+- **CODE VERIFIED** — implementation/test inspection.
+- **CLOUD VERIFIED** — live cloud fixture/API execution.
+- **BROWSER PASS** — real browser UX observed.
+- **MANUAL REQUIRED** — physical/subjective device test pending.
+
+Last explicit final-working-tree UI test report:
+
+- `tests/verify-all.js`: 9/9 passed.
+- `tests/verify-v2.js`: 22/22 passed with zero network calls.
+
+The cloud regression suite evolves as new AI/backend fixtures are added. **Run the current `tests/verify-cloud.js`; do not copy an old fixed test count from this or another report.**
+
+Automated tests must never mutate `ws_default`; live fixtures use isolated `__TEST__` workspaces and clean up after themselves.
+
+---
+
+## 8. Build / Deploy
+
+Build generated assets before deploy:
+
+```text
+node scripts/bundle-assets.js
+node scripts/build-public.js
+```
+
+Current V2 deploy workflow:
+
+```text
+DetectiveMap_V2.0.0_detectivemap.qchen9108.workers.dev_一键更新网站.bat
+```
+
+Legacy `V1`, `V1.1`, `pages.dev`, `spacedesk`, and old `Pre-iPad` files/scripts are historical artifacts and must not be treated as current instructions.
+
+---
+
+## 9. Multi-Computer / Multi-AI Handoff Rule
+
+Before any agent starts work:
+
+1. Pull/fetch latest `main` and record remote HEAD.
+2. Read `PRD.md`.
+3. Read this `PROJECT_STATE.md`.
+4. Read `.ai-bridge/current-plan.md`.
+5. Confirm the requested work has not already been implemented by another machine/agent.
+
+After requirement/architecture changes, update the appropriate source-of-truth docs in the same change. Never let a local clone or old AI report become the de facto project memory.
+
+---
+
+## 10. Single Next Engineering Priority
+
+**Fountain Pen V2 only.**
+
+Do not start Watercolor, Obsidian/Excalidraw migration, or unrelated architecture work until Fountain Pen has been implemented and manually tested with the desktop Wacom baseline.
