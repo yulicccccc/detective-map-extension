@@ -1,80 +1,125 @@
-# Detective Map Extension 🔍✍️
+# Detective Map 🔍✍️
 
-> **Read on the left. Think on the right.**
+> **Read → Add → AI Merge → Edit → Ink → Sync → Keep Learning.**
 
-Detective Map is a lightweight spatial knowledge canvas and Apple Pencil handwriting companion for ChatGPT and web reading. 
+Detective Map is a **persistent Living Learning Map**: a cross-device, AI-assisted concept-map workspace that grows as the learner adds new material over time.
 
-Windows main screen is used for reading and research. When you spot an insightful sentence, highlight it, right-click, and send it straight to Detective Map. Drag the standalone Detective Map Canvas Window to your iPad (extended via spacedesk) and freely annotate, connect, highlight, and circle ideas with Apple Pencil.
+The map is not a one-shot mind-map export. New sources are compared against the current Workspace, AI proposes incremental changes, and the learner decides what becomes part of the durable map.
 
----
+## Start Here — Source of Truth Order
 
-## 🌟 Key Features
+When working from a new computer or with a new AI agent, read these files in this order:
 
-- **Minimum Manual Effort, Maximum Cognitive Ownership**:
-  - 1-Click capture from ChatGPT or any webpage via context menu (`Add to Detective Map`).
-  - Automatically captures selected text, source conversation URL, page title, and timestamp.
-- **Dual UI Experience**:
-  - **Side Panel**: Compact sidebar for fast capture verification and quote browsing.
-  - **Standalone Canvas Window (`canvas.html`)**: Clean full-screen canvas designed specifically to be moved onto your iPad extended screen.
-- **Apple Pencil & Stylus Handwriting**:
-  - 👆 **Select**: Drag quote cards and pan the infinite canvas.
-  - ✍️ **Pen**: Native Pointer Events (`mouse`, `touch`, `pen`) with smooth ink curves and pressure detection.
-  - 🖍 **Highlighter**: Semi-transparent, wide strokes that never obscure underlying text.
-  - 🧽 **Stroke Eraser**: Deletes entire touched strokes instantly.
-  - ↩ **Undo**: Multi-level undo for strokes, erasures, and card repositioning (`Ctrl+Z` / `Cmd+Z`).
-- **Unified World Coordinate System**:
-  - Quote cards and handwritten ink strokes share the exact same infinite 2D world space.
-  - Pan, zoom (20%–400%), window resize, and moving across screens maintain 100% stable relative positions.
-- **Unified Local Persistence**:
-  - All quotes, strokes, and canvas viewport state are synchronized live across windows via `chrome.storage.local`.
-  - Full JSON backup export and import.
+1. [`PRD.md`](PRD.md) — product requirements and locked product rules.
+2. [`PROJECT_STATE.md`](PROJECT_STATE.md) — current implementation/verification snapshot and next engineering priority.
+3. [`AGENTS.md`](AGENTS.md) — engineering and multi-agent collaboration rules.
+4. [`.ai-bridge/current-plan.md`](.ai-bridge/current-plan.md) — short current task/next-action handoff.
 
----
+If another document, old report, local clone, or AI memory conflicts with these files, **do not guess**. Pull latest `main` and follow the hierarchy above.
 
-## 🚀 Quick Start (Load Unpacked in Chrome)
+## Current Product Model
 
-1. Open Google Chrome.
-2. Navigate to: `chrome://extensions/`
-3. Enable **Developer mode** (toggle in the top-right corner).
-4. Click **Load unpacked** (top-left button).
-5. Select the `detective-map-extension` folder.
-6. The Detective Map extension icon will appear in your Chrome toolbar.
-7. Click the extension icon to open the **Side Panel**, or click **Open Canvas** to launch the full-screen canvas window!
+- **Source ≠ Concept**: captured material is evidence; Concepts are abstracted understanding.
+- **Incremental Merge, Not Regeneration**: new learning adds/enriches/connects without replacing the whole map.
+- **AI Proposes; Human Commits**: proposals are reviewed/applied by the learner; AI does not silently rewrite the map.
+- **Structure-First Concept Map**: Concept nodes are collapsed by default; the default view emphasizes Concept identity + relationships. Descriptions are progressively disclosed by Quick Expand or the Detail Drawer.
+- **Source-Grounded Relationships**: map context may help interpret a source, but emitted relationships must be supported by the current Source.
+- **Persistent Spatial Ownership**: manual positions, edits, edges, ink, and source provenance are preserved.
 
----
+## Current Surfaces
 
-## 📱 Windows + iPad Second Screen Setup (spacedesk)
+### Chrome Side Panel / Full Canvas
 
-To use your iPad as an extended display with Apple Pencil input:
+The Chrome extension supports:
 
-### 1. Windows PC Setup:
-1. Download and install the official Windows DRIVER from [spacedesk.net](https://www.spacedesk.net/).
-2. Restart Windows or ensure the `spacedeskService` is running.
+- right-click capture: **Add to Detective Map**,
+- Workspace selection,
+- AI proposal review and subset apply,
+- Concept/Edge editing,
+- collapsed structure-first nodes,
+- Detail Drawer for complete Concept knowledge/evidence,
+- infinite canvas pan/zoom,
+- stylus handwriting and annotation.
 
-### 2. iPad Setup:
-1. Install **spacedesk (multi monitor display)** from the Apple App Store on your iPad.
-2. Ensure Windows PC and iPad are connected to the **same Wi-Fi network** (or USB tethering).
-3. Open spacedesk Viewer on iPad and tap your Windows PC's name to connect.
-4. On Windows: Press `Win + P` and select **Extend** (or go to `Settings -> System -> Display -> Extend these displays`).
+### Pen Input
 
-### 3. Canvas Window on iPad:
-1. In the Detective Map Side Panel, click **Open Canvas**.
-2. Drag the opened `canvas.html` window across the edge of your screen onto the iPad display.
-3. Maximize or adjust the window on the iPad.
-4. Pick up your **Apple Pencil** to write, highlight, and organize your ideas!
+The current browser ink engine accepts Pointer Events from devices such as:
 
----
+- Wacom-class desktop pen tablets,
+- Apple Pencil where the browser/device exposes pen input,
+- mouse as a basic fallback.
 
-## 🛠️ Architecture & Tech Stack
+**Current manual finding:** desktop Wacom input is low-latency enough for normal annotation. iPad Safari handwriting is optional rather than a required dependency.
 
-- **Manifest Version**: Manifest V3
-- **Frontend**: Vanilla HTML5, Vanilla CSS3, Vanilla JavaScript (ES6+)
-- **Storage**: `chrome.storage.local` with real-time `chrome.storage.onChanged` event bus
-- **Rendering**: Hybrid DOM + Hardware-Accelerated HTML5 2D Canvas (crisp typography + high-DPI ink)
-- **Zero External Dependencies**: No React, no Tailwind, no npm build step, no external CDNs, no cloud servers, 100% private and local.
+The next brush-quality target is **Brush Engine V2**:
 
----
+- ✒ **Fountain Pen** — strong pressure response, velocity influence, taper, optional tilt/nib orientation, attractive handwriting/calligraphic character.
+- 🖌 **Watercolor Brush** — translucent soft-edge wash, natural overlap darkening, layered color, low-latency annotation.
 
-## 📄 License
+See `PRD.md §6.10` for the locked requirements and manual acceptance criteria.
+
+## Cloud Architecture
+
+```text
+Chrome clients / supported pen surfaces
+               │
+          HTTPS / WSS
+               ▼
+        Cloudflare Worker
+               │
+               ▼
+     Durable Object + SQLite
+       authoritative Workspace
+               │
+               ▼
+       Cloudflare Workers AI
+```
+
+The Durable Object is the authoritative shared Workspace state for Concepts, Edges, Sources, proposals, revisions, and durable ink. Client-local storage is a cache/offline-support layer, not the cross-device source of truth.
+
+Production deployment:
+
+`https://detectivemap.qchen9108.workers.dev`
+
+## Development / Verification
+
+Build generated assets before deployment:
+
+```text
+node scripts/bundle-assets.js
+node scripts/build-public.js
+```
+
+Run the current test suites from the latest checkout. **Do not rely on test counts copied from old reports** because the suites evolve:
+
+```text
+node tests/verify-all.js
+node tests/verify-v2.js
+node tests/verify-cloud.js
+```
+
+Tests must not mutate the real production Workspace. Cloud fixtures use isolated `__TEST__` workspaces and clean them up.
+
+## Multi-Computer / Multi-AI Safety
+
+Before editing:
+
+- `git fetch` / pull latest `main`.
+- Check the latest commit SHA.
+- Read the source-of-truth files above.
+- Never overwrite newer remote work from a stale local clone.
+
+After meaningful product/architecture changes:
+
+- update `PRD.md` if requirements changed,
+- update `PROJECT_STATE.md` if implementation/verification status changed,
+- update `.ai-bridge/current-plan.md` so the next agent knows the single next task,
+- report verification using **CODE VERIFIED / CLOUD VERIFIED / BROWSER PASS / MANUAL REQUIRED** rather than self-scored “100/100” claims.
+
+## Legacy Files
+
+Files/scripts with `V1`, `V1.1`, `pages.dev`, `spacedesk`, or old “Pre-iPad” wording are **legacy historical artifacts** and are not current product guidance. The current deploy script is the V2 Worker deploy workflow.
+
+## License
 
 MIT License.
