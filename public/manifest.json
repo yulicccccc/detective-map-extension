@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Detective Map",
-  "version": "1.1.0",
-  "description": "Read on the left. Think on the right. Spatial knowledge canvas & Apple Pencil handwriting extension.",
+  "version": "2.0.0",
+  "description": "Living Learning Map: AI-assisted concept mapping with source-grounded incremental updates and stylus annotation.",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
