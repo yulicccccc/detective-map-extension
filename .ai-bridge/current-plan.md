@@ -24,6 +24,13 @@
 - Old V1 deploy/LAN scripts and `server.js` are archived under `legacy/`; root is now V2-oriented.
 - `docs/PRD.md` is only a pointer to root `PRD.md`; there is one authoritative full PRD.
 
+## Pre-Code PRD Reconciliation — Do First
+
+Use the local editor and make only these targeted PRD wording updates before Fountain Pen code. Inspect the diff; do not rewrite unrelated PRD sections.
+
+1. **§13 Security**: keep the default rule against hardcoded credentials, but document the existing permanent convenience auto-pair mechanism as an explicitly accepted implementation exception. Do not write the concrete credential value into PRD/docs/logs/prompts. State that the exception does not authorize additional hardcoded secrets and is not to be removed unless the user explicitly reopens the decision.
+2. **§11 Cross-Device Sync / §12 Architecture**: generalize the examples/diagram from a Windows→iPad-centric picture to the actual supported model: Windows/Mac Chrome clients share the authoritative cloud Workspace; iPad is an optional secondary browser/pen client. Keep iPad realtime behavior as a supported acceptance path, not a mandatory product dependency.
+
 ## Next Task — Fountain Pen V2
 
 Implement only the Fountain Pen requirements in `PRD.md §6.10`:
