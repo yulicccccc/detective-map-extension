@@ -764,7 +764,7 @@ Touch users must have an explicit tap target for Concept Quick Expand / Details;
 
 Synchronize Concepts, Concept positions, Concept edits, Edges, Sources, AI proposal/status, Ink, and Workspace changes.
 
-A Windows capture should appear on an already-open iPad without refresh. An iPad ink stroke should persist and reappear after reopening.
+A capture or structural update from an active Windows or Mac client should propagate to other already-open connected clients without refresh. iPad remains a supported optional browser/pen client: an iPad ink stroke should persist and reappear after reopening.
 
 Use revision-aware updates to avoid silent overwrites.
 
@@ -775,7 +775,7 @@ Temporary UI-only view state such as a non-pinned Quick Expand does not need to 
 # 12. Cloud Architecture
 
 ```text
-Chrome Extension / Desktop Canvas
+Windows / Mac Chrome Extension + Desktop Canvas
              │
              │ HTTPS / WSS
              ▼
@@ -784,10 +784,11 @@ Chrome Extension / Desktop Canvas
              ▼
        Durable Object
              │
-     persistent Workspace state
+     authoritative Workspace state
              │
-             ▼
-        iPad Safari
+       connected clients
+        ├─ Windows / Mac Chrome
+        └─ optional iPad Safari / pen browser
 ```
 
 Frontend remains Vanilla HTML/CSS/JavaScript unless a later PRD changes this.
@@ -796,8 +797,9 @@ Frontend remains Vanilla HTML/CSS/JavaScript unless a later PRD changes this.
 
 # 13. Security Requirements — Locked
 
-- no hardcoded pairing codes,
-- no credentials in Git,
+- default rule: do not introduce new hardcoded pairing codes, credentials, or secrets,
+- accepted implementation exception: the existing permanent convenience auto-pair mechanism remains unless the user explicitly reopens that decision; do not expose its concrete credential in PRD/docs/logs/URLs/prompts and do not treat the exception as permission to add other hardcoded secrets,
+- do not introduce new credentials into Git,
 - no credentials in URLs,
 - no public `/api/state`,
 - all state APIs require authentication,
