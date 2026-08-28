@@ -21,7 +21,9 @@
 - Old V1 deploy/LAN scripts and `server.js` are archived under `legacy/`.
 - `docs/PRD.md` is only a pointer to root `PRD.md`; there is one authoritative full PRD.
 - Legacy PeerJS runtime/download/generated assets were removed from the current V2 build.
-- `public/` is now rebuilt as a clean generated directory rather than an accumulating copy target.
+- `public/` is rebuilt as a clean generated directory rather than an accumulating copy target.
+- PRD §11/§12 now reflects Windows/Mac cloud clients with iPad as an optional secondary client.
+- PRD §13 now records the accepted permanent convenience auto-pair exception without exposing its concrete credential.
 
 ## Fountain Pen V2 — Implemented, Awaiting Human Feel Test
 
@@ -29,7 +31,7 @@
 
 Implementation: `shared/fountain-pen-v2.js`.
 
-The current Pen tool now upgrades a newly drawn stroke to persistent `tool: fountain_pen` semantics while historical `tool: pen` strokes retain the previous renderer.
+The current Pen tool upgrades a newly drawn stroke to persistent `tool: fountain_pen` semantics while historical `tool: pen` strokes retain the previous renderer.
 
 Implemented behavior:
 
@@ -53,7 +55,7 @@ Implemented behavior:
 
 GitHub Actions workflow: `Verify and Rebuild Generated Assets`.
 
-Verified on an independent GitHub runner after the Fountain implementation:
+Verified on an independent GitHub runner after Fountain implementation:
 
 - `tests/verify-all.js`: **9/9 passed**
 - `tests/verify-v2.js`: **22/22 passed**, zero network calls
@@ -113,12 +115,3 @@ Do not tune Watercolor until these answers are known.
 - iPad realtime POC.
 - unrelated AI/provider refactors.
 - production-map test ingestion into `ws_default`.
-
-## Remaining Documentation Reconciliation
-
-Two small wording-only PRD cleanups remain queued; they do not change the implemented product behavior:
-
-1. §13 should describe the existing permanent convenience auto-pair mechanism as an explicitly accepted implementation exception without exposing the concrete credential value, while keeping the default rule against introducing additional hardcoded secrets.
-2. §11/§12 example/architecture wording should generalize from Windows→iPad-centric language to Windows/Mac cloud clients with iPad as an optional secondary browser/pen client.
-
-When making those edits, patch only the relevant paragraphs and inspect the diff; do not rewrite unrelated PRD sections.
