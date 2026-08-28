@@ -64,6 +64,16 @@ Important implementation note: the Source-Grounded Edge protection is **prompt-e
 
 Browser generalization evidence includes the unseen `Method of Loci` source producing a standalone Concept with no invented relationship to existing learning-method nodes.
 
+### Accepted Pairing Implementation Exception
+
+The current product intentionally retains one **permanent convenience auto-pair mechanism** as an accepted usability/security tradeoff. This is an explicit implementation exception to the idealized PRD rule against hardcoded pairing credentials.
+
+Rules for agents:
+
+- do not remove/redesign this accepted convenience behavior unless the user explicitly reopens the decision,
+- do not copy the concrete credential value into documentation, URLs, logs, screenshots, reports, prompts, or new code paths,
+- do not introduce any additional hardcoded secrets because this one exception exists.
+
 ---
 
 ## 3. Structure-First Concept Map UI — Current Baseline
@@ -218,7 +228,16 @@ Current V2 deploy workflow:
 DetectiveMap_V2.0.0_detectivemap.qchen9108.workers.dev_一键更新网站.bat
 ```
 
-Legacy `V1`, `V1.1`, `pages.dev`, `spacedesk`, and old `Pre-iPad` files/scripts are historical artifacts and must not be treated as current instructions.
+Legacy `V1`, `V1.1`, `pages.dev`, `spacedesk`, old local-LAN `server.js`, and old `Pre-iPad` files/scripts are historical artifacts under `legacy/` and must not be treated as current instructions.
+
+### Coordinated Cleanup Still Pending
+
+Two non-blocking leftovers should be cleaned during the **next real frontend build**, not by half-editing generated files now:
+
+1. `canvas.html` still contains a few Apple-Pencil/iPad-specific labels (`Apple Pencil / Pen`, `Pair Another Device (iPad)`, `Apple Pencil Optimized`). Replace with device-neutral Pen/Stylus/Second Device wording, then rebuild `public/*` and `src/assets-bundle.js`.
+2. PeerJS-era assets are no longer referenced by current Canvas/Side Panel/storage code, but `scripts/bundle-assets.js` still bundles `shared/peerjs.min.js`. Remove the PeerJS source/download/build entries only as one coordinated source + generated-assets cleanup.
+
+These leftovers do **not** define current architecture and should not be used as guidance by another AI.
 
 ---
 
