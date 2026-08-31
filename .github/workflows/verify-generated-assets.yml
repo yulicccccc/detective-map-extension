@@ -40,6 +40,7 @@ jobs:
           if [ -f tests/verify-watercolor-v2.js ]; then node tests/verify-watercolor-v2.js; fi
           if [ -f tests/verify-transparent-marker-v1.js ]; then node tests/verify-transparent-marker-v1.js; fi
           if [ -f tests/verify-ink-colors.js ]; then node tests/verify-ink-colors.js; fi
+          if [ -f tests/verify-concept-nodes-v2.js ]; then node tests/verify-concept-nodes-v2.js; fi
 
       - name: Commit generated artifacts if needed
         shell: bash
