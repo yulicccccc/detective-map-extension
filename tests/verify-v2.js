@@ -1178,9 +1178,19 @@ async function runSuite() {
     assert(canvasCss.includes('overflow-wrap: break-word;'), 'Concept title must wrap long words');
     assert(canvasCss.includes('white-space: normal;'), 'Concept title must allow natural multi-line wrapping');
 
-    // 22.3 Node footprint constraints (~180px min, 260px max)
-    assert(canvasCss.includes('min-width: 180px;'), 'Concept node min-width must be ~180px');
-    assert(canvasCss.includes('max-width: 260px;'), 'Concept node collapsed max-width must be ~260px');
+    // 22.3 Concept Node V2 footprint: compact, adaptive, node-like rather than card-like
+    const conceptNodeRule = canvasCss.match(/\.concept-node \{([\s\S]*?)\n\}/);
+    assert(conceptNodeRule, 'canvas.css must define .concept-node');
+    assert(/min-width:\s*92px/.test(conceptNodeRule[1]), 'Short Concept nodes must be allowed to remain compact (~92px floor)');
+    assert(/max-width:\s*260px/.test(conceptNodeRule[1]), 'Concept node collapsed max-width must remain ~260px');
+    assert(/width:\s*max-content/.test(conceptNodeRule[1]), 'Collapsed Concept width must adapt to content');
+    assert(/border-radius:\s*999px/.test(conceptNodeRule[1]), 'Collapsed Concept must visually read as a soft oval/capsule node');
+
+    const conceptHeaderRule = canvasCss.match(/\.concept-header \{([\s\S]*?)\n\}/);
+    assert(conceptHeaderRule && /background:\s*transparent/.test(conceptHeaderRule[1]), 'Concept header must not recreate a rectangular card band');
+
+    const conceptActionsRule = canvasCss.match(/\.concept-actions \{([\s\S]*?)\n\}/);
+    assert(conceptActionsRule && /position:\s*absolute/.test(conceptActionsRule[1]), 'Concept controls must remain out-of-flow so they do not force card-like width');
 
     // 22.4 In-memory UI view state & expand/collapse toggle
     assert(canvasJs.includes('const expandedConceptIds = new Set();'), 'Expanded state must be tracked as purely in-memory UI state');
@@ -1249,12 +1259,12 @@ async function runSuite() {
     assert.strictEqual(testExpandedSet.has('c_test'), false, 'Initial state must be collapsed');
     assert.strictEqual(mockNode.classList.contains('expanded'), false);
 
-    // B: Double-click ON TITLE expands card
+    // B: Double-click ON TITLE expands node summary
     simulateDblClick(mockTitleTarget, 'c_test');
     assert.strictEqual(testExpandedSet.has('c_test'), true, 'Double-clicking concept title MUST toggle expansion to true');
     assert.strictEqual(mockNode.classList.contains('expanded'), true);
 
-    // C: Double-click ON TITLE again collapses card
+    // C: Double-click ON TITLE again collapses node summary
     simulateDblClick(mockTitleTarget, 'c_test');
     assert.strictEqual(testExpandedSet.has('c_test'), false, 'Second double-click on concept title MUST toggle expansion back to false');
     assert.strictEqual(mockNode.classList.contains('expanded'), false);
