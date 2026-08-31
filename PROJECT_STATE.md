@@ -1,11 +1,14 @@
 # Detective Map V2.0 — Current Project State
 
-**Last reconciled:** 2026-08-28  
+**Last reconciled:** 2026-08-31  
 **Product:** Living Learning Map  
 **Production:** `https://detectivemap.qchen9108.workers.dev`  
-**Status:** 🟢 Core Living Map stable; Structure-First UI browser-verified; Pen/Fountain and Highlighter/Watercolor are CODE/CI VERIFIED and awaiting real Wacom feel acceptance.
+**Status:** 🟢 Core Living Map stable; Structure-First UI browser-verified; expressive Pen/Highlighter engines implemented; Watercolor V2 Light Wash awaiting manual Wacom retest.
 
-> This file is the **current implementation / verification snapshot**. Product requirements live in `PRD.md`. Engineering rules live in `AGENTS.md`. The single next action lives in `.ai-bridge/current-plan.md`.
+> `PRD.md` = product requirements.  
+> `PROJECT_STATE.md` = current implementation/evidence.  
+> `.ai-bridge/current-plan.md` = one next action.  
+> `AGENTS.md` = engineering/multi-agent rules.
 
 ---
 
@@ -27,14 +30,13 @@ Durable Object + SQLite
           └─ Workers AI
 ```
 
-Optional browser pen/touch clients can connect to the same Workspace. Client storage is cache/offline support; Durable Object state is authoritative for cross-device continuity.
+Device direction:
 
-Current device direction:
-
-- Windows Chrome + Wacom-class pen tablet is the immediate structural + handwriting workflow.
-- Mac Chrome can use the same repo/cloud Workspace.
-- iPad remains an optional secondary surface, not a required handwriting dependency.
-- Obsidian/Excalidraw migration is paused while Wacom satisfies the low-latency desktop need.
+- Windows Chrome + Wacom is the immediate structural + handwriting workflow.
+- Mac Chrome shares the same cloud Workspace.
+- iPad is optional; it is not required for handwriting.
+- Native iPad Safari Pencil latency previously tested poorly.
+- Obsidian/Excalidraw migration remains paused.
 
 ---
 
@@ -48,33 +50,25 @@ Current device direction:
 - Preserve Concept IDs, manual edits, positions, accepted edges, ink, and source provenance.
 - Proposal subset application prevents dangling temp-ID edges.
 - Durable stale proposal recovery/retry remains active.
-- Mutation audit trail retains provenance guard and atomic map/proposal/audit commit behavior.
+- Mutation audit retains provenance guard + atomic map/proposal/audit commit behavior.
 
 ### Concept Boundary / Grounding
 
-Current AI reasoning policy includes:
+Current AI policy includes:
 
 1. Explicit Source Subject Preservation.
 2. Positive identity evidence + contrastive identity check.
 3. Attachment vs independent Concept boundary.
-4. Source-Grounded Edge policy: current Source is evidence authority for emitted relationships; map context is interpretation only.
+4. Source-Grounded Edge policy: current Source is evidence authority; existing map is interpretation context only.
 5. Proposal summary consistency.
 
-The Source-Grounded Edge protection is **prompt-enforced + regression verified**, not a deterministic semantic post-validator.
-
-### Accepted Pairing Implementation Exception
+### Accepted Pairing Exception
 
 The current product intentionally retains one permanent convenience auto-pair mechanism as an accepted usability/security tradeoff.
 
-Agents must:
-
-- not remove/redesign that accepted behavior unless the user explicitly reopens the decision,
-- not copy its concrete credential value into docs, URLs, logs, screenshots, reports, or prompts,
-- not introduce additional hardcoded secrets because this exception exists.
+Agents must not expose its concrete credential or use it as justification for adding additional hardcoded secrets.
 
 ### Two-Button Ink Mapping — Locked
-
-The primary toolbar intentionally has only two ink buttons:
 
 ```text
 Pen         = Fountain Pen behavior
@@ -83,9 +77,9 @@ Highlighter = Watercolor Brush behavior
 
 Rules:
 
-- do not add separate Fountain/Watercolor buttons beside Pen/Highlighter,
-- do not add a third Ink Wash / Chinese-ink brush to solve highlighting,
-- historical generic `tool: pen` and `tool: highlighter` strokes remain replay-compatible,
+- no separate Fountain/Watercolor toolbar buttons,
+- no third Ink Wash brush,
+- historical generic `tool: pen` and `tool: highlighter` replay remain compatible,
 - new Pen strokes persist Fountain semantics,
 - new Highlighter strokes persist Watercolor semantics.
 
@@ -95,120 +89,136 @@ Rules:
 
 **BROWSER PASS ✅**
 
-Production baseline:
-
-- Concept nodes collapsed by default.
-- Default view prioritizes Concept identity + relationships.
-- Description/body hidden by default.
+- Concepts collapsed by default.
+- Concept identity + relationships dominate the default map.
+- Descriptions hidden by default.
 - Complete labels; no ellipsis/line-clamp truncation.
-- Long titles wrap naturally.
-- Double-click Concept/title or use chevron for Quick Expand.
-- Quick Expand is temporary view state; no revision or saved `(x, y)` mutation.
-- Complete description + supporting Sources belong in Detail Drawer.
-- Edge labels retain text halo.
-- Failure/retry state is a compact corner toast.
-- Existing ink survived the UI migration.
-
-Structure-First implementation baseline: `87f27a4`.
-
-Minor non-blocking polish still exists around fit-to-view/top-edge placement and narrow-toolbar overflow.
+- Long labels wrap naturally.
+- Quick Expand is temporary view state.
+- Full description/sources/evidence belong in Detail Drawer.
+- Spatial coordinates remain stable while inspecting details.
+- Edge labels retain readable halo.
+- Operational errors use compact toast/status UI.
 
 ---
 
-## 4. Ink Foundation V1
+## 4. Ink Foundation
 
 **CODE VERIFIED ✅**
 
 - Pointer Events pen input.
-- `getCoalescedEvents()` when available.
+- Coalesced events when available.
 - Pressure capture with fallback.
 - Tri-layer active rendering:
   - `inkCanvas` = committed strokes,
   - `activeStrokeCanvas` = finalized active segments,
   - `scratchCanvas` = replaceable live tail.
-- Incremental active rendering avoids full historical-stroke replay per move.
-- Incremental/replay parity tests exist.
-- Pointer-up paints before awaiting persistence.
-- Touch/palm separation remains preserved.
+- Local-first rendering; cloud persistence never blocks visible input.
+- Incremental rendering avoids full historical-stroke replay per pointer move.
+- Palm/touch separation remains preserved.
 
-Tri-layer baseline: `e4f39f9`.
+Historical manual evidence:
 
-Manual findings before expressive brushes:
-
-- Windows Wacom latency: **MANUAL PASS ✅** — felt essentially as responsive as mouse input.
-- Generic Pen aesthetics/pressure expression: insufficient for the desired handwriting quality.
-- iPad Safari Apple Pencil latency on current native Canvas route: **MANUAL FAIL / POOR ❌**.
+- Windows Wacom latency on generic Pen: **MANUAL PASS ✅** — essentially mouse-like latency.
+- Generic Pen pressure/aesthetics: insufficient.
+- iPad Safari native Canvas Apple Pencil: **MANUAL FAIL / POOR ❌** for latency.
 
 ---
 
 ## 5. Pen = Fountain Pen V2
 
-Requirements source: `PRD.md §6.10`.
-
-**CODE VERIFIED ✅**  
-**CI VERIFIED ✅**  
-**MANUAL WACOM FEEL: REQUIRED ⏳**
-
 Implementation:
 
 `shared/fountain-pen-v2.js`
 
-Behavior:
+**CODE VERIFIED ✅**  
+**CI VERIFIED ✅**  
+**MANUAL WACOM FEEL REQUIRED ⏳**
+
+Implemented:
 
 - strong pressure modulation,
 - Light Touch / Balanced / Expressive presets,
 - velocity influence,
-- start taper,
-- tapered pen-lift tip,
-- continuous variable-width interpolation,
-- optional tilt/azimuth variation,
-- graceful missing-time / missing-tilt fallback,
-- captured pressure/time/tilt metadata,
-- new active Pen strokes persist `tool: fountain_pen`,
-- historical `tool: pen` strokes retain the legacy renderer,
+- start/end taper,
+- optional tilt/orientation variation,
 - deterministic replay,
 - incremental/replay parity,
-- O(1) hydration + rendering path.
+- O(1) hydration + rendering path,
+- historical `tool: pen` replay unchanged.
 
-Automated Fountain suite: `tests/verify-fountain-v2.js`.
+Automated suite:
 
-Automated success is **not** handwriting-quality acceptance. Real Wacom testing is authoritative for feel.
+`tests/verify-fountain-v2.js`
 
 ---
 
-## 6. Highlighter = Watercolor Brush V1
+## 6. Highlighter = Watercolor
 
-Requirements source: `PRD.md §6.10.2`, §6.10.3, and §10.
-
-**CODE VERIFIED ✅**  
-**CI VERIFIED ✅**  
-**MANUAL FREEFORM-LIKE FEEL: REQUIRED ⏳**
+### Watercolor V1
 
 Implementation:
 
 `shared/watercolor-brush-v1.js`
 
-The existing visible **Highlighter** button is the product entry point. No separate Watercolor button is added.
+**CODE / CI VERIFIED ✅**  
+**MANUAL FAIL ❌**
 
-Behavior:
+User's real Windows Wacom screenshot showed the V1 Highlighter as a dense saturated orange block that obscured underlying map text. This fails the core Watercolor/highlighting requirement even though deterministic tests passed.
 
-- semi-transparent layered pigment,
-- broad low-alpha outer wash + denser inner pigment for a soft/feathered edge,
-- repeated passes and crossings naturally deepen through normal source-over compositing,
-- modest pressure-sensitive width,
-- slow motion deposits slightly more pigment than fast motion,
-- deterministic micro-variation to avoid a perfectly uniform digital-marker edge,
-- persisted Watercolor preset/version/seed inside existing points JSON,
-- new active Highlighter strokes persist `tool: watercolor`,
-- historical `tool: highlighter` strokes retain the legacy flat-marker renderer,
-- deterministic replay,
-- incremental finalized layer + replaceable live tail parity,
-- O(1) hydration and bounded per-point rendering,
-- no full-canvas blur, diffusion, or whole-stroke re-render on pointer move.
+Root causes identified:
 
-Automated Watercolor suite: `tests/verify-watercolor-v1.js`.
+- legacy Highlighter defaults were still `width: 20`, `opacity: 0.35`, saturated orange,
+- V1 stacked five pigment layers,
+- quadratic curves were subdivided into multiple round-capped mini-segments, creating repeated local alpha buildup.
 
-The target benchmark is **the same class of soft, translucent, layered Watercolor experience as iPad Freeform**, not a pixel-for-pixel proprietary brush clone. Human side-by-side judgment is required.
+Do not describe Watercolor V1 as a successful visual baseline.
+
+### Watercolor V2 Light Wash — Current Candidate
+
+Implementation:
+
+`shared/watercolor-brush-v2.js`
+
+**CODE VERIFIED ✅**  
+**CI VERIFIED ✅**  
+**MANUAL RETEST REQUIRED ⏳**
+
+V2 corrections:
+
+- new Highlighter default opacity: `0.18`,
+- new default width: `17`,
+- lighter warm-yellow default instead of saturated orange,
+- three translucent layers instead of five,
+- lighter center profile; no dense core,
+- strict one-pass opacity/readability regression budget,
+- one quadratic path per translucent layer instead of many round-capped mini-segments,
+- repeat/crossing accumulation remains source-over and gradual,
+- deterministic micro-variation/replay remains preserved,
+- O(1) active hydration/rendering remains preserved.
+
+### Backward Compatibility
+
+Persisted V1 watercolor strokes continue to route through the V1 renderer. V2 applies only to newly created Highlighter strokes, so historical saved appearance does not silently change.
+
+Automated suite:
+
+`tests/verify-watercolor-v2.js`
+
+Coverage includes:
+
+- persisted V1 replay unchanged,
+- new Highlighter → V2 semantics/defaults,
+- low single-pass opacity budget,
+- gradual repeated-pass accumulation,
+- feathered profile without dense center,
+- removal of mini-segment pigment buildup,
+- deterministic texture/replay,
+- incremental/replay parity,
+- O(1) 500-point path,
+- toolbar remains Pen + Highlighter only.
+
+The visual benchmark remains the same class of soft, translucent, layered Watercolor experience as iPad Freeform; human side-by-side judgment is authoritative.
 
 ---
 
@@ -220,105 +230,70 @@ Legacy points remain valid:
 {x, y, pressure}
 ```
 
-Expressive-brush points may additionally contain timing, tilt/orientation, and deterministic brush metadata such as:
+Expressive-brush points may additionally contain timing, tilt/orientation, and persisted brush metadata including Fountain/Watercolor preset/version/seed data.
 
-```js
-{
-  x,
-  y,
-  pressure,
-  t,
-  tiltX,
-  tiltY,
-  altitudeAngle,
-  azimuthAngle,
-  fountainPreset,
-  brushVersion,
-  watercolorPreset,
-  watercolorVersion,
-  watercolorSeed
-}
-```
+The existing server stores `tool`, width, opacity, color, and full points JSON, so the expressive brushes do not require a Durable Object table migration.
 
-Server persistence already stores `tool`, `width`, `opacity`, `color`, and the entire points JSON, so `tool: fountain_pen` / `tool: watercolor` and point dynamics survive cloud reload without a table migration.
-
-Historical strokes must not change merely because future defaults change.
+Historical strokes must not change merely because future brush defaults change.
 
 ---
 
-## 8. Build / Generated Asset Discipline
+## 8. Build / CI Discipline
 
-Current source/generated consistency safeguards:
+Long-term workflow:
 
-- `.github/workflows/verify-generated-assets.yml` runs build + tests on pushes to `main`.
-- Current required suites include core V1/V2, Fountain, and Watercolor verification.
-- `scripts/bundle-assets.js` includes both expressive brush runtimes.
-- `scripts/build-public.js` removes/recreates `public/` from source on every build, preventing stale generated files from surviving across machines.
-- Legacy PeerJS runtime/download/public artifacts remain removed.
-- The one-time PRD mapping script was removed after reconciliation; long-term CI is back to normal build/test/generated-asset verification.
+`.github/workflows/verify-generated-assets.yml`
 
-Build commands:
+Required suites:
+
+```text
+node tests/verify-all.js
+node tests/verify-v2.js
+node tests/verify-fountain-v2.js
+node tests/verify-watercolor-v1.js
+node tests/verify-watercolor-v2.js
+```
+
+Generated assets are rebuilt from source:
 
 ```text
 node scripts/bundle-assets.js
 node scripts/build-public.js
 ```
 
-Current V2 production deployment entrypoint:
+`public/` is a clean generated directory. Legacy PeerJS/LAN runtime remains removed from current V2 production source.
 
-```text
-DetectiveMap_V2.0.0_detectivemap.qchen9108.workers.dev_一键更新网站.bat
-```
+Verification labels:
 
-Do not call either expressive brush MANUAL PASS merely because CI is green.
+- **CODE VERIFIED** — source/test inspection.
+- **CI VERIFIED** — independent GitHub runner executed required suites.
+- **CLOUD VERIFIED** — live isolated cloud fixture/API evidence.
+- **BROWSER PASS** — actual browser UX observed.
+- **MANUAL FAIL/PASS** — real human/device judgment.
 
----
-
-## 9. Cross-Device Documentation Alignment
-
-`PRD.md §11/§12` reflects the actual supported model:
-
-- Windows/Mac clients share the authoritative cloud Workspace.
-- Connected clients receive structural updates without treating iPad as a mandatory dependency.
-- iPad remains an optional supported browser/pen client and acceptance path.
+Automated success never overrides a manual brush-feel failure.
 
 ---
 
-## 10. Verification Language
+## 9. Multi-Computer / Multi-AI Handoff
 
-Use only evidence-backed labels:
+Before work:
 
-- **CODE VERIFIED** — implementation/test inspection.
-- **CI VERIFIED** — independent GitHub runner executed and passed the specified suites.
-- **CLOUD VERIFIED** — live cloud fixture/API execution.
-- **BROWSER PASS** — real browser UX observed.
-- **MANUAL REQUIRED** — physical/subjective device test pending.
+1. fetch/pull latest `main`,
+2. confirm remote HEAD,
+3. read `PRD.md`,
+4. read this file,
+5. read `.ai-bridge/current-plan.md`,
+6. confirm another agent has not already completed the task.
 
-Automated tests never justify a claim that handwriting/highlighting “feels like Freeform.”
-
-Cloud fixtures must continue using isolated `__TEST__` workspaces and must never mutate `ws_default`.
-
----
-
-## 11. Multi-Computer / Multi-AI Handoff
-
-Before any agent starts work:
-
-1. Pull/fetch latest `main` and record remote HEAD.
-2. Read `PRD.md`.
-3. Read this `PROJECT_STATE.md`.
-4. Read `.ai-bridge/current-plan.md`.
-5. Confirm another machine/agent has not already completed the requested change.
-
-Generated artifacts must come from the current source tree, not from a stale local clone.
+Do not overwrite newer remote work from a stale clone.
 
 ---
 
-## 12. Single Next Action
+## 10. Single Next Action
 
-**Manual Wacom acceptance of the locked Pen + Highlighter brush pair.**
+**Manual Wacom retest of a fresh Highlighter stroke using Watercolor V2 Light Wash.**
 
-- Pen should be judged as Fountain handwriting.
-- Highlighter should be judged against iPad Freeform Watercolor behavior.
+Old V1 strokes intentionally remain unchanged, so the user must draw a new stroke after pulling/reloading.
 
-Do not start a third brush, Obsidian/Excalidraw migration, or unrelated architecture work before this manual acceptance/tuning pass.
+If V2 is still too dense/marker-like, tune the existing Highlighter only. Do not create another brush.
