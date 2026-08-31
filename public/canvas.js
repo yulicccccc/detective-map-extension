@@ -532,7 +532,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         tool: activeTool,
         width: activeTool === 'highlighter' ? 20 : 3,
         opacity: activeTool === 'highlighter' ? 0.35 : 1.0,
-        color: activeTool === 'highlighter' ? '#f59e0b' : '#38bdf8',
+        color: (typeof InkColorPalette !== 'undefined' && InkColorPalette.getColor(activeTool)) || (activeTool === 'highlighter' ? '#ffd166' : '#38bdf8'),
         points: [{
           x: worldPoint.x,
           y: worldPoint.y,

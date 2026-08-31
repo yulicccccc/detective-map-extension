@@ -58,6 +58,7 @@ function addFile(relPath) {
   'shared/fountain-pen-v2.js',
   'shared/watercolor-brush-v1.js',
   'shared/watercolor-brush-v2.js',
+  'shared/ink-color-palette.js',
   'shared/storage.js',
   'shared/engine-core.js',
   'icons/icon16.png',

@@ -485,6 +485,11 @@ Locked rules:
 - Do **not** add a third "Ink Wash" / Chinese-ink brush to solve the highlighting requirement; Watercolor is the intended expressive highlight behavior.
 - Historical generic `tool: pen` and flat `tool: highlighter` strokes remain supported for backward-compatible replay, but legacy utility rendering does not require a separate primary toolbar button.
 - New Pen strokes must persist Fountain semantics; new Highlighter strokes must persist versioned Watercolor semantics. Historical failed/tuned brush versions remain replay-compatible without redefining the current default brush.
+- **Independent Color Selection**: Pen and Highlighter each own an independent selected color. Changing Pen color must never silently change Highlighter color, and vice versa.
+- **Low-Friction Color UI**: Color selection must not add another primary brush/tool button. Each of the two existing ink tools may expose a compact color dot/swatch that opens a small palette.
+- **Presets + Custom Color**: Each tool should offer a small useful preset palette plus a custom color picker; selecting a color applies to future strokes only.
+- **Historical Stroke Stability**: Changing the selected color must never recolor existing strokes. Every stroke persists its actual chosen color as part of stroke data and replays identically across devices.
+- **Preference Scope**: The last selected Pen and Highlighter colors may be remembered per device/browser for low-friction reuse. Cross-device preference synchronization is not required for V2.0; synchronized stroke color fidelity is required.
 
 This two-button mapping is a low-friction product rule: **Pen = beautiful writing; Highlighter = watercolor emphasis.**
 
