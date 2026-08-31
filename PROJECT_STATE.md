@@ -3,7 +3,7 @@
 **Last reconciled:** 2026-08-31  
 **Product:** Living Learning Map  
 **Production:** `https://detectivemap.qchen9108.workers.dev`  
-**Status:** 🟢 Core Living Map stable; Structure-First UI browser-verified; expressive Pen/Highlighter engines implemented; Watercolor V2 Light Wash awaiting manual Wacom retest.
+**Status:** 🟢 Core Living Map stable; Structure-First UI browser-verified; Pen/Highlighter expressive brushes accepted for this phase; independent color selection is CODE/CI VERIFIED and awaiting manual UI confirmation.
 
 > `PRD.md` = product requirements.  
 > `PROJECT_STATE.md` = current implementation/evidence.  
@@ -81,7 +81,9 @@ Rules:
 - no third Ink Wash brush,
 - historical generic `tool: pen` and `tool: highlighter` replay remain compatible,
 - new Pen strokes persist Fountain semantics,
-- new Highlighter strokes persist Watercolor semantics.
+- new Highlighter strokes persist Watercolor semantics,
+- Pen and Highlighter have independent selected colors,
+- changing a selected color only affects future strokes; historical stroke colors never change.
 
 ---
 
@@ -133,7 +135,7 @@ Implementation:
 
 **CODE VERIFIED ✅**  
 **CI VERIFIED ✅**  
-**MANUAL WACOM FEEL REQUIRED ⏳**
+**CURRENT PHASE: ACCEPTABLE; remaining user-requested Pen issue is color choice ✅**
 
 Implemented:
 
@@ -164,17 +166,9 @@ Implementation:
 **CODE / CI VERIFIED ✅**  
 **MANUAL FAIL ❌**
 
-User's real Windows Wacom screenshot showed the V1 Highlighter as a dense saturated orange block that obscured underlying map text. This fails the core Watercolor/highlighting requirement even though deterministic tests passed.
+The real Wacom screenshot showed V1 as a dense saturated orange block that obscured underlying map text. Do not use V1 as the successful visual baseline.
 
-Root causes identified:
-
-- legacy Highlighter defaults were still `width: 20`, `opacity: 0.35`, saturated orange,
-- V1 stacked five pigment layers,
-- quadratic curves were subdivided into multiple round-capped mini-segments, creating repeated local alpha buildup.
-
-Do not describe Watercolor V1 as a successful visual baseline.
-
-### Watercolor V2 Light Wash — Current Candidate
+### Watercolor V2 Light Wash
 
 Implementation:
 
@@ -182,47 +176,61 @@ Implementation:
 
 **CODE VERIFIED ✅**  
 **CI VERIFIED ✅**  
-**MANUAL RETEST REQUIRED ⏳**
+**MANUAL PASS / ACCEPTED FOR THIS PHASE ✅**
 
-V2 corrections:
+User feedback after the V2 retest: the result was described as "挺好的！很水墨了！我觉得差不多了", and the remaining requested Highlighter issue became selectable color rather than brush feel.
 
-- new Highlighter default opacity: `0.18`,
-- new default width: `17`,
-- lighter warm-yellow default instead of saturated orange,
-- three translucent layers instead of five,
-- lighter center profile; no dense core,
-- strict one-pass opacity/readability regression budget,
-- one quadratic path per translucent layer instead of many round-capped mini-segments,
-- repeat/crossing accumulation remains source-over and gradual,
-- deterministic micro-variation/replay remains preserved,
-- O(1) active hydration/rendering remains preserved.
+V2 corrections include:
 
-### Backward Compatibility
+- low-opacity first pass,
+- lighter default width/color,
+- three translucent layers,
+- no dense center core,
+- one-pass readability budget,
+- continuous quadratic wash instead of round-capped mini-segment buildup,
+- gradual overlap accumulation,
+- deterministic micro-variation/replay,
+- O(1) active hydration/rendering.
 
-Persisted V1 watercolor strokes continue to route through the V1 renderer. V2 applies only to newly created Highlighter strokes, so historical saved appearance does not silently change.
+Persisted V1 strokes continue to use the V1 renderer; V2 only governs new V2 Watercolor strokes.
 
 Automated suite:
 
 `tests/verify-watercolor-v2.js`
 
-Coverage includes:
+---
 
-- persisted V1 replay unchanged,
-- new Highlighter → V2 semantics/defaults,
-- low single-pass opacity budget,
-- gradual repeated-pass accumulation,
-- feathered profile without dense center,
-- removal of mini-segment pigment buildup,
-- deterministic texture/replay,
-- incremental/replay parity,
-- O(1) 500-point path,
-- toolbar remains Pen + Highlighter only.
+## 7. Independent Ink Color Selection
 
-The visual benchmark remains the same class of soft, translucent, layered Watercolor experience as iPad Freeform; human side-by-side judgment is authoritative.
+Implementation:
+
+`shared/ink-color-palette.js`
+
+**CODE VERIFIED ✅**  
+**CI VERIFIED ✅**  
+**MANUAL UI CONFIRMATION REQUIRED ⏳**
+
+Behavior:
+
+- Pen and Highlighter maintain separate selected colors.
+- Each existing tool button receives a compact color dot; no new brush/tool button is added.
+- Clicking the color dot opens a small preset palette plus native custom color picker.
+- Pen presets are optimized for writing on the dark canvas.
+- Highlighter presets use softer watercolor-friendly pigments.
+- The last selected Pen and Highlighter colors are remembered independently in device/browser `localStorage`.
+- New strokes read the selected color at stroke start and persist that actual color in stroke data.
+- Existing strokes are never recolored by changing the current preference.
+- Cross-device preference syncing is not required; cross-device stroke color fidelity is required and already supported by persisted stroke `color`.
+
+Automated suite:
+
+`tests/verify-ink-colors.js`
+
+Coverage includes independent defaults, semantic tool mapping, independent mutation/persistence, custom hex normalization, palette availability, Canvas integration, module load order, and preservation of the locked two-button toolbar.
 
 ---
 
-## 7. Ink Persistence Compatibility
+## 8. Ink Persistence Compatibility
 
 Legacy points remain valid:
 
@@ -232,13 +240,11 @@ Legacy points remain valid:
 
 Expressive-brush points may additionally contain timing, tilt/orientation, and persisted brush metadata including Fountain/Watercolor preset/version/seed data.
 
-The existing server stores `tool`, width, opacity, color, and full points JSON, so the expressive brushes do not require a Durable Object table migration.
-
-Historical strokes must not change merely because future brush defaults change.
+The server stores `tool`, width, opacity, color, and full points JSON. Historical strokes must not change because brush defaults or currently selected colors change.
 
 ---
 
-## 8. Build / CI Discipline
+## 9. Build / CI Discipline
 
 Long-term workflow:
 
@@ -252,6 +258,7 @@ node tests/verify-v2.js
 node tests/verify-fountain-v2.js
 node tests/verify-watercolor-v1.js
 node tests/verify-watercolor-v2.js
+node tests/verify-ink-colors.js
 ```
 
 Generated assets are rebuilt from source:
@@ -271,11 +278,11 @@ Verification labels:
 - **BROWSER PASS** — actual browser UX observed.
 - **MANUAL FAIL/PASS** — real human/device judgment.
 
-Automated success never overrides a manual brush-feel failure.
+Automated success never overrides manual brush/UI evidence.
 
 ---
 
-## 9. Multi-Computer / Multi-AI Handoff
+## 10. Multi-Computer / Multi-AI Handoff
 
 Before work:
 
@@ -290,10 +297,17 @@ Do not overwrite newer remote work from a stale clone.
 
 ---
 
-## 10. Single Next Action
+## 11. Single Next Action
 
-**Manual Wacom retest of a fresh Highlighter stroke using Watercolor V2 Light Wash.**
+**Manual UI confirmation of independent Pen and Highlighter color selection.**
 
-Old V1 strokes intentionally remain unchanged, so the user must draw a new stroke after pulling/reloading.
+After pulling/reloading:
 
-If V2 is still too dense/marker-like, tune the existing Highlighter only. Do not create another brush.
+1. choose a Pen color and draw a new Pen stroke,
+2. choose a different Highlighter color and draw a new Watercolor stroke,
+3. verify each tool remembers its own color,
+4. verify switching one tool's color does not change the other,
+5. reload and confirm both device-local preferences remain,
+6. confirm older strokes retain their original colors.
+
+If these pass, the current two-brush ink experience is complete enough for this phase.
