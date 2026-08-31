@@ -25,9 +25,6 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Activate independent Pen and Highlighter colors
-        run: node scripts/activate-ink-color-selection.js
-
       - name: Build generated assets
         run: |
           node scripts/bundle-assets.js
@@ -42,15 +39,15 @@ jobs:
           if [ -f tests/verify-watercolor-v2.js ]; then node tests/verify-watercolor-v2.js; fi
           if [ -f tests/verify-ink-colors.js ]; then node tests/verify-ink-colors.js; fi
 
-      - name: Commit color activation and generated artifacts if needed
+      - name: Commit generated artifacts if needed
         shell: bash
         run: |
-          if git diff --quiet -- PRD.md canvas.js canvas.html scripts/bundle-assets.js public src/assets-bundle.js; then
-            echo 'Ink color activation and generated assets already aligned.'
+          if git diff --quiet -- public src/assets-bundle.js; then
+            echo 'Generated assets already aligned.'
             exit 0
           fi
           git config user.name 'detective-map-build-bot'
           git config user.email 'actions@users.noreply.github.com'
-          git add PRD.md canvas.js canvas.html scripts/bundle-assets.js public src/assets-bundle.js
-          git commit -m 'feat: activate independent Pen and Highlighter colors [skip ci]'
+          git add public src/assets-bundle.js
+          git commit -m 'chore: rebuild generated assets [skip ci]'
           git push origin HEAD:main
