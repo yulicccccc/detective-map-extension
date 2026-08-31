@@ -1,7 +1,7 @@
 # Current Plan — Detective Map V2.0
 
 **Last updated:** 2026-08-31  
-**Single next priority:** **Manual UI acceptance of independent Pen + Highlighter color selection**
+**Single next priority:** **Manual Wacom acceptance of Highlighter = Transparent Marker V1**
 
 ## Read Before Work
 
@@ -14,45 +14,55 @@
 
 ```text
 Pen         = Fountain Pen behavior
-Highlighter = Watercolor Brush behavior
+Highlighter = Transparent Marker behavior
 ```
 
-Do not add separate Fountain/Watercolor buttons. Do not add a third Ink Wash brush.
+Do not add separate Fountain/Marker buttons. Do not add Watercolor/Ink Wash as a third primary brush unless the user explicitly reopens that decision.
 
-## Current Manual Brush Evidence
+## Why Watercolor Was Retired as the Default Highlighter
 
-### Watercolor V2
+Watercolor V2 was manually accepted as a watercolor effect, but after real use the user judged it too visually blocking for Detective Map's concept-map annotation role. The product goal is highlighting that protects readability and structure, not painting.
 
-**MANUAL PASS / ACCEPTED FOR THIS PHASE ✅**
+Watercolor V1/V2 stay in the codebase only for historical stroke replay.
 
-The user judged the V2 Highlighter as substantially correct: "挺好的！很水墨了！我觉得差不多了". The remaining requested Highlighter issue is selectable color, not brush feel.
-
-### Fountain Pen V2
-
-**CODE / CI VERIFIED ✅** and acceptable enough for the current phase; the remaining requested Pen issue is selectable color.
-
-## Independent Ink Color Selection — Current Candidate
+## Transparent Marker V1 — Current Candidate
 
 Implementation:
 
-`shared/ink-color-palette.js`
+`shared/transparent-marker-v1.js`
 
 **CODE / CI VERIFIED ✅**  
-**MANUAL UI CONFIRMATION REQUIRED ⏳**
+**MANUAL WACOM ACCEPTANCE REQUIRED ⏳**
 
-Locked behavior:
+Behavior:
 
-- Pen and Highlighter have independent selected colors.
-- Existing toolbar remains exactly two ink tools.
-- Each tool receives a compact color dot/swatch; clicking it opens a small palette.
-- Pen and Highlighter have separate preset palettes.
-- A native custom color picker allows arbitrary color choice.
-- Changing Pen color never changes Highlighter color, and vice versa.
-- Selected colors are remembered per device/browser using `localStorage`.
-- New strokes persist the chosen actual color in the existing stroke `color` field.
-- Existing strokes are never recolored when the current preference changes.
-- Stroke colors remain correct across cloud reload/devices because color is persisted per stroke.
-- Cross-device synchronization of the *last selected preference* is not required in V2.0.
+- one-pass opacity is intentionally low,
+- two clean deterministic layers only: faint soft shoulder + controlled marker body,
+- mostly uniform fill; no cloud/bloom/wet texture,
+- flat `butt` caps for marker/chisel-like ends,
+- stable width; pressure variation is intentionally subtle,
+- repeated passes/crossings deepen gradually,
+- independent Highlighter color preference remains supported,
+- selected custom/preset color is preserved into the stroke,
+- deterministic replay,
+- O(1) incremental active rendering,
+- Watercolor V1/V2 histories remain unchanged through renderer delegation.
+
+New Highlighter strokes persist:
+
+```text
+tool: transparent_marker
+brushType: transparent_marker
+brushVersion: 1
+```
+
+## Pen + Color State
+
+Fountain Pen V2 is CODE/CI VERIFIED and acceptable for the current phase.
+
+Independent color selection is CODE/CI VERIFIED and the user's screenshot demonstrated the core behavior: Pen and Highlighter can coexist with distinct selected colors while historical strokes retain their drawn color.
+
+`transparent_marker`, historical `watercolor`, and generic `highlighter` semantics all resolve to the Highlighter color preference.
 
 ## Automated Evidence
 
@@ -63,42 +73,49 @@ Long-term GitHub Actions verification includes:
 - `tests/verify-fountain-v2.js`
 - `tests/verify-watercolor-v1.js`
 - `tests/verify-watercolor-v2.js`
+- `tests/verify-transparent-marker-v1.js`
 - `tests/verify-ink-colors.js`
 
-Ink-color coverage checks:
+Transparent Marker regression coverage checks:
 
-- independent defaults,
-- semantic mapping (`fountain_pen` → Pen preference; `watercolor` → Highlighter preference),
-- independent color mutation,
-- independent local persistence,
-- custom hex normalization,
-- preset availability,
-- Canvas stroke creation uses selected color rather than hardcoded colors,
-- palette module loads before `canvas.js`,
-- no extra Watercolor/Ink Wash toolbar button is introduced.
+- historical Watercolor V2 replay unchanged,
+- new Highlighter upgrades to `transparent_marker`,
+- selected pigment survives upgrade,
+- one-pass opacity stays within a low readability budget,
+- repeated passes deepen gradually,
+- pressure affects width only subtly,
+- flat marker-style caps,
+- deterministic replay,
+- O(1) incremental finalized-segment behavior,
+- Highlighter color mapping remains intact,
+- toolbar remains exactly one Highlighter button.
 
-## Single Next Action — Manual Color UI Test
+## Single Next Action — Manual Marker Test
 
 On the Windows Wacom machine:
 
 1. pull latest `main`,
 2. reload the unpacked Detective Map extension,
-3. find the small color dot on **Pen**,
-4. choose a noticeably different Pen color and draw a stroke,
-5. find the small color dot on **Highlighter**,
-6. choose a different Watercolor color and draw a stroke,
-7. switch back and forth and confirm the two tools keep independent colors,
-8. use **Custom** once to choose an arbitrary color,
-9. reload the extension and confirm the two device-local choices remain,
-10. confirm old strokes keep their original colors.
+3. select **Highlighter**,
+4. choose a clearly visible color,
+5. draw one fresh highlight directly across a Concept title or Edge label,
+6. paint over half of it once more,
+7. cross it once,
+8. repeat with a second color,
+9. compare it with the old Watercolor strokes still visible on the map.
 
 Acceptance:
 
-- color choice is easy to discover and does not clutter the toolbar,
-- Pen and Highlighter colors are independent,
-- selected swatch immediately matches the new stroke color,
-- Highlighter preserves the Watercolor light-wash character for every selected pigment,
-- old strokes never change color,
-- no new lag or drawing regression is introduced.
+- one pass leaves underlying information clearly readable,
+- result looks like a clean translucent marker rather than watercolor/paint,
+- interior color is comparatively uniform and controlled,
+- edge is only subtly softened and does not bloom outward,
+- repeated pass deepens gradually,
+- crossings remain readable,
+- width feels predictable,
+- endpoints feel flatter/more marker-like,
+- color selection still works independently,
+- no perceptible new drawing lag,
+- old Watercolor strokes remain unchanged.
 
-If this passes, stop ink-tool iteration for this phase unless the user reopens it.
+If these pass, stop Highlighter brush iteration for this phase unless the user reopens it.
