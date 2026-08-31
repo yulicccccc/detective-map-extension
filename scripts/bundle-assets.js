@@ -57,6 +57,7 @@ function addFile(relPath) {
   'shared/canvas-core.js',
   'shared/fountain-pen-v2.js',
   'shared/watercolor-brush-v1.js',
+  'shared/watercolor-brush-v2.js',
   'shared/storage.js',
   'shared/engine-core.js',
   'icons/icon16.png',
