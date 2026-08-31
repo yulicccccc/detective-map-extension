@@ -56,6 +56,7 @@ function addFile(relPath) {
   'sidepanel.js',
   'shared/canvas-core.js',
   'shared/fountain-pen-v2.js',
+  'shared/fountain-pen-v3.js',
   'shared/watercolor-brush-v1.js',
   'shared/watercolor-brush-v2.js',
   'shared/transparent-marker-v1.js',

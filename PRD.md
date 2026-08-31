@@ -412,26 +412,25 @@ Required behavior:
 
 - **Strong Pressure Response**: Light pressure produces visibly thinner strokes; normal pressure produces the default writing weight; firm pressure produces visibly thicker strokes. The difference must be obvious to the eye rather than technically present but imperceptible.
 - **Pressure Curve, Not Raw Mapping**: Width must use a smooth calibrated curve with bounds and smoothing; raw pressure must never directly cause noisy width spikes.
-- **Velocity Influence**: Stroke speed contributes modestly to width/shape. Faster movement should generally feel lighter/finer and slower movement slightly fuller, without overwhelming pressure input.
-- **Start Taper**: The beginning of a stroke should naturally sharpen rather than begin as a blunt circular cap when sufficient motion exists.
-- **End Taper / Pen Lift**: The end of a stroke should narrow smoothly into a visible pen-lift point rather than terminate abruptly.
-- **Continuous Width Interpolation**: Width changes between points must interpolate smoothly; no per-point stair-step thickness changes.
-- **Tilt / Nib Orientation When Available**: If the device/browser reports reliable `tiltX` / `tiltY`, altitude/azimuth, or equivalent orientation data, the renderer should use it to alter nib aspect/orientation so angled strokes produce a more calligraphic pen edge.
-- **Graceful Tilt Fallback**: Tilt is an enhancement, not a dependency. Devices that do not provide stable tilt data must still produce an attractive Fountain Pen using pressure + velocity + taper.
-- **Device Calibration**: Provide at least a simple pressure-sensitivity control or preset curve so Wacom and Apple Pencil input can be tuned independently if their reported pressure ranges feel different.
-- **No New Perceptible Latency**: Fountain Pen quality must not reintroduce noticeable lag relative to the current low-latency Wacom baseline.
+- **Strong Thick/Thin Contrast (V3)**: High-contrast pressure response with steep dynamic range (light hairline ~0.45px to firm rich swell ~7.8px), avoiding uniform tubular appearance.
+- **Velocity Influence**: Stroke speed contributes dynamically to width/shape. Faster movement feels lighter/finer and slower movement fuller, without overwhelming pressure input.
+- **True Start Taper**: The beginning of a stroke sharpens rapidly over the first 3-4 points from a fine entry point into full writing weight. No blunt circular caps.
+- **True End Taper / Pen Lift**: The end of a stroke narrows naturally into a pointed finish on pen lift or fast exit flick.
+- **Directional Nib / Calligraphic Character**: Angled chisel modulation (italic slant ~40° or hardware azimuth/tilt) ensures upstrokes/cross-strokes remain crisp while downstrokes are full.
+- **Graceful Fallback & Calibration**: Tilt is an enhancement; devices without tilt still produce calligraphic character via velocity + nib angle + pressure.
+- **No New Perceptible Latency**: Fountain Pen V3 rendering remains strictly $O(1)$ per pointermove on scratch/active canvas without full historical stroke replay.
 
 Visual target:
 
 ```text
-light pressure  → fine hairline
-normal pressure → comfortable handwriting weight
-firm pressure   → clearly fuller stroke
-fast exit       → tapered lift
-supported tilt  → directional nib / calligraphic variation
+light pressure  → fine hairline (< 1px)
+normal pressure → comfortable handwriting weight (~3px)
+firm pressure   → clearly fuller swell (> 6.5px)
+fast exit       → sharp pointed flick
+nib angle       → calligraphic thick/thin variation
 ```
 
-The target is **beautiful everyday handwriting and English/calligraphy-like stroke character**, not merely a round pen whose radius changes.
+The target is **expressive, beautiful everyday handwriting and English/calligraphic character**, eliminating the generic round digital marker feel.
 
 ### 6.10.2 Transparent Marker — Primary Highlight Brush
 

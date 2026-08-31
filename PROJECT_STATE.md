@@ -113,17 +113,25 @@ Historical manual evidence:
 
 ---
 
-## 5. Pen = Fountain Pen V2
+## 5. Pen = Fountain Pen V3 (Expressive Calligraphic Fountain Pen)
 
-Implementation: `shared/fountain-pen-v2.js`
+Implementation: `shared/fountain-pen-v3.js`
 
 **CODE VERIFIED ✅**  
 **CI VERIFIED ✅**  
-**CURRENT PHASE: ACCEPTABLE ✅**
+**MANUAL WACOM ACCEPTANCE REQUIRED ⏳**
 
-Includes strong pressure modulation, Light Touch/Balanced/Expressive presets, velocity influence, start/end taper, optional tilt/orientation variation, deterministic replay, incremental/replay parity, O(1) hydration/rendering, and unchanged historical generic-Pen replay.
+Includes:
+- High thick/thin contrast (hairline <1px to rich swell >6.5px, >8x dynamic range),
+- True start taper (rapid ramp from sharp hairline entry into body weight, no blunt circular blobs),
+- True exit taper (smooth narrowing to sharp pointed finish on pen lift),
+- Velocity + pressure combined width model (fast motion becomes finer, slow curves fuller),
+- Directional nib / calligraphic angle modulation (italic chisel slant ~40° or hardware azimuth/tilt),
+- Presets: Expressive (Default), Calligraphy Nib, Balanced,
+- Deterministic replay parity and $O(1)$ incremental active rendering,
+- Byte-for-byte backward compatibility for legacy Pen (V1) and Fountain Pen V2 strokes.
 
-Automated suite: `tests/verify-fountain-v2.js`.
+Automated suites: `tests/verify-fountain-v2.js` and `tests/verify-fountain-v3.js`.
 
 ---
 

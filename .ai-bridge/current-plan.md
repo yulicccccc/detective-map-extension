@@ -58,11 +58,11 @@ brushVersion: 1
 
 ## Pen + Color State
 
-Fountain Pen V2 is CODE/CI VERIFIED and acceptable for the current phase.
+Fountain Pen V3 is **CODE / CI VERIFIED ✅** (Expressive calligraphic brush with strong thick/thin contrast >8x, sharp start taper, exit taper, velocity modulation, and directional nib character).
 
-Independent color selection is CODE/CI VERIFIED and the user's screenshot demonstrated the core behavior: Pen and Highlighter can coexist with distinct selected colors while historical strokes retain their drawn color.
+Independent color selection is CODE/CI VERIFIED and verified across both tools: Pen and Highlighter maintain distinct selected colors while historical strokes retain their originally drawn colors.
 
-`transparent_marker`, historical `watercolor`, and generic `highlighter` semantics all resolve to the Highlighter color preference.
+`transparent_marker`, historical `watercolor`, and generic `highlighter` semantics resolve to the Highlighter color preference; `fountain_pen` resolves to the Pen preference.
 
 ## Automated Evidence
 
@@ -71,6 +71,7 @@ Long-term GitHub Actions verification includes:
 - `tests/verify-all.js`
 - `tests/verify-v2.js`
 - `tests/verify-fountain-v2.js`
+- `tests/verify-fountain-v3.js`
 - `tests/verify-watercolor-v1.js`
 - `tests/verify-watercolor-v2.js`
 - `tests/verify-transparent-marker-v1.js`
