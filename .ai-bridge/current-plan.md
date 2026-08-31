@@ -1,7 +1,7 @@
 # Current Plan — Detective Map V2.0
 
-**Last updated:** 2026-08-28  
-**Single next priority:** **Manual Wacom acceptance of the two locked ink tools: Pen + Highlighter**
+**Last updated:** 2026-08-31  
+**Single next priority:** **Manual Wacom retest of Highlighter = Watercolor V2 Light Wash**
 
 ## Read Before Work
 
@@ -12,8 +12,6 @@
 
 ## Locked Toolbar Mapping
 
-The primary toolbar has exactly two ink buttons:
-
 ```text
 Pen         = Fountain Pen behavior
 Highlighter = Watercolor Brush behavior
@@ -21,116 +19,90 @@ Highlighter = Watercolor Brush behavior
 
 Do not add separate Fountain/Watercolor buttons. Do not add a third Ink Wash brush. Legacy generic Pen/Highlighter rendering exists only for historical-stroke compatibility.
 
-## Current Baseline
+## Human Evidence — Watercolor V1
 
-- Living Learning Map incremental AI workflow: stable.
-- Structure-First Concept Map UI: **BROWSER PASS ✅**.
-- Default Concept nodes: collapsed; descriptions hidden; complete labels; Quick Expand + Detail Drawer.
-- Tri-layer low-latency ink foundation: implemented.
-- Windows Wacom latency on the prior generic pen: **MANUAL PASS ✅**.
-- iPad Safari native Canvas Pencil latency remains poor; iPad/Obsidian/Excalidraw migration is paused.
-- Fountain Pen V2: **CODE / CI VERIFIED ✅**, real handwriting feel remains user-authoritative.
-- Watercolor Brush V1 behind the existing Highlighter button: **CODE / CI VERIFIED ✅**, visual feel requires manual comparison with iPad Freeform Watercolor.
-- `public/` is rebuilt from source; generated asset consistency is CI-enforced.
+**MANUAL FAIL ❌**
+
+User screenshot/feedback on Windows Wacom showed:
+
+- the Highlighter rendered as a dense saturated orange block,
+- underlying map text was obscured,
+- the visual result felt like a thick marker rather than the light translucent Watercolor benchmark from iPad Freeform.
+
+Do not describe Watercolor V1 as successful simply because its automated suite passed.
+
+## Watercolor V2 Light Wash — Current Candidate
+
+Implementation: `shared/watercolor-brush-v2.js`.
+
+**CODE / CI VERIFIED ✅**  
+**MANUAL RETEST REQUIRED ⏳**
+
+V2 intentionally preserves persisted V1 watercolor strokes and applies the correction only to newly drawn Highlighter strokes.
+
+Manual-failure corrections:
+
+- new Highlighter default opacity reduced from the legacy `0.35` path to `0.18`,
+- new default width reduced from `20` to `17`,
+- saturated orange default replaced by a lighter warm yellow,
+- five-layer V1 profile reduced to a three-layer light-wash profile,
+- dense center pigment removed,
+- a strict one-pass translucency/readability budget is regression-tested,
+- quadratic curves are painted once per translucent layer rather than split into many round-capped mini-segments,
+- repeated passes/crossings still deepen naturally through source-over compositing,
+- deterministic texture/replay and O(1) active rendering remain preserved.
+
+Historical Watercolor V1 strokes are delegated to the V1 renderer so their saved appearance does not silently change.
 
 ## Fountain Pen V2
 
+**CODE / CI VERIFIED ✅**; real Wacom feel remains user-authoritative.
+
 Implementation: `shared/fountain-pen-v2.js`.
 
-New active Pen strokes persist `tool: fountain_pen`; historical `tool: pen` strokes retain the legacy renderer.
+## Automated Evidence
 
-Implemented:
-
-- strong pressure modulation,
-- Light Touch / Balanced / Expressive presets,
-- velocity influence,
-- start/end taper,
-- optional tilt/orientation variation,
-- deterministic replay,
-- incremental/replay parity,
-- O(1) hydration + rendering path.
-
-## Watercolor Brush V1
-
-Implementation: `shared/watercolor-brush-v1.js`.
-
-The visible **Highlighter** button now upgrades newly drawn strokes to persistent `tool: watercolor` semantics while historical `tool: highlighter` strokes retain the legacy flat-marker renderer.
-
-Implemented:
-
-- semi-transparent layered pigment,
-- broad low-alpha outer wash + denser inner pigment for a soft/feathered edge,
-- repeated passes and crossings naturally deepen through source-over compositing,
-- modest pressure-sensitive width,
-- slow movement deposits slightly more pigment than fast movement,
-- deterministic micro-variation for a less perfectly uniform digital edge,
-- persisted Watercolor preset/version/seed inside points JSON,
-- deterministic replay,
-- incremental finalized layer + replaceable live tail parity,
-- O(1) hydration and bounded per-point rendering,
-- no blur, diffusion, or full-canvas re-render on pointer move.
-
-### Automated Evidence
-
-GitHub Actions workflow: `Verify and Rebuild Generated Assets`.
-
-Current required suites:
+Long-term GitHub Actions verification includes:
 
 - `tests/verify-all.js`
 - `tests/verify-v2.js`
 - `tests/verify-fountain-v2.js`
 - `tests/verify-watercolor-v1.js`
+- `tests/verify-watercolor-v2.js`
 
-Watercolor-specific deterministic tests cover:
+Watercolor V2 regression coverage explicitly checks:
 
-- legacy Highlighter replay unchanged,
-- feathered multi-layer profile,
-- repeated-pass darkening,
-- pressure width modulation,
-- slow/fast pigment difference,
-- deterministic organic variation,
-- new Highlighter → Watercolor upgrade,
-- incremental dynamics hydration,
-- deterministic replay,
+- V1 persisted replay unchanged,
+- new Highlighter → V2 light-wash defaults,
+- low single-pass opacity/readability budget,
+- gradual repeat-pass accumulation,
+- lighter feather profile without dense center core,
+- removal of multi-mini-segment pigment buildup,
+- deterministic texture/replay,
 - incremental/replay parity,
 - O(1) 500-point active path,
-- exact two-button toolbar mapping.
+- no separate Watercolor toolbar button.
 
-## Single Next Action — Manual Wacom Brush Acceptance
+## Single Next Action — Manual Highlighter Retest
 
-On the Windows Wacom machine, pull latest `main`, reload the unpacked extension, then test both existing buttons.
+On the Windows Wacom machine:
 
-### Pen
+1. pull latest `main`,
+2. reload the unpacked Detective Map extension,
+3. select **Highlighter**,
+4. draw a fresh stroke (old V1 strokes intentionally remain visually unchanged),
+5. draw across readable text / an edge label,
+6. repeat over half once,
+7. cross the stroke once.
 
-Use the **Pen** button and confirm ordinary handwriting still feels attractive and low-latency.
+Acceptance:
 
-### Highlighter
+- one fresh pass must leave underlying text clearly readable,
+- one fresh pass should feel light/transparent rather than dense,
+- a second pass should deepen without becoming a solid block,
+- crossings should show local accumulation,
+- edges should feel softer than a conventional marker,
+- motion must remain low-latency,
+- the user should judge it materially closer to iPad Freeform Watercolor than V1.
 
-Use the **Highlighter** button and test:
-
-1. one single pass,
-2. paint over half of that pass again,
-3. cross two strokes of the same color,
-4. cross strokes of different colors if the current color control permits,
-5. draw over/behind Concept nodes and Edge areas,
-6. make fast sweeps and slow sweeps,
-7. scribble loops/figure-eights to expose gaps or destructive clearing.
-
-Acceptance questions:
-
-- Does one pass look translucent and soft rather than like a rigid fluorescent marker?
-- Does repeated painting visibly deepen the color?
-- Are crossings richer/darker?
-- Does the edge feel softly feathered/wet rather than hard?
-- Is Wacom latency still effectively imperceptible?
-- Most importantly: when compared with **iPad Freeform Watercolor**, does this feel like the same class of brush?
-
-Do not call Watercolor MANUAL PASS until the user performs this comparison.
-
-## Do Not Start Yet
-
-- no third Ink Wash brush,
-- no Obsidian / Excalidraw migration,
-- no iPad realtime POC,
-- no unrelated AI/provider refactor,
-- no production-map test ingestion into `ws_default`.
+If V2 is still too dense or too marker-like, tune **Highlighter only**. Do not create another brush.
