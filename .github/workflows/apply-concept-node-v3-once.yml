@@ -32,7 +32,7 @@ jobs:
         run: |
           git config user.name 'detective-map-ui-bot'
           git config user.email 'actions@users.noreply.github.com'
-          git add canvas.css PRD.md tests/verify-concept-nodes-v2.js PROJECT_STATE.md .ai-bridge/current-plan.md
+          git add canvas.css PRD.md tests/verify-concept-nodes-v2.js tests/verify-v2.js PROJECT_STATE.md .ai-bridge/current-plan.md
           git diff --cached --check
           git commit -m 'feat(ui): make Concept nodes compact and visually quiet'
           git push origin HEAD:main
