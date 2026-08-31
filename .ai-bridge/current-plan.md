@@ -1,12 +1,12 @@
 # Current Plan — Detective Map V2.0
 
 **Last updated:** 2026-08-31  
-**Single next priority:** **Manual Wacom retest of Highlighter = Watercolor V2 Light Wash**
+**Single next priority:** **Manual UI acceptance of independent Pen + Highlighter color selection**
 
 ## Read Before Work
 
 1. `PRD.md` — locked product requirements.
-2. `PROJECT_STATE.md` — current implementation/verification snapshot and accepted implementation exceptions.
+2. `PROJECT_STATE.md` — current implementation/verification snapshot.
 3. `AGENTS.md` — multi-agent engineering rules.
 4. Pull/fetch latest `main` and confirm remote HEAD before editing.
 
@@ -17,48 +17,42 @@ Pen         = Fountain Pen behavior
 Highlighter = Watercolor Brush behavior
 ```
 
-Do not add separate Fountain/Watercolor buttons. Do not add a third Ink Wash brush. Legacy generic Pen/Highlighter rendering exists only for historical-stroke compatibility.
+Do not add separate Fountain/Watercolor buttons. Do not add a third Ink Wash brush.
 
-## Human Evidence — Watercolor V1
+## Current Manual Brush Evidence
 
-**MANUAL FAIL ❌**
+### Watercolor V2
 
-User screenshot/feedback on Windows Wacom showed:
+**MANUAL PASS / ACCEPTED FOR THIS PHASE ✅**
 
-- the Highlighter rendered as a dense saturated orange block,
-- underlying map text was obscured,
-- the visual result felt like a thick marker rather than the light translucent Watercolor benchmark from iPad Freeform.
+The user judged the V2 Highlighter as substantially correct: "挺好的！很水墨了！我觉得差不多了". The remaining requested Highlighter issue is selectable color, not brush feel.
 
-Do not describe Watercolor V1 as successful simply because its automated suite passed.
+### Fountain Pen V2
 
-## Watercolor V2 Light Wash — Current Candidate
+**CODE / CI VERIFIED ✅** and acceptable enough for the current phase; the remaining requested Pen issue is selectable color.
 
-Implementation: `shared/watercolor-brush-v2.js`.
+## Independent Ink Color Selection — Current Candidate
+
+Implementation:
+
+`shared/ink-color-palette.js`
 
 **CODE / CI VERIFIED ✅**  
-**MANUAL RETEST REQUIRED ⏳**
+**MANUAL UI CONFIRMATION REQUIRED ⏳**
 
-V2 intentionally preserves persisted V1 watercolor strokes and applies the correction only to newly drawn Highlighter strokes.
+Locked behavior:
 
-Manual-failure corrections:
-
-- new Highlighter default opacity reduced from the legacy `0.35` path to `0.18`,
-- new default width reduced from `20` to `17`,
-- saturated orange default replaced by a lighter warm yellow,
-- five-layer V1 profile reduced to a three-layer light-wash profile,
-- dense center pigment removed,
-- a strict one-pass translucency/readability budget is regression-tested,
-- quadratic curves are painted once per translucent layer rather than split into many round-capped mini-segments,
-- repeated passes/crossings still deepen naturally through source-over compositing,
-- deterministic texture/replay and O(1) active rendering remain preserved.
-
-Historical Watercolor V1 strokes are delegated to the V1 renderer so their saved appearance does not silently change.
-
-## Fountain Pen V2
-
-**CODE / CI VERIFIED ✅**; real Wacom feel remains user-authoritative.
-
-Implementation: `shared/fountain-pen-v2.js`.
+- Pen and Highlighter have independent selected colors.
+- Existing toolbar remains exactly two ink tools.
+- Each tool receives a compact color dot/swatch; clicking it opens a small palette.
+- Pen and Highlighter have separate preset palettes.
+- A native custom color picker allows arbitrary color choice.
+- Changing Pen color never changes Highlighter color, and vice versa.
+- Selected colors are remembered per device/browser using `localStorage`.
+- New strokes persist the chosen actual color in the existing stroke `color` field.
+- Existing strokes are never recolored when the current preference changes.
+- Stroke colors remain correct across cloud reload/devices because color is persisted per stroke.
+- Cross-device synchronization of the *last selected preference* is not required in V2.0.
 
 ## Automated Evidence
 
@@ -69,40 +63,42 @@ Long-term GitHub Actions verification includes:
 - `tests/verify-fountain-v2.js`
 - `tests/verify-watercolor-v1.js`
 - `tests/verify-watercolor-v2.js`
+- `tests/verify-ink-colors.js`
 
-Watercolor V2 regression coverage explicitly checks:
+Ink-color coverage checks:
 
-- V1 persisted replay unchanged,
-- new Highlighter → V2 light-wash defaults,
-- low single-pass opacity/readability budget,
-- gradual repeat-pass accumulation,
-- lighter feather profile without dense center core,
-- removal of multi-mini-segment pigment buildup,
-- deterministic texture/replay,
-- incremental/replay parity,
-- O(1) 500-point active path,
-- no separate Watercolor toolbar button.
+- independent defaults,
+- semantic mapping (`fountain_pen` → Pen preference; `watercolor` → Highlighter preference),
+- independent color mutation,
+- independent local persistence,
+- custom hex normalization,
+- preset availability,
+- Canvas stroke creation uses selected color rather than hardcoded colors,
+- palette module loads before `canvas.js`,
+- no extra Watercolor/Ink Wash toolbar button is introduced.
 
-## Single Next Action — Manual Highlighter Retest
+## Single Next Action — Manual Color UI Test
 
 On the Windows Wacom machine:
 
 1. pull latest `main`,
 2. reload the unpacked Detective Map extension,
-3. select **Highlighter**,
-4. draw a fresh stroke (old V1 strokes intentionally remain visually unchanged),
-5. draw across readable text / an edge label,
-6. repeat over half once,
-7. cross the stroke once.
+3. find the small color dot on **Pen**,
+4. choose a noticeably different Pen color and draw a stroke,
+5. find the small color dot on **Highlighter**,
+6. choose a different Watercolor color and draw a stroke,
+7. switch back and forth and confirm the two tools keep independent colors,
+8. use **Custom** once to choose an arbitrary color,
+9. reload the extension and confirm the two device-local choices remain,
+10. confirm old strokes keep their original colors.
 
 Acceptance:
 
-- one fresh pass must leave underlying text clearly readable,
-- one fresh pass should feel light/transparent rather than dense,
-- a second pass should deepen without becoming a solid block,
-- crossings should show local accumulation,
-- edges should feel softer than a conventional marker,
-- motion must remain low-latency,
-- the user should judge it materially closer to iPad Freeform Watercolor than V1.
+- color choice is easy to discover and does not clutter the toolbar,
+- Pen and Highlighter colors are independent,
+- selected swatch immediately matches the new stroke color,
+- Highlighter preserves the Watercolor light-wash character for every selected pigment,
+- old strokes never change color,
+- no new lag or drawing regression is introduced.
 
-If V2 is still too dense or too marker-like, tune **Highlighter only**. Do not create another brush.
+If this passes, stop ink-tool iteration for this phase unless the user reopens it.
