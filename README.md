@@ -43,6 +43,16 @@ There is no separate Fountain button, no separate Watercolor button, and no thir
 
 Historical generic `tool: pen` / `tool: highlighter` strokes remain replay-compatible.
 
+### Independent Colors
+
+Each of the two ink tools now has its own compact color dot/palette:
+
+- Pen color and Highlighter color are independent.
+- Each tool has quick presets plus a custom color picker.
+- The last selected color is remembered per browser/device.
+- Changing the selected color only affects future strokes.
+- Every stroke persists its actual color, so saved/reloaded/cross-device stroke appearance remains stable.
+
 ### Pen Input
 
 The browser ink engine accepts Pointer Events from Wacom-class desktop pen tablets, Apple Pencil where supported, and mouse as a basic fallback.
@@ -51,7 +61,7 @@ The browser ink engine accepts Pointer Events from Wacom-class desktop pen table
 
 ### Pen → Fountain Pen V2
 
-✒ **CODE/CI VERIFIED; real Wacom feel remains user-authoritative.**
+✒ **CODE/CI VERIFIED; accepted enough for the current phase.**
 
 New active Pen strokes persist `tool: fountain_pen`; historical `tool: pen` strokes retain the legacy renderer.
 
@@ -65,26 +75,13 @@ Implemented behavior includes strong pressure modulation, Light Touch/Balanced/E
 
 The real Wacom screenshot showed a dense saturated orange block that obscured underlying map text. Automated tests did not make that visual result acceptable.
 
-#### Watercolor V2 Light Wash — current candidate
+#### Watercolor V2 Light Wash
 
-🖌 **CODE/CI VERIFIED; MANUAL RETEST REQUIRED.**
+🖌 **CODE/CI VERIFIED + MANUAL PASS / ACCEPTED FOR THIS PHASE ✅.**
 
-New active Highlighter strokes use the V2 light-wash renderer while persisted V1 watercolor strokes continue using V1 so historical appearance does not silently change.
+The user judged the V2 Highlighter as sufficiently watercolor-like; the remaining requested Highlighter issue moved to selectable color rather than brush feel.
 
-V2 corrections include:
-
-- opacity reduced from the legacy `0.35` path to `0.18`,
-- width reduced from `20` to `17`,
-- lighter warm-yellow default,
-- three translucent layers instead of five,
-- no dense center pigment core,
-- one quadratic path per translucent layer instead of many round-capped mini-segments,
-- strict one-pass readability/translucency regression budget,
-- gradual repeat/crossing accumulation,
-- deterministic replay,
-- O(1) active path.
-
-The human benchmark remains the same class of soft, translucent, layered Watercolor experience as iPad Freeform.
+V2 includes a light first pass, three translucent pigment layers, no dense center core, one-pass readability budget, gradual overlap accumulation, deterministic replay, and O(1) active rendering.
 
 ## Cloud Architecture
 
@@ -128,6 +125,7 @@ node tests/verify-v2.js
 node tests/verify-fountain-v2.js
 node tests/verify-watercolor-v1.js
 node tests/verify-watercolor-v2.js
+node tests/verify-ink-colors.js
 node tests/verify-cloud.js   # live isolated cloud fixtures when intentionally run
 ```
 
@@ -139,7 +137,7 @@ Verification language:
 - **BROWSER PASS** — real browser UX observed.
 - **MANUAL PASS/FAIL/REQUIRED** — physical/subjective device judgment.
 
-Automated tests never override human brush-feel evidence.
+Automated tests never override human brush/UI evidence.
 
 ## Multi-Computer / Multi-AI Safety
 
