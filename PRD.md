@@ -395,14 +395,14 @@ The existing ink foundation is device-agnostic. It must support any browser pen 
 - **Palm & Gesture Separation**: On touch devices, touch is reserved for navigation; palm touch while pen input is active cannot interrupt the pen stroke.
 - **Local-First Input**: Pen rendering must never wait for cloud/network persistence before showing the stroke locally.
 
-## 6.10 Brush Engine V2 — Fountain Pen + Watercolor Brush — Locked
+## 6.10 Brush Engine V2 — Fountain Pen + Transparent Marker — Locked
 
-The product must move beyond generic line drawing toward **beautiful, expressive handwriting and annotation**. The two priority brushes are locked as:
+The product must move beyond generic line drawing toward **beautiful, expressive handwriting and annotation**. The two primary ink behaviors are locked as:
 
 1. **Fountain Pen** — the primary handwriting brush.
-2. **Watercolor Brush** — the primary expressive highlighting / emphasis brush.
+2. **Transparent Marker** — the primary highlighting / emphasis brush.
 
-These are not cosmetic themes. Each brush has distinct input semantics, rendering behavior, persistence requirements, and manual acceptance criteria.
+Watercolor V1/V2 remain historical replay formats only; they are not the current Highlighter product behavior. These are not cosmetic themes. Each current brush has distinct rendering behavior, persistence requirements, and manual acceptance criteria.
 
 ### 6.10.1 Fountain Pen — Primary Handwriting Brush
 
@@ -433,38 +433,37 @@ supported tilt  → directional nib / calligraphic variation
 
 The target is **beautiful everyday handwriting and English/calligraphy-like stroke character**, not merely a round pen whose radius changes.
 
-### 6.10.2 Watercolor Brush — Primary Expressive Highlight Brush
+### 6.10.2 Transparent Marker — Primary Highlight Brush
 
-The Watercolor Brush should feel soft, translucent, layered, airy, and slightly wet rather than like a rigid fluorescent marker. Its visual benchmark is the same *class* of elegant watercolor wash seen in iPad Freeform: cloud-like pigment, soft blooms, gentle internal variation, and transparent color that emphasizes without destroying the map underneath.
+The Transparent Marker is optimized for a **knowledge-work concept map**, where emphasis must never compete with the information being emphasized. It should feel like a clean, premium translucent chisel/marker highlighter rather than paint or watercolor.
 
-**Hard product rule — Structure-Preserving Wash:** a normal single pass over text, a Concept, or an Edge must keep the underlying information clearly readable. If one ordinary pass obscures or materially reduces readability, the brush fails regardless of how attractive the pigment looks.
+**Hard product rule — Readability First:** one normal pass over text, a Concept label, an Edge label, or structural lines must keep the underlying information clearly readable. If the highlight materially blocks reading, it fails regardless of visual attractiveness.
 
 Required behavior:
 
-- **Very Light First Pass**: A normal first pass is intentionally light and translucent; it adds emphasis without covering the underlying map.
-- **Readability Is Non-Negotiable**: Text, Concept labels, relationship labels, and structural lines remain clearly readable through one normal pass.
-- **Airy Pigment, Not a Solid Core**: Avoid a dense opaque center stripe or marker-like body. Pigment density may vary gently across the stroke so the wash feels cloud-like rather than uniformly filled.
-- **Soft / Feathered / Blooming Edge**: Brush edges should fade softly with subtle bloom/feather character; avoid hard rectangular or hard circular marker boundaries.
-- **Layer Accumulation**: Painting over the same area multiple times must visibly deepen color in a gradual way. Depth should emerge from repeated painting, not from an already-heavy first pass.
-- **Natural Overlap Darkening**: Crossings between watercolor strokes should become richer/darker at the overlap instead of visually replacing one another.
-- **Color Interaction**: Different watercolor colors should overlap into a soft mixed/deeper region using deterministic compositing; exact physical-fluid pigment simulation is not required.
-- **Gentle Internal Variation**: Subtle uneven pigment density may create a wet/cloudy appearance, but variation must remain elegant rather than noisy, speckled, or dirty.
-- **Soft Default Palette Behavior**: Default Watercolor colors should avoid excessively saturated, paint-like blocks. Perceived output should remain light enough for annotation over content.
-- **Stable Local Preview**: The active brush preview must remain responsive. Expensive post-processing may happen after pointer-up only if the visible result does not jump dramatically.
-- **Performance Guardrail**: Do not implement full-canvas blur/diffusion or whole-stroke re-rendering on every pointer move. Watercolor quality may degrade gracefully before sacrificing input responsiveness.
+- **Light Uniform First Pass**: A first pass adds a clear band of emphasis without a dense center or paint-like buildup.
+- **Transparent Marker Body**: The interior should be comparatively even and controlled rather than cloud-like, grainy, or wet.
+- **Subtle Soft Shoulder**: A faint softer outer edge is allowed so the marker does not look digitally harsh, but the edge must stay tighter and more precise than Watercolor.
+- **Flat / Chisel-Like Character**: End caps and overall silhouette should read as marker/highlighter-like rather than circular paint blobs.
+- **Stable Width**: Pressure may change width only subtly. Highlighter width must remain predictable when targeting compact Concept labels and Edge labels.
+- **Gradual Overlap Darkening**: Repeated passes and crossings deepen naturally through normal compositing; a single pass must remain light.
+- **Independent Color Choice**: Any selected Highlighter pigment must preserve the same transparency/readability behavior.
+- **Dark-Canvas Legibility**: Preset pigments should remain visible on the dark map without requiring high opacity.
+- **Stable Local Preview**: Active drawing must remain low-latency and visually consistent with persisted replay.
+- **Performance Guardrail**: No full-canvas blur/diffusion, pigment simulation, or whole-stroke replay per pointer move.
 
 Visual target:
 
 ```text
-one pass        → airy, pale, transparent wash; underlying text remains clearly readable
-inside stroke   → gentle cloud-like pigment variation; no dense opaque center
-second pass     → visibly but gradually deeper color
-stroke crossing → locally richer/darker overlap
-edge            → soft feather/bloom, never marker-hard
-color impression→ elegant translucent pigment, not a saturated paint block
+one pass        → clean translucent highlight; underlying content remains clearly readable
+inside stroke   → mostly even controlled color, no cloud/paint core
+second pass     → gradually deeper emphasis
+stroke crossing → locally darker but still readable
+edge            → slightly softened, tighter than Watercolor
+end             → flat/chisel-like marker character
 ```
 
-A successful Watercolor stroke should look like **transparent pigment suspended over the map**, not colored paint covering the map.
+A successful Transparent Marker should look like **a transparent emphasis layer placed over the map**, not paint applied onto the map. Watercolor V1/V2 remain backward-compatible historical renderers only.
 
 ### 6.10.3 Brush Palette & Interaction Model — Two-Button Mapping Locked
 
@@ -472,7 +471,7 @@ The primary toolbar keeps the existing **two ink buttons only**. Product names i
 
 ```text
 ✒ Pen         → Fountain Pen engine
-🖌 Highlighter → Watercolor Brush engine
+🖍 Highlighter → Transparent Marker engine
 🧽 Eraser
 ↩ Undo
 ```
@@ -480,18 +479,18 @@ The primary toolbar keeps the existing **two ink buttons only**. Product names i
 Locked rules:
 
 - The visible **Pen** button is the product entry point for the Fountain Pen handwriting experience described in §6.10.1.
-- The visible **Highlighter** button is the product entry point for the Watercolor Brush highlighting experience described in §6.10.2.
-- Do **not** add separate Fountain Pen and Watercolor Brush buttons beside Pen/Highlighter in the primary toolbar.
-- Do **not** add a third "Ink Wash" / Chinese-ink brush to solve the highlighting requirement; Watercolor is the intended expressive highlight behavior.
-- Historical generic `tool: pen` and flat `tool: highlighter` strokes remain supported for backward-compatible replay, but legacy utility rendering does not require a separate primary toolbar button.
-- New Pen strokes must persist Fountain semantics; new Highlighter strokes must persist versioned Watercolor semantics. Historical failed/tuned brush versions remain replay-compatible without redefining the current default brush.
+- The visible **Highlighter** button is the product entry point for the Transparent Marker highlighting experience described in §6.10.2.
+- Do **not** add separate Fountain Pen / Transparent Marker buttons beside Pen/Highlighter in the primary toolbar.
+- Do **not** add a third Watercolor / Ink Wash brush to solve the highlighting requirement unless the user explicitly reopens the product decision.
+- Historical generic `tool: pen`, flat `tool: highlighter`, and Watercolor V1/V2 strokes remain supported for backward-compatible replay; legacy rendering does not require a separate primary toolbar button.
+- New Pen strokes must persist Fountain semantics; new Highlighter strokes must persist versioned Transparent Marker semantics. Historical Watercolor versions remain replay-compatible without redefining the current default Highlighter.
 - **Independent Color Selection**: Pen and Highlighter each own an independent selected color. Changing Pen color must never silently change Highlighter color, and vice versa.
 - **Low-Friction Color UI**: Color selection must not add another primary brush/tool button. Each of the two existing ink tools may expose a compact color dot/swatch that opens a small palette.
 - **Presets + Custom Color**: Each tool should offer a small useful preset palette plus a custom color picker; selecting a color applies to future strokes only.
 - **Historical Stroke Stability**: Changing the selected color must never recolor existing strokes. Every stroke persists its actual chosen color as part of stroke data and replays identically across devices.
 - **Preference Scope**: The last selected Pen and Highlighter colors may be remembered per device/browser for low-friction reuse. Cross-device preference synchronization is not required for V2.0; synchronized stroke color fidelity is required.
 
-This two-button mapping is a low-friction product rule: **Pen = beautiful writing; Highlighter = watercolor emphasis.**
+This two-button mapping is a low-friction product rule: **Pen = beautiful writing; Highlighter = transparent readable emphasis.**
 
 ### 6.10.4 Persistent Brush Semantics & Backward Compatibility
 
@@ -501,7 +500,7 @@ New Ink Strokes should support additive metadata such as:
 
 ```js
 {
-  brushType: 'fountain_pen' | 'watercolor' | 'pen' | 'highlighter',
+  brushType: 'fountain_pen' | 'transparent_marker' | 'watercolor' | 'pen' | 'highlighter',
   brushVersion: 1,
   brushParams: { ... },
   seed: optionalDeterministicSeed,
@@ -527,7 +526,7 @@ Rules:
 - Missing timestamps disable/reduce velocity effects rather than corrupting the stroke.
 - Missing tilt data disables tilt-specific nib behavior without changing stroke identity.
 - Persist `brushVersion` and brush parameters required for deterministic replay so changing future default brush settings does not silently change historical handwriting.
-- Watercolor randomness/texture, if used, must be deterministic from persisted data/seed so reloading does not visibly redraw a different stroke.
+- Historical Watercolor randomness/texture must remain deterministic from persisted data/seed; current Transparent Marker rendering should avoid stochastic texture entirely unless a future requirement explicitly introduces it.
 
 ### 6.10.5 Rendering Priority Order
 
@@ -574,38 +573,40 @@ Acceptance:
 - tilt affects nib character when supported,
 - the user judges the writing materially more attractive than the current generic Pen.
 
-### 6.10.7 Manual Acceptance — Watercolor Brush
+### 6.10.7 Manual Acceptance — Transparent Marker
 
 Manual test fixture:
 
-1. Paint one horizontal wash once.
-2. Paint over half of it a second time.
-3. Cross it with a vertical wash of the same color.
-4. Cross it with a second color.
-5. Highlight across Concept nodes and edge labels.
+1. Highlight directly across a Concept title once.
+2. Highlight directly across an Edge label once.
+3. Paint over half of the first highlight a second time.
+4. Cross it once with the same color.
+5. Repeat with at least two different selected colors.
+6. Draw short marks on compact UI targets and one longer freehand highlight.
 
 Acceptance — all must pass:
-- **Hard gate:** one normal pass directly over text/Concept labels/Edge labels leaves the underlying information clearly readable; if readability is obscured, Watercolor fails immediately,
-- the first pass feels light/airy rather than dense or paint-like,
-- there is no obvious opaque center blob or solid-marker core,
-- repeated painting visibly and gradually deepens the color,
-- crossings visibly darken/richen,
-- different colors create a soft natural overlap region,
-- edges are visibly soft/feathered/bloomed rather than classic Highlighter-hard,
-- pigment shows subtle elegant internal variation rather than a perfectly uniform digital fill,
-- active brush motion remains fluid enough for normal annotation,
-- when judged beside iPad Freeform Watercolor, the user considers it the same **class of light, elegant, wet watercolor wash**, even though exact proprietary rendering is not required.
+- **Hard gate:** one normal pass leaves underlying text / Concept / Edge information clearly readable,
+- first pass looks like a clean translucent marker rather than watercolor, paint, or a dense fluorescent block,
+- interior pigment is comparatively uniform and controlled,
+- edge is slightly softened but does not bloom/cloud outward,
+- repeated passes deepen gradually,
+- crossings darken locally without becoming opaque,
+- marker width remains predictable under light vs firm pressure,
+- endpoints read flatter / more marker-like than the Watercolor blob silhouette,
+- every selected pigment preserves readability,
+- active motion remains low-latency,
+- historical Watercolor strokes retain their original saved appearance after the new Marker becomes default.
 
-### 6.10.8 Explicit Non-Goal for Brush Fidelity
+### 6.10.8 Explicit Non-Goals for Transparent Marker
 
-The target is **functionally and aesthetically similar brush behavior**, not a pixel-for-pixel clone of any proprietary native app brush engine.
-
-V2 Brush Engine does **not** require:
-- physically accurate fluid dynamics,
-- paper-fiber simulation,
-- pigment granulation physics,
-- exact reproduction of a specific proprietary brush,
+Transparent Marker does **not** require:
+- watercolor blooms, cloud-like pigment, wet edges, or paper-fiber simulation,
+- physically accurate pigment mixing,
+- stochastic texture/granulation,
+- exact reproduction of a proprietary marker brush,
 - GPU-heavy effects that compromise interaction latency.
+
+The product goal is a **clean, readable, attractive highlighting instrument for a concept map**, not a painting brush.
 
 ---
 
