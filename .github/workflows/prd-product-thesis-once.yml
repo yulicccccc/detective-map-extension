@@ -2,14 +2,14 @@ name: One-time PRD Product Thesis Update
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
 
 permissions:
   contents: write
 
 jobs:
   update-prd:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout main
@@ -17,9 +17,9 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Update PRD positioning and Concept node principle
-        shell: python
+      - name: Update PRD
         run: |
+          python - <<'PY'
           from pathlib import Path
 
           p = Path('PRD.md')
@@ -28,7 +28,7 @@ jobs:
           def replace_once(old, new, label):
               global text
               if old not in text:
-                  raise SystemExit(f'Missing expected PRD anchor: {label}')
+                  raise SystemExit('Missing expected PRD anchor: ' + label)
               text = text.replace(old, new, 1)
 
           replace_once(
@@ -83,21 +83,24 @@ AI 帮你长出知识地图。
               "## 6.7 Concept Node Dragging & Edge Label Readability",
               '6.7 heading'
           )
+
           replace_once(
               "- **Dedicated Grab Handle**: Every concept card features a dedicated `.concept-drag-handle` (`⋮⋮`) with `cursor: grab` / `cursor: grabbing` to ensure reliable repositioning on the spatial canvas.",
               "- **Dedicated Grab Handle**: Every concept node features a dedicated `.concept-drag-handle` (`⋮⋮`) with `cursor: grab` / `cursor: grabbing` to ensure reliable repositioning on the spatial canvas.",
               'concept node drag wording'
           )
+
           replace_once(
               "Card / Node = Concept identity in the graph\nDrawer      = Concept knowledge and evidence",
               "Node   = Concept identity in the graph\nDrawer = Concept knowledge and evidence",
               'node drawer principle'
           )
 
-          anchor = """The majority of canvas real estate must remain dedicated to **Concepts + Relationships + learner annotations**.
+          replace_once(
+              """The majority of canvas real estate must remain dedicated to **Concepts + Relationships + learner annotations**.
 
-## 6.9 Ink Engine Foundation V1 — Low-Latency, Pressure-Aware, Replay-Safe"""
-          insertion = """The majority of canvas real estate must remain dedicated to **Concepts + Relationships + learner annotations**.
+## 6.9 Ink Engine Foundation V1 — Low-Latency, Pressure-Aware, Replay-Safe""",
+              """The majority of canvas real estate must remain dedicated to **Concepts + Relationships + learner annotations**.
 
 ### 6.8.8 Concept Should Look Like a Node, Not a Card — Locked
 
@@ -124,14 +127,16 @@ Detail        → Drawer, not a larger card
 
 The goal is for the default canvas to read immediately as a **Concept Map / relationship network**, while retaining the flexibility needed for real-world concept names.
 
-## 6.9 Ink Engine Foundation V1 — Low-Latency, Pressure-Aware, Replay-Safe"""
-          replace_once(anchor, insertion, 'concept node visual principle')
+## 6.9 Ink Engine Foundation V1 — Low-Latency, Pressure-Aware, Replay-Safe""",
+              'concept node visual principle'
+          )
 
           replace_once(
               "│   ├── Watercolor Brush highlighting/emphasis",
               "│   ├── Transparent Marker highlighting/emphasis",
               'visual layer highlighter'
           )
+
           replace_once(
               "🖌 Highlighter = Watercolor Brush behavior",
               "🖌 Highlighter = Transparent Marker behavior",
@@ -139,8 +144,9 @@ The goal is for the default canvas to read immediately as a **Concept Map / rela
           )
 
           p.write_text(text, encoding='utf-8')
+          PY
 
-      - name: Commit PRD and remove one-time workflow
+      - name: Commit PRD and self-clean workflow
         run: |
           git config user.name 'detective-map-prd-bot'
           git config user.email 'actions@users.noreply.github.com'
