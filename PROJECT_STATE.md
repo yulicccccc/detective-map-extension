@@ -3,7 +3,7 @@
 **Last reconciled:** 2026-08-31  
 **Product:** Living Learning Map  
 **Production:** `https://detectivemap.qchen9108.workers.dev`  
-**Status:** 🟢 Core Living Map stable; Structure-First UI browser-verified; Pen/Highlighter expressive brushes accepted for this phase; independent color selection is CODE/CI VERIFIED and awaiting manual UI confirmation.
+**Status:** 🟢 Core Living Map stable; Structure-First UI browser-verified; Fountain Pen + independent color selection accepted for this phase; Transparent Marker V1 is CODE/CI VERIFIED and awaits manual Wacom acceptance as the new Highlighter.
 
 > `PRD.md` = product requirements.  
 > `PROJECT_STATE.md` = current implementation/evidence.  
@@ -30,8 +30,6 @@ Durable Object + SQLite
           └─ Workers AI
 ```
 
-Device direction:
-
 - Windows Chrome + Wacom is the immediate structural + handwriting workflow.
 - Mac Chrome shares the same cloud Workspace.
 - iPad is optional; it is not required for handwriting.
@@ -54,36 +52,28 @@ Device direction:
 
 ### Concept Boundary / Grounding
 
-Current AI policy includes:
-
-1. Explicit Source Subject Preservation.
-2. Positive identity evidence + contrastive identity check.
-3. Attachment vs independent Concept boundary.
-4. Source-Grounded Edge policy: current Source is evidence authority; existing map is interpretation context only.
-5. Proposal summary consistency.
+Current AI policy includes Explicit Source Subject Preservation, positive identity evidence + contrastive identity check, attachment-vs-independent-Concept boundary, Source-Grounded Edge policy, and proposal-summary consistency.
 
 ### Accepted Pairing Exception
 
-The current product intentionally retains one permanent convenience auto-pair mechanism as an accepted usability/security tradeoff.
-
-Agents must not expose its concrete credential or use it as justification for adding additional hardcoded secrets.
+The current product intentionally retains one permanent convenience auto-pair mechanism as an accepted usability/security tradeoff. Agents must not expose its concrete credential or use it as justification for additional hardcoded secrets.
 
 ### Two-Button Ink Mapping — Locked
 
 ```text
 Pen         = Fountain Pen behavior
-Highlighter = Watercolor Brush behavior
+Highlighter = Transparent Marker behavior
 ```
 
 Rules:
 
-- no separate Fountain/Watercolor toolbar buttons,
-- no third Ink Wash brush,
-- historical generic `tool: pen` and `tool: highlighter` replay remain compatible,
+- no separate Fountain / Marker toolbar buttons,
+- no third Watercolor / Ink Wash brush unless the user explicitly reopens that decision,
+- historical generic Pen/Highlighter and Watercolor V1/V2 replay remain compatible,
 - new Pen strokes persist Fountain semantics,
-- new Highlighter strokes persist Watercolor semantics,
-- Pen and Highlighter have independent selected colors,
-- changing a selected color only affects future strokes; historical stroke colors never change.
+- new Highlighter strokes persist `transparent_marker` semantics,
+- Pen and Highlighter keep independent selected colors,
+- changing selected color affects future strokes only; historical stroke colors never change.
 
 ---
 
@@ -95,7 +85,6 @@ Rules:
 - Concept identity + relationships dominate the default map.
 - Descriptions hidden by default.
 - Complete labels; no ellipsis/line-clamp truncation.
-- Long labels wrap naturally.
 - Quick Expand is temporary view state.
 - Full description/sources/evidence belong in Detail Drawer.
 - Spatial coordinates remain stable while inspecting details.
@@ -111,10 +100,7 @@ Rules:
 - Pointer Events pen input.
 - Coalesced events when available.
 - Pressure capture with fallback.
-- Tri-layer active rendering:
-  - `inkCanvas` = committed strokes,
-  - `activeStrokeCanvas` = finalized active segments,
-  - `scratchCanvas` = replaceable live tail.
+- Tri-layer active rendering: committed ink / finalized active segments / replaceable live tail.
 - Local-first rendering; cloud persistence never blocks visible input.
 - Incremental rendering avoids full historical-stroke replay per pointer move.
 - Palm/touch separation remains preserved.
@@ -129,128 +115,108 @@ Historical manual evidence:
 
 ## 5. Pen = Fountain Pen V2
 
-Implementation:
-
-`shared/fountain-pen-v2.js`
+Implementation: `shared/fountain-pen-v2.js`
 
 **CODE VERIFIED ✅**  
 **CI VERIFIED ✅**  
-**CURRENT PHASE: ACCEPTABLE; remaining user-requested Pen issue is color choice ✅**
+**CURRENT PHASE: ACCEPTABLE ✅**
 
-Implemented:
+Includes strong pressure modulation, Light Touch/Balanced/Expressive presets, velocity influence, start/end taper, optional tilt/orientation variation, deterministic replay, incremental/replay parity, O(1) hydration/rendering, and unchanged historical generic-Pen replay.
 
-- strong pressure modulation,
-- Light Touch / Balanced / Expressive presets,
-- velocity influence,
-- start/end taper,
-- optional tilt/orientation variation,
-- deterministic replay,
-- incremental/replay parity,
-- O(1) hydration + rendering path,
-- historical `tool: pen` replay unchanged.
-
-Automated suite:
-
-`tests/verify-fountain-v2.js`
+Automated suite: `tests/verify-fountain-v2.js`.
 
 ---
 
-## 6. Highlighter = Watercolor
+## 6. Highlighter History and Current Direction
 
 ### Watercolor V1
-
-Implementation:
 
 `shared/watercolor-brush-v1.js`
 
 **CODE / CI VERIFIED ✅**  
 **MANUAL FAIL ❌**
 
-The real Wacom screenshot showed V1 as a dense saturated orange block that obscured underlying map text. Do not use V1 as the successful visual baseline.
+V1 was too dense and obscured map information.
 
 ### Watercolor V2 Light Wash
 
-Implementation:
-
 `shared/watercolor-brush-v2.js`
+
+**CODE / CI VERIFIED ✅**  
+**MANUAL PASS as a watercolor effect ✅**  
+**PRODUCT DIRECTION RETIRED ⚪**
+
+The user later judged the watercolor look aesthetically acceptable but still too visually blocking for Detective Map's knowledge-work highlighting role. Watercolor V1/V2 therefore remain historical replay formats only; they are no longer the default Highlighter product behavior.
+
+### Transparent Marker V1 — Current Highlighter Candidate
+
+Implementation: `shared/transparent-marker-v1.js`
 
 **CODE VERIFIED ✅**  
 **CI VERIFIED ✅**  
-**MANUAL PASS / ACCEPTED FOR THIS PHASE ✅**
+**MANUAL WACOM ACCEPTANCE REQUIRED ⏳**
 
-User feedback after the V2 retest: the result was described as "挺好的！很水墨了！我觉得差不多了", and the remaining requested Highlighter issue became selectable color rather than brush feel.
+Product rationale: highlighting should emphasize Concept/Edge/text information without competing with or covering it.
 
-V2 corrections include:
+Implemented behavior:
 
-- low-opacity first pass,
-- lighter default width/color,
-- three translucent layers,
-- no dense center core,
-- one-pass readability budget,
-- continuous quadratic wash instead of round-capped mini-segment buildup,
-- gradual overlap accumulation,
-- deterministic micro-variation/replay,
-- O(1) active hydration/rendering.
+- clean translucent marker body,
+- intentionally low one-pass opacity/readability budget,
+- two deterministic layers only: faint soft shoulder + controlled body,
+- no watercolor cloud/bloom/texture,
+- flat `butt` line caps for a more marker/chisel-like silhouette,
+- stable width with only subtle pressure response,
+- repeated passes/crossings deepen gradually through `source-over`,
+- selected Highlighter color is preserved,
+- deterministic replay,
+- incremental active rendering remains O(1),
+- Watercolor V1/V2 histories delegate to their previous renderers unchanged.
 
-Persisted V1 strokes continue to use the V1 renderer; V2 only governs new V2 Watercolor strokes.
+New Highlighter strokes upgrade from `tool: highlighter` to:
 
-Automated suite:
+```text
+tool: transparent_marker
+brushType: transparent_marker
+brushVersion: 1
+```
 
-`tests/verify-watercolor-v2.js`
+Automated suite: `tests/verify-transparent-marker-v1.js`.
 
 ---
 
 ## 7. Independent Ink Color Selection
 
-Implementation:
-
-`shared/ink-color-palette.js`
+Implementation: `shared/ink-color-palette.js`
 
 **CODE VERIFIED ✅**  
 **CI VERIFIED ✅**  
-**MANUAL UI CONFIRMATION REQUIRED ⏳**
-
-Behavior:
+**MANUAL PASS for core independent-color behavior ✅**
 
 - Pen and Highlighter maintain separate selected colors.
-- Each existing tool button receives a compact color dot; no new brush/tool button is added.
-- Clicking the color dot opens a small preset palette plus native custom color picker.
-- Pen presets are optimized for writing on the dark canvas.
-- Highlighter presets use softer watercolor-friendly pigments.
-- The last selected Pen and Highlighter colors are remembered independently in device/browser `localStorage`.
-- New strokes read the selected color at stroke start and persist that actual color in stroke data.
-- Existing strokes are never recolored by changing the current preference.
-- Cross-device preference syncing is not required; cross-device stroke color fidelity is required and already supported by persisted stroke `color`.
+- Each existing tool button has a compact color dot and palette/custom picker.
+- Last selected colors are remembered independently in device/browser `localStorage`.
+- New strokes persist their chosen actual color.
+- Existing strokes are never recolored.
+- `transparent_marker`, historical `watercolor`, and `highlighter` semantics all map to the Highlighter color preference.
+- Cross-device preference syncing is not required; cross-device stroke color fidelity is required.
 
-Automated suite:
-
-`tests/verify-ink-colors.js`
-
-Coverage includes independent defaults, semantic tool mapping, independent mutation/persistence, custom hex normalization, palette availability, Canvas integration, module load order, and preservation of the locked two-button toolbar.
+Automated suite: `tests/verify-ink-colors.js`.
 
 ---
 
-## 8. Ink Persistence Compatibility
+## 8. Persistence Compatibility
 
-Legacy points remain valid:
+The server already stores `tool`, width, opacity, color, and full points JSON, so Transparent Marker requires no Durable Object table migration.
 
-```js
-{x, y, pressure}
-```
-
-Expressive-brush points may additionally contain timing, tilt/orientation, and persisted brush metadata including Fountain/Watercolor preset/version/seed data.
-
-The server stores `tool`, width, opacity, color, and full points JSON. Historical strokes must not change because brush defaults or currently selected colors change.
+Historical stroke versions remain versioned and stable. Old Watercolor strokes must keep their original appearance even though Transparent Marker becomes the new default Highlighter.
 
 ---
 
 ## 9. Build / CI Discipline
 
-Long-term workflow:
+Long-term workflow: `.github/workflows/verify-generated-assets.yml`
 
-`.github/workflows/verify-generated-assets.yml`
-
-Required suites:
+Required suites include:
 
 ```text
 node tests/verify-all.js
@@ -258,17 +224,11 @@ node tests/verify-v2.js
 node tests/verify-fountain-v2.js
 node tests/verify-watercolor-v1.js
 node tests/verify-watercolor-v2.js
+node tests/verify-transparent-marker-v1.js
 node tests/verify-ink-colors.js
 ```
 
-Generated assets are rebuilt from source:
-
-```text
-node scripts/bundle-assets.js
-node scripts/build-public.js
-```
-
-`public/` is a clean generated directory. Legacy PeerJS/LAN runtime remains removed from current V2 production source.
+`public/` is a clean generated directory. `src/assets-bundle.js` is rebuilt from the same source tree. Temporary PRD reconciliation tooling has been removed.
 
 Verification labels:
 
@@ -276,38 +236,37 @@ Verification labels:
 - **CI VERIFIED** — independent GitHub runner executed required suites.
 - **CLOUD VERIFIED** — live isolated cloud fixture/API evidence.
 - **BROWSER PASS** — actual browser UX observed.
-- **MANUAL FAIL/PASS** — real human/device judgment.
-
-Automated success never overrides manual brush/UI evidence.
+- **MANUAL FAIL/PASS/REQUIRED** — real human/device judgment.
 
 ---
 
 ## 10. Multi-Computer / Multi-AI Handoff
 
-Before work:
-
-1. fetch/pull latest `main`,
-2. confirm remote HEAD,
-3. read `PRD.md`,
-4. read this file,
-5. read `.ai-bridge/current-plan.md`,
-6. confirm another agent has not already completed the task.
-
-Do not overwrite newer remote work from a stale clone.
+Before work: fetch/pull latest `main`, confirm remote HEAD, then read `PRD.md`, this file, `.ai-bridge/current-plan.md`, and `AGENTS.md`. Do not overwrite newer remote work from a stale clone.
 
 ---
 
 ## 11. Single Next Action
 
-**Manual UI confirmation of independent Pen and Highlighter color selection.**
+**Manual Wacom acceptance of a fresh Highlighter = Transparent Marker stroke.**
 
 After pulling/reloading:
 
-1. choose a Pen color and draw a new Pen stroke,
-2. choose a different Highlighter color and draw a new Watercolor stroke,
-3. verify each tool remembers its own color,
-4. verify switching one tool's color does not change the other,
-5. reload and confirm both device-local preferences remain,
-6. confirm older strokes retain their original colors.
+1. choose a visible Highlighter color,
+2. draw one fresh highlight directly over a Concept title / Edge label,
+3. repeat over half once,
+4. cross it once,
+5. try a second color,
+6. compare readability and precision against the retired Watercolor behavior.
 
-If these pass, the current two-brush ink experience is complete enough for this phase.
+Acceptance:
+
+- one pass leaves underlying information clearly readable,
+- stroke looks clean and marker-like rather than cloudy/wet,
+- fill is mostly uniform and controlled,
+- edge is only subtly softened,
+- second pass deepens gradually,
+- width remains predictable,
+- endpoints feel flatter/more chisel-like,
+- no perceptible new lag,
+- old Watercolor strokes remain unchanged.
