@@ -3,7 +3,7 @@
 **Last reconciled:** 2026-08-31  
 **Product:** Living Learning Map  
 **Production:** `https://detectivemap.qchen9108.workers.dev`  
-**Status:** 🟢 Core Living Map stable; Structure-First UI browser-verified; Fountain Pen + independent color selection accepted for this phase; Transparent Marker V1 is CODE/CI VERIFIED and awaits manual Wacom acceptance as the new Highlighter.
+**Status:** 🟢 Core Living Map stable; Structure-First interaction model browser-verified; Concept Node V3 compact visual refinement implemented and awaiting browser acceptance; Fountain Pen V3 and Transparent Marker retain separate manual device checks.
 
 > `PRD.md` = product requirements.  
 > `PROJECT_STATE.md` = current implementation/evidence.  
@@ -90,6 +90,7 @@ Rules:
 - Spatial coordinates remain stable while inspecting details.
 - Edge labels retain readable halo.
 - Operational errors use compact toast/status UI.
+- Current visual refinement: collapsed Concepts use a compact, quiet oval/capsule footprint (about 76–190px) with earlier wrapping, reduced border/shadow weight, and a more subordinate Source badge so relationships and handwriting dominate the canvas.
 
 ---
 
@@ -257,7 +258,7 @@ Before work: fetch/pull latest `main`, confirm remote HEAD, then read `PRD.md`, 
 
 ## 11. Single Next Action
 
-**Manual Wacom acceptance of a fresh Highlighter = Transparent Marker stroke.**
+**Manual browser acceptance of Concept Node V3 compact visual refinement on a real map.**
 
 After pulling/reloading:
 

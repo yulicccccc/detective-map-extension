@@ -340,7 +340,7 @@ Rules:
 - node width must be content-adaptive rather than using a card-oriented fixed minimum,
 - short labels should be allowed to remain compact enough to read visually as an oval / near-circle,
 - longer titles wrap naturally when necessary and expand into a wider capsule/soft oval,
-- approximate sizing direction: compact floor around `88–120px` when controls/badges permit, adaptive preferred width, and approximately `260px` maximum unless later usability testing changes these values,
+- browser-tested compact sizing direction: resting nodes should generally remain around `76–190px` overall width, with a title text measure around `140–160px`; longer labels should wrap earlier instead of preserving a button-like single line,
 - title wrapping changes node height but must not hide part of the label.
 
 ### 6.8.3 Quick Expand = Temporary Summary View
@@ -427,6 +427,8 @@ Visual direction:
 - label readability always outranks geometric purity; never truncate or compress semantic identity merely to preserve a circle,
 - descriptions and evidence remain outside the collapsed node through Quick Expand and the Detail Drawer,
 - source/evidence badges stay compact and subordinate to the Concept label,
+- avoid elongated, button-like pills: common multi-word Concepts may wrap to two lines when that keeps the graph footprint compact,
+- resting node chrome stays visually quiet: border and shadow should be subtler than the Concept label, Relationship semantics, and learner handwriting,
 - selection/focus may strengthen the node outline and connected relationships without mutating stored layout,
 - drag/edit affordances should remain available but should not visually dominate the Concept in its resting state.
 

@@ -26,8 +26,8 @@ test('1. Collapsed Concept uses a soft pill/oval silhouette', () => {
   const block = css.match(/\.concept-node \{([\s\S]*?)\n\}/);
   assert(block, 'Missing .concept-node rule');
   assert(/border-radius:\s*999px/.test(block[1]), 'Collapsed node must use pill/oval radius');
-  assert(/min-width:\s*92px/.test(block[1]), 'Short concepts must be allowed to stay compact');
-  assert(/max-width:\s*260px/.test(block[1]), 'Long concept width guard must remain bounded');
+  assert(/min-width:\s*76px/.test(block[1]), 'Short concepts must be allowed to stay visually compact');
+  assert(/max-width:\s*190px/.test(block[1]), 'Collapsed nodes must avoid button-like horizontal growth');
   assert(/width:\s*max-content/.test(block[1]), 'Node width must remain content-adaptive');
 });
 
@@ -36,7 +36,7 @@ test('2. Header no longer creates a card-like rectangular band', () => {
   assert(block, 'Missing .concept-header rule');
   assert(/background:\s*transparent/.test(block[1]), 'Collapsed node header must visually merge with node');
   assert(/justify-content:\s*center/.test(block[1]), 'Collapsed label should read as a centered graph node');
-  assert(/min-height:\s*54px/.test(block[1]), 'Node needs enough oval body height');
+  assert(/min-height:\s*42px/.test(block[1]), 'Collapsed node should stay thin enough to read as a graph entity');
 });
 
 test('3. Long labels remain complete and wrap instead of ellipsizing', () => {
@@ -45,6 +45,7 @@ test('3. Long labels remain complete and wrap instead of ellipsizing', () => {
   assert(/white-space:\s*normal/.test(block[1]));
   assert(/overflow-wrap:\s*break-word/.test(block[1]));
   assert(!/text-overflow:\s*ellipsis/.test(block[1]));
+  assert(/max-width:\s*156px/.test(block[1]), 'Title measure should encourage earlier wrapping instead of a wide button-like pill');
 });
 
 test('4. Structural controls are visually out-of-flow so short nodes stay compact', () => {
@@ -78,6 +79,16 @@ test('8. Product rule is locked in PRD', () => {
   assert(prd.includes('Concept Should Look Like a Node, Not a Card'));
   assert(prd.includes('Short concept → compact oval / near-circle'));
   assert(prd.includes('Long concept  → adaptive soft capsule'));
+  assert(prd.includes('avoid elongated, button-like pills'));
+});
+
+test('9. Resting node chrome is visually subordinate', () => {
+  const node = css.match(/\.concept-node \{([\s\S]*?)\n\}/);
+  const badge = css.match(/\.badge-sources \{([\s\S]*?)\n\}/);
+  assert(node && /border:\s*1px solid rgba\(100, 116, 139, 0\.38\)/.test(node[1]), 'Resting outline should stay subtle');
+  assert(node && /box-shadow:\s*0 2px 8px -5px/.test(node[1]), 'Resting shadow should stay minimal');
+  assert(badge && /opacity:\s*0\.72/.test(badge[1]), 'Source badge should be visually subordinate');
+  assert(badge && /box-shadow:\s*none/.test(badge[1]), 'Source badge should not float like a card control');
 });
 
 console.log('\n========================================');

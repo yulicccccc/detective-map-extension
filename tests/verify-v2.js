@@ -1178,11 +1178,11 @@ async function runSuite() {
     assert(canvasCss.includes('overflow-wrap: break-word;'), 'Concept title must wrap long words');
     assert(canvasCss.includes('white-space: normal;'), 'Concept title must allow natural multi-line wrapping');
 
-    // 22.3 Concept Node V2 footprint: compact, adaptive, node-like rather than card-like
+    // 22.3 Concept Node V3 footprint: compact, adaptive, visually quiet rather than button-like
     const conceptNodeRule = canvasCss.match(/\.concept-node \{([\s\S]*?)\n\}/);
     assert(conceptNodeRule, 'canvas.css must define .concept-node');
-    assert(/min-width:\s*92px/.test(conceptNodeRule[1]), 'Short Concept nodes must be allowed to remain compact (~92px floor)');
-    assert(/max-width:\s*260px/.test(conceptNodeRule[1]), 'Concept node collapsed max-width must remain ~260px');
+    assert(/min-width:\s*76px/.test(conceptNodeRule[1]), 'Short Concept nodes must be allowed to remain compact (~76px floor)');
+    assert(/max-width:\s*190px/.test(conceptNodeRule[1]), 'Collapsed Concept nodes must avoid button-like growth beyond ~190px');
     assert(/width:\s*max-content/.test(conceptNodeRule[1]), 'Collapsed Concept width must adapt to content');
     assert(/border-radius:\s*999px/.test(conceptNodeRule[1]), 'Collapsed Concept must visually read as a soft oval/capsule node');
 
