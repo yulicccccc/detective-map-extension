@@ -37,6 +37,7 @@ jobs:
           if [ -f tests/verify-fountain-v2.js ]; then node tests/verify-fountain-v2.js; fi
           if [ -f tests/verify-watercolor-v1.js ]; then node tests/verify-watercolor-v1.js; fi
           if [ -f tests/verify-watercolor-v2.js ]; then node tests/verify-watercolor-v2.js; fi
+          if [ -f tests/verify-transparent-marker-v1.js ]; then node tests/verify-transparent-marker-v1.js; fi
           if [ -f tests/verify-ink-colors.js ]; then node tests/verify-ink-colors.js; fi
 
       - name: Commit generated artifacts if needed
