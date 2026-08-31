@@ -1,0 +1,11 @@
+const fs = require('fs');
+const path = 'tests/verify-v2.js';
+let text = fs.readFileSync(path, 'utf8');
+const oldBlock = `    // 22.3 Node footprint constraints (~180px min, 260px max)\n    assert(canvasCss.includes('min-width: 180px;'), 'Concept node min-width must be ~180px');\n    assert(canvasCss.includes('max-width: 260px;'), 'Concept node collapsed max-width must be ~260px');`;
+const newBlock = `    // 22.3 Concept Node V2 footprint: compact, adaptive, node-like rather than card-like\n    const conceptNodeRule = canvasCss.match(/\\.concept-node \\{([\\s\\S]*?)\\n\\}/);\n    assert(conceptNodeRule, 'canvas.css must define .concept-node');\n    assert(/min-width:\\s*92px/.test(conceptNodeRule[1]), 'Short Concept nodes must be allowed to remain compact (~92px floor)');\n    assert(/max-width:\\s*260px/.test(conceptNodeRule[1]), 'Concept node collapsed max-width must remain ~260px');\n    assert(/width:\\s*max-content/.test(conceptNodeRule[1]), 'Collapsed Concept width must adapt to content');\n    assert(/border-radius:\\s*999px/.test(conceptNodeRule[1]), 'Collapsed Concept must visually read as a soft oval/capsule node');\n\n    const conceptHeaderRule = canvasCss.match(/\\.concept-header \\{([\\s\\S]*?)\\n\\}/);\n    assert(conceptHeaderRule && /background:\\s*transparent/.test(conceptHeaderRule[1]), 'Concept header must not recreate a rectangular card band');\n\n    const conceptActionsRule = canvasCss.match(/\\.concept-actions \\{([\\s\\S]*?)\\n\\}/);\n    assert(conceptActionsRule && /position:\\s*absolute/.test(conceptActionsRule[1]), 'Concept controls must remain out-of-flow so they do not force card-like width');`;
+if (!text.includes(oldBlock)) throw new Error('Stale Test 22 width invariant anchor not found');
+text = text.replace(oldBlock, newBlock);
+text = text.replace('// B: Double-click ON TITLE expands card', '// B: Double-click ON TITLE expands node summary');
+text = text.replace('// C: Double-click ON TITLE again collapses card', '// C: Double-click ON TITLE again collapses node summary');
+fs.writeFileSync(path, text);
+console.log('Updated Test 22 to Concept Node V2 adaptive-node invariants.');
