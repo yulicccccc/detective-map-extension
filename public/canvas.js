@@ -236,7 +236,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderAllStrokes();
   }
 
-  // View State for Concept Cards (in-memory UI only)
+  // View State for Concept Nodes (in-memory UI only)
   function toggleConceptExpansion(conceptId) {
     const isExpanded = expandedConceptIds.has(conceptId);
     if (isExpanded) {
@@ -274,7 +274,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       node.innerHTML = `
         <div class="concept-header" data-id="${c.id}">
-          <div class="concept-drag-handle" data-id="${c.id}" title="Drag to reposition card">⋮⋮</div>
+          <div class="concept-drag-handle" data-id="${c.id}" title="Drag to reposition node">⋮⋮</div>
           <span class="concept-title" contenteditable="true" data-id="${c.id}" title="${escapeHtml(c.label)}">${escapeHtml(c.label)}</span>
           <div class="concept-actions">
             <button class="btn-toggle-expand" data-id="${c.id}" title="${isExpanded ? 'Collapse summary' : 'Expand summary'}">${isExpanded ? '▴' : '▾'}</button>
@@ -290,7 +290,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const headerEl = node.querySelector('.concept-header');
       headerEl.addEventListener('pointerdown', (e) => handleConceptPointerDown(e, c));
 
-      // Double-click to toggle quick expansion (works on card and Concept Title)
+      // Double-click to toggle quick expansion (works on node and Concept Title)
       node.addEventListener('dblclick', (e) => {
         if (e.target.closest('.badge-sources') || e.target.closest('.btn-card-close') || e.target.closest('.btn-toggle-expand')) return;
         // If double-clicking inside the expanded description body, allow normal text selection

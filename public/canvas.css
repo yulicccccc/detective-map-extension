@@ -228,29 +228,31 @@ html, body {
 .concept-node {
   position: absolute;
   pointer-events: auto;
-  background: var(--concept-bg);
-  border: 1px solid var(--concept-border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--concept-shadow);
+  background: linear-gradient(145deg, rgba(30, 41, 59, 0.96), rgba(20, 31, 49, 0.96));
+  border: 1px solid rgba(100, 116, 139, 0.58);
+  border-radius: 999px;
+  box-shadow: 0 6px 18px -8px rgba(0, 0, 0, 0.78), 0 2px 8px rgba(0, 0, 0, 0.32);
   display: flex;
   flex-direction: column;
   user-select: text;
   -webkit-user-select: text;
-  transition: box-shadow 0.15s ease, border-color 0.15s ease;
-  min-width: 180px;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  min-width: 92px;
   max-width: 260px;
   width: max-content;
   box-sizing: border-box;
+  overflow: visible;
 }
 
 .concept-node:hover {
   border-color: var(--concept-hover-border);
-  box-shadow: 0 14px 30px -4px rgba(0, 0, 0, 0.7), 0 0 15px rgba(56, 189, 248, 0.2);
+  background: linear-gradient(145deg, rgba(34, 48, 70, 0.98), rgba(22, 36, 57, 0.98));
+  box-shadow: 0 9px 24px -10px rgba(0, 0, 0, 0.82), 0 0 0 1px rgba(56, 189, 248, 0.16), 0 0 18px rgba(56, 189, 248, 0.14);
 }
 
 .concept-node.selected {
   border-color: var(--concept-selected-border);
-  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.4);
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.36), 0 8px 22px -10px rgba(0, 0, 0, 0.78);
 }
 
 .concept-node.dragging {
@@ -262,16 +264,21 @@ html, body {
 
 .concept-node.expanded {
   width: 300px;
+  min-width: 300px;
   max-width: 320px;
+  border-radius: 24px;
 }
 
 .concept-header {
-  padding: 8px 10px;
-  background: #182234;
+  position: relative;
+  padding: 11px 18px;
+  min-height: 54px;
+  background: transparent;
   border-radius: inherit;
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  gap: 0;
   cursor: grab;
   user-select: none;
   width: 100%;
@@ -279,28 +286,52 @@ html, body {
 }
 
 .concept-node.expanded .concept-header {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  min-height: 48px;
+  padding: 10px 18px;
+  justify-content: flex-start;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
 }
 
 .concept-drag-handle {
-  font-size: 13px;
-  color: #64748b;
+  position: absolute;
+  left: -10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 30px;
+  font-size: 12px;
+  color: #94a3b8;
   cursor: grab;
   user-select: none;
   -webkit-user-select: none;
-  padding: 0 2px 0 0;
   display: flex;
   align-items: center;
+  justify-content: center;
   letter-spacing: -1px;
   touch-action: none;
   flex-shrink: 0;
-  transition: color 0.15s ease;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.9);
+  opacity: 0;
+  pointer-events: none;
+  transition: color 0.15s ease, opacity 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.concept-node:hover .concept-drag-handle,
+.concept-node:focus-within .concept-drag-handle,
+.concept-node.selected .concept-drag-handle,
+.concept-node.dragging .concept-drag-handle {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .concept-drag-handle:hover {
   color: var(--accent-blue);
+  border-color: rgba(56, 189, 248, 0.46);
+  background: rgba(15, 23, 42, 0.98);
 }
 
 .concept-drag-handle:active,
@@ -310,38 +341,61 @@ html, body {
 }
 
 .concept-title {
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 700;
-  color: #fff;
+  color: #f8fafc;
   outline: none;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 220px;
   cursor: text;
   user-select: text;
   white-space: normal;
   word-break: normal;
   overflow-wrap: break-word;
-  line-height: 1.35;
+  line-height: 1.3;
+  text-align: center;
+}
+
+.concept-node.expanded .concept-title {
+  flex: 1 1 auto;
+  max-width: none;
+  text-align: left;
 }
 
 .concept-actions {
+  position: absolute;
+  top: -11px;
+  right: -7px;
+  z-index: 3;
   display: flex;
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
+  pointer-events: none;
+}
+
+.concept-actions > * {
+  pointer-events: auto;
 }
 
 .btn-toggle-expand {
-  background: none;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  width: 22px;
+  height: 22px;
+  background: rgba(15, 23, 42, 0.94);
+  border: 1px solid rgba(148, 163, 184, 0.24);
   color: #94a3b8;
-  border-radius: 4px;
+  border-radius: 999px;
   font-size: 9px;
-  padding: 2px 4px;
+  padding: 0;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s ease, color 0.15s ease;
+  opacity: 0;
+  transform: scale(0.9);
+  pointer-events: none;
+  transition: background 0.15s ease, color 0.15s ease, opacity 0.15s ease, transform 0.15s ease;
 }
 
 .btn-toggle-expand:hover {
@@ -350,14 +404,22 @@ html, body {
 }
 
 .btn-card-close {
-  background: none;
-  border: none;
+  width: 22px;
+  height: 22px;
+  background: rgba(15, 23, 42, 0.94);
+  border: 1px solid rgba(148, 163, 184, 0.18);
   color: #64748b;
-  font-size: 12px;
-  padding: 2px 4px;
+  font-size: 11px;
+  padding: 0;
   cursor: pointer;
-  border-radius: 4px;
-  transition: color 0.15s ease, background 0.15s ease;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transform: scale(0.9);
+  pointer-events: none;
+  transition: color 0.15s ease, background 0.15s ease, opacity 0.15s ease, transform 0.15s ease;
 }
 
 .btn-card-close:hover {
@@ -366,19 +428,49 @@ html, body {
 }
 
 .badge-sources {
-  background: rgba(56, 189, 248, 0.15);
-  border: 1px solid rgba(56, 189, 248, 0.3);
-  color: var(--accent-blue);
-  font-size: 10px;
-  font-weight: 600;
-  padding: 2px 6px;
-  border-radius: 12px;
+  background: rgba(14, 116, 144, 0.2);
+  border: 1px solid rgba(56, 189, 248, 0.34);
+  color: #7dd3fc;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 5px;
+  border-radius: 999px;
   cursor: pointer;
   white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.12);
 }
 
 .badge-sources:hover {
   background: rgba(56, 189, 248, 0.3);
+}
+
+/* Node controls stay out of the resting silhouette and appear on intent. */
+.concept-node:hover .btn-toggle-expand,
+.concept-node:hover .btn-card-close,
+.concept-node:focus-within .btn-toggle-expand,
+.concept-node:focus-within .btn-card-close,
+.concept-node.selected .btn-toggle-expand,
+.concept-node.selected .btn-card-close,
+.concept-node.expanded .btn-toggle-expand,
+.concept-node.expanded .btn-card-close {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+
+/* Touch has no hover, so explicit expand/delete affordances remain reachable. */
+@media (hover: none), (pointer: coarse) {
+  .concept-drag-handle {
+    opacity: 0.72;
+    pointer-events: auto;
+  }
+
+  .btn-toggle-expand,
+  .btn-card-close {
+    opacity: 0.88;
+    transform: scale(1);
+    pointer-events: auto;
+  }
 }
 
 /* Concept Body - Collapsed by default, expanded on toggle/double-click */
