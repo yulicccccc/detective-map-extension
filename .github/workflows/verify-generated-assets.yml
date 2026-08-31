@@ -25,9 +25,6 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Activate Watercolor V2 light wash
-        run: node scripts/activate-watercolor-v2-lightwash.js
-
       - name: Build generated assets
         run: |
           node scripts/bundle-assets.js
@@ -41,15 +38,15 @@ jobs:
           if [ -f tests/verify-watercolor-v1.js ]; then node tests/verify-watercolor-v1.js; fi
           if [ -f tests/verify-watercolor-v2.js ]; then node tests/verify-watercolor-v2.js; fi
 
-      - name: Commit V2 activation and generated artifacts if needed
+      - name: Commit generated artifacts if needed
         shell: bash
         run: |
-          if git diff --quiet -- canvas.html scripts/bundle-assets.js public src/assets-bundle.js; then
-            echo 'Watercolor V2 activation and generated assets already aligned.'
+          if git diff --quiet -- public src/assets-bundle.js; then
+            echo 'Generated assets already aligned.'
             exit 0
           fi
           git config user.name 'detective-map-build-bot'
           git config user.email 'actions@users.noreply.github.com'
-          git add canvas.html scripts/bundle-assets.js public src/assets-bundle.js
-          git commit -m 'feat: activate Watercolor V2 light wash [skip ci]'
+          git add public src/assets-bundle.js
+          git commit -m 'chore: rebuild generated assets [skip ci]'
           git push origin HEAD:main
