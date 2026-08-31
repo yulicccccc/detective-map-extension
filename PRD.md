@@ -484,7 +484,7 @@ Locked rules:
 - Do **not** add separate Fountain Pen and Watercolor Brush buttons beside Pen/Highlighter in the primary toolbar.
 - Do **not** add a third "Ink Wash" / Chinese-ink brush to solve the highlighting requirement; Watercolor is the intended expressive highlight behavior.
 - Historical generic `tool: pen` and flat `tool: highlighter` strokes remain supported for backward-compatible replay, but legacy utility rendering does not require a separate primary toolbar button.
-- New Pen strokes should persist Fountain semantics; new Highlighter strokes should persist Watercolor semantics once Watercolor V1 is implemented.
+- New Pen strokes must persist Fountain semantics; new Highlighter strokes must persist versioned Watercolor semantics. Historical failed/tuned brush versions remain replay-compatible without redefining the current default brush.
 
 This two-button mapping is a low-friction product rule: **Pen = beautiful writing; Highlighter = watercolor emphasis.**
 
