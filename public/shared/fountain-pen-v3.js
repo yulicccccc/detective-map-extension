@@ -405,6 +405,10 @@ const FountainPenV3 = (() => {
       hydratedThisCall++;
     }
 
+    if (inputCapture.queue.length > 32) {
+      inputCapture.queue.length = 0;
+    }
+
     stroke._fountainV3HydratedCount = pts.length;
     stroke._fountainV3LastHydratedCount = hydratedThisCall;
     return hydratedThisCall;
@@ -565,6 +569,7 @@ const FountainPenV3 = (() => {
     drawVariableQuadratic,
     tipWidth,
     isFountainV3Stroke,
+    shouldAcceptStrokePoint: core.shouldAcceptStrokePoint ? core.shouldAcceptStrokePoint.bind(core) : null,
     _inputCapture: inputCapture
   };
 })();

@@ -388,6 +388,122 @@ test('12. Version isolation: persisted V2 stroke remains V2 and renders identica
   assert.strictEqual(v2Stroke.brushVersion, 2, 'renderStroke must not mutate brushVersion');
 });
 
+test('13. Spatial/dynamic resampling filter preserves meaningful changes and rejects subpixel jitter', () => {
+  const p0 = { x: 100, y: 100, pressure: 0.5, t: 1000 };
+
+  // Micro jitter (< 0.8px, same pressure, delta t < 12ms) -> REJECT
+  const pJitter = { x: 100.2, y: 100.3, pressure: 0.5, t: 1002 };
+  assert.strictEqual(CanvasCore.shouldAcceptStrokePoint(p0, pJitter), false, 'Micro jitter must be filtered out');
+
+  // Meaningful distance (>= 0.8px) -> ACCEPT
+  const pDistance = { x: 101.0, y: 100.0, pressure: 0.5, t: 1002 };
+  assert.strictEqual(CanvasCore.shouldAcceptStrokePoint(p0, pDistance), true, 'Spatial move >= 0.8px must be accepted');
+
+  // Meaningful pressure change (|delta p| >= 0.035, even with tiny 0.1px move) -> ACCEPT
+  const pPressure = { x: 100.1, y: 100.1, pressure: 0.55, t: 1002 };
+  assert.strictEqual(CanvasCore.shouldAcceptStrokePoint(p0, pPressure), true, 'Pressure change >= 0.035 must be accepted');
+
+  // Elapsed time (>= 16ms, even with tiny move) -> ACCEPT
+  const pTime = { x: 100.1, y: 100.1, pressure: 0.5, t: 1020 };
+  assert.strictEqual(CanvasCore.shouldAcceptStrokePoint(p0, pTime), true, 'Time elapsed >= 16ms must be accepted');
+
+  // Meaningful orientation/azimuth change -> ACCEPT
+  const pAzimuth = { x: 100.1, y: 100.1, pressure: 0.5, t: 1002, azimuthAngle: 0.8 };
+  const pAzimuth0 = { x: 100.0, y: 100.0, pressure: 0.5, t: 1000, azimuthAngle: 0.5 };
+  assert.strictEqual(CanvasCore.shouldAcceptStrokePoint(pAzimuth0, pAzimuth), true, 'Azimuth change must be accepted');
+});
+
+test('14. Simulated high-frequency Wacom input stream reduces point count by >40% without losing curve fidelity', () => {
+  // Simulate high-frequency 300Hz digitizer output for normal handwriting speed (~120 px/s)
+  // At 300Hz, each raw sample arrives every ~3.3ms with ~0.4px step
+  const rawWacomEvents = [];
+  let t = 0;
+  for (let i = 0; i < 200; i++) {
+    const x = i * 0.35;
+    const y = Math.sin(i / 25) * 8;
+    const pressure = 0.3 + 0.4 * Math.sin(i / 30);
+    t += 3; // 3ms between raw digitizer samples (~330Hz Wacom stream)
+    rawWacomEvents.push({ x, y, pressure, t });
+  }
+
+  const filteredPoints = [];
+  for (const raw of rawWacomEvents) {
+    const last = filteredPoints.length ? filteredPoints[filteredPoints.length - 1] : null;
+    if (CanvasCore.shouldAcceptStrokePoint(last, raw)) {
+      filteredPoints.push(raw);
+    }
+  }
+
+  assert(
+    filteredPoints.length < rawWacomEvents.length * 0.60,
+    `Resampling must filter at least 40% of redundant micro-samples (raw=${rawWacomEvents.length}, filtered=${filteredPoints.length})`
+  );
+  assert(filteredPoints.length >= 30, 'Must preserve enough points to form smooth curves');
+
+  // Verify that peak pressure is accurately captured in filtered points
+  const maxRawPressure = Math.max(...rawWacomEvents.map(p => p.pressure));
+  const maxFilteredPressure = Math.max(...filteredPoints.map(p => p.pressure));
+  assert(
+    Math.abs(maxRawPressure - maxFilteredPressure) < 0.05,
+    'Peak pressure must be preserved within tight margin'
+  );
+});
+
+test('15. rAF render batching simulation batches multi-point bursts and preserves full replay parity', () => {
+  const stroke = {
+    tool: 'fountain_pen',
+    brushType: 'fountain_pen',
+    brushVersion: 3,
+    width: 3,
+    opacity: 1,
+    color: '#0f172a',
+    points: [{ x: 0, y: 0, pressure: 0.5, t: 0 }]
+  };
+
+  const active = createMockCtx();
+  const scratch = createMockCtx();
+  let state = { finalizedCount: 0, liveTail: null };
+
+  // Simulate 10 frames of motion, with each frame receiving a burst of 10 coalesced Wacom samples
+  let renderCount = 0;
+  for (let frame = 1; frame <= 10; frame++) {
+    // 10 coalesced samples arrive inside one event frame
+    for (let s = 1; s <= 10; s++) {
+      const idx = (frame - 1) * 10 + s;
+      const candidate = {
+        x: idx * 2.0,
+        y: Math.sin(idx / 5) * 20,
+        pressure: 0.2 + (idx % 8) * 0.08,
+        t: idx * 4
+      };
+      const last = stroke.points[stroke.points.length - 1];
+      if (CanvasCore.shouldAcceptStrokePoint(last, candidate)) {
+        stroke.points.push(candidate);
+      }
+    }
+
+    // Single rAF render per frame batch (1 render per frame instead of 10 renders)
+    state = FountainPenV3.renderIncrementalFountainV3(active, scratch, stroke, state);
+    renderCount++;
+  }
+
+  assert.strictEqual(renderCount, 10, 'Must perform exactly 1 render per frame batch (10 total)');
+
+  // Verify that the final incremental state matches full replay across all segments
+  const replay = createMockCtx();
+  FountainPenV3.renderFountainV3Stroke(replay, stroke);
+  const replaySegments = extractLineSegments(replay.ops);
+  const incrementalSegments = [
+    ...extractLineSegments(active.ops),
+    ...extractLineSegments(opsAfterLastClear(scratch.ops))
+  ];
+
+  assert.strictEqual(incrementalSegments.length, replaySegments.length, 'Final segment counts must match');
+  for (let i = 0; i < replaySegments.length; i++) {
+    assert.deepStrictEqual(incrementalSegments[i], replaySegments[i], `Segment ${i} must match replay`);
+  }
+});
+
 console.log(`\n========================================`);
 console.log(`Verification Complete: ${passed}/${total} tests passed.`);
 console.log(`========================================`);

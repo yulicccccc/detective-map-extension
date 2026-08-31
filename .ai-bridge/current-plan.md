@@ -58,7 +58,7 @@ brushVersion: 1
 
 ## Pen + Color State
 
-Fountain Pen V3 is **CODE / CI VERIFIED ✅** (Expressive calligraphic brush with strong thick/thin contrast >8x, sharp start taper, exit taper, velocity modulation, and directional nib character).
+Fountain Pen V3 is **CODE / CI VERIFIED ✅** (Expressive calligraphic brush with strong thick/thin contrast >8x, sharp start taper, exit taper, velocity modulation, directional nib character, `requestAnimationFrame` render batching, and high-frequency Wacom spatial/dynamic resampling filter).
 
 Independent color selection is CODE/CI VERIFIED and verified across both tools: Pen and Highlighter maintain distinct selected colors while historical strokes retain their originally drawn colors.
 

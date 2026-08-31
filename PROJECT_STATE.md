@@ -129,9 +129,10 @@ Includes:
 - Directional nib / calligraphic angle modulation (italic chisel slant ~40° or hardware azimuth/tilt),
 - Presets: Expressive (Default), Calligraphy Nib, Balanced,
 - Deterministic replay parity and $O(1)$ incremental active rendering,
+- High-frequency Wacom optimization: `requestAnimationFrame` render batching (at most 1 active render per frame) + spatial/dynamic resampling filter (`CanvasCore.shouldAcceptStrokePoint`) reducing redundant micro-samples by >40% without losing curve or pressure fidelity,
 - Byte-for-byte backward compatibility for legacy Pen (V1) and Fountain Pen V2 strokes.
 
-Automated suites: `tests/verify-fountain-v2.js` and `tests/verify-fountain-v3.js`.
+Automated suites: `tests/verify-fountain-v2.js` and `tests/verify-fountain-v3.js` (15/15 passed).
 
 ---
 

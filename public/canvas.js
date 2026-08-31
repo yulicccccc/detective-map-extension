@@ -112,10 +112,27 @@ document.addEventListener('DOMContentLoaded', async () => {
   let activePenPointerId = null;
   let currentStroke = null;
   let activeStrokeState = { finalizedCount: 0, liveTail: null };
+  let activeStrokeRafId = null;
   let isPanning = false;
   let isSpacePressed = false;
   let panStart = { x: 0, y: 0 };
   let panOrigin = { x: viewport.panX, y: viewport.panY };
+
+  function flushActiveStrokeRender() {
+    activeStrokeRafId = null;
+    if (!isDrawing || !currentStroke) return;
+    activeStrokeState = CanvasCore.renderIncrementalStroke(activeStrokeCtx, scratchCtx, currentStroke, activeStrokeState);
+  }
+
+  function scheduleActiveStrokeRender() {
+    if (activeStrokeRafId === null) {
+      if (typeof requestAnimationFrame === 'function') {
+        activeStrokeRafId = requestAnimationFrame(flushActiveStrokeRender);
+      } else {
+        flushActiveStrokeRender();
+      }
+    }
+  }
 
   let isDraggingConcept = false;
   let draggedConceptId = null;
@@ -619,17 +636,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Only active pen pointer ID appends ink points; ignore palm movements!
     if (isDrawing && currentStroke && e.pointerId === activePenPointerId) {
       const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+      let appended = false;
       for (const ev of events) {
         const pt = screenToWorld(ev.clientX, ev.clientY);
-        currentStroke.points.push({
+        const lastPt = currentStroke.points.length ? currentStroke.points[currentStroke.points.length - 1] : null;
+        const candidate = {
           x: pt.x,
           y: pt.y,
-          pressure: typeof ev.pressure === 'number' && ev.pressure > 0 ? ev.pressure : 0.5
-        });
+          pressure: typeof ev.pressure === 'number' && ev.pressure > 0 ? ev.pressure : 0.5,
+          t: Number.isFinite(ev.timeStamp) ? ev.timeStamp : Date.now(),
+          tiltX: Number.isFinite(ev.tiltX) ? ev.tiltX : null,
+          tiltY: Number.isFinite(ev.tiltY) ? ev.tiltY : null,
+          altitudeAngle: Number.isFinite(ev.altitudeAngle) ? ev.altitudeAngle : null,
+          azimuthAngle: Number.isFinite(ev.azimuthAngle) ? ev.azimuthAngle : null
+        };
+
+        if (CanvasCore.shouldAcceptStrokePoint(lastPt, candidate)) {
+          currentStroke.points.push(candidate);
+          appended = true;
+        }
       }
 
-      // Low-latency incremental rendering: Finalized Segments on activeStrokeCanvas + Replaceable Live Tail on scratchCanvas
-      activeStrokeState = CanvasCore.renderIncrementalStroke(activeStrokeCtx, scratchCtx, currentStroke, activeStrokeState);
+      if (appended) {
+        scheduleActiveStrokeRender();
+      }
       return;
     }
 
@@ -668,6 +698,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (isDrawing && currentStroke && e.pointerId === activePenPointerId) {
       isDrawing = false;
       activePenPointerId = null;
+
+      if (activeStrokeRafId !== null) {
+        cancelAnimationFrame(activeStrokeRafId);
+        activeStrokeRafId = null;
+      }
+
+      const pt = screenToWorld(e.clientX, e.clientY);
+      const lastPt = currentStroke.points.length ? currentStroke.points[currentStroke.points.length - 1] : null;
+      const finalCandidate = {
+        x: pt.x,
+        y: pt.y,
+        pressure: typeof e.pressure === 'number' && e.pressure > 0 ? e.pressure : 0.5,
+        t: Number.isFinite(e.timeStamp) ? e.timeStamp : Date.now(),
+        tiltX: Number.isFinite(e.tiltX) ? e.tiltX : null,
+        tiltY: Number.isFinite(e.tiltY) ? e.tiltY : null,
+        altitudeAngle: Number.isFinite(e.altitudeAngle) ? e.altitudeAngle : null,
+        azimuthAngle: Number.isFinite(e.azimuthAngle) ? e.azimuthAngle : null
+      };
+      if (!lastPt || (lastPt.x !== finalCandidate.x || lastPt.y !== finalCandidate.y)) {
+        currentStroke.points.push(finalCandidate);
+      }
 
       if (currentStroke.points.length > 0) {
         // Immediate paint to permanent inkCanvas (no blank frame / no disappearing ink!)

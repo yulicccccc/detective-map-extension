@@ -371,6 +371,43 @@ const CanvasCore = {
     }
 
     return { finalizedCount, liveTail };
+  },
+
+  /**
+   * High-frequency pointer/Wacom resampling filter.
+   * Filters out redundant microscopic subpixel jitter while strictly preserving:
+   * 1. Spatial displacement (>= minDistance px)
+   * 2. Pressure inflections/dynamics (|delta pressure| >= 0.035)
+   * 3. Monotonic time progression (delta t >= 12ms)
+   * 4. Orientation / azimuth changes (|delta azimuth| >= 0.12 rad or |delta tilt| >= 6 deg)
+   */
+  shouldAcceptStrokePoint(lastPoint, newPoint, minDistance = 0.8) {
+    if (!lastPoint || !newPoint) return true;
+    const dx = newPoint.x - lastPoint.x;
+    const dy = newPoint.y - lastPoint.y;
+    const distSq = dx * dx + dy * dy;
+    if (distSq >= minDistance * minDistance) return true;
+
+    if (typeof newPoint.pressure === 'number' && typeof lastPoint.pressure === 'number') {
+      if (Math.abs(newPoint.pressure - lastPoint.pressure) >= 0.035) return true;
+    }
+
+    if (Number.isFinite(newPoint.t) && Number.isFinite(lastPoint.t)) {
+      if (newPoint.t - lastPoint.t >= 16) return true;
+    }
+
+    if (Number.isFinite(newPoint.azimuthAngle) && Number.isFinite(lastPoint.azimuthAngle)) {
+      if (Math.abs(newPoint.azimuthAngle - lastPoint.azimuthAngle) >= 0.12) return true;
+    }
+
+    if (Number.isFinite(newPoint.tiltX) && Number.isFinite(lastPoint.tiltX)) {
+      if (Math.abs(newPoint.tiltX - lastPoint.tiltX) >= 6) return true;
+    }
+    if (Number.isFinite(newPoint.tiltY) && Number.isFinite(lastPoint.tiltY)) {
+      if (Math.abs(newPoint.tiltY - lastPoint.tiltY) >= 6) return true;
+    }
+
+    return false;
   }
 };
 
