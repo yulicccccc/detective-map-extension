@@ -203,6 +203,22 @@ test('9. Resting node chrome is visually subordinate', () => {
 
 fs.writeFileSync('tests/verify-concept-nodes-v2.js', test);
 
+// 2b) Align the older Structure-First reliability invariant with the same browser-tested sizing rule.
+let verifyV2 = fs.readFileSync('tests/verify-v2.js', 'utf8');
+verifyV2 = replaceOnce(verifyV2,
+`    // 22.3 Concept Node V2 footprint: compact, adaptive, node-like rather than card-like
+    const conceptNodeRule = canvasCss.match(/\\.concept-node \\{([\\s\\S]*?)\\n\\}/);
+    assert(conceptNodeRule, 'canvas.css must define .concept-node');
+    assert(/min-width:\\s*92px/.test(conceptNodeRule[1]), 'Short Concept nodes must be allowed to remain compact (~92px floor)');
+    assert(/max-width:\\s*260px/.test(conceptNodeRule[1]), 'Concept node collapsed max-width must remain ~260px');`,
+`    // 22.3 Concept Node V3 footprint: compact, adaptive, visually quiet rather than button-like
+    const conceptNodeRule = canvasCss.match(/\\.concept-node \\{([\\s\\S]*?)\\n\\}/);
+    assert(conceptNodeRule, 'canvas.css must define .concept-node');
+    assert(/min-width:\\s*76px/.test(conceptNodeRule[1]), 'Short Concept nodes must be allowed to remain compact (~76px floor)');
+    assert(/max-width:\\s*190px/.test(conceptNodeRule[1]), 'Collapsed Concept nodes must avoid button-like growth beyond ~190px');`,
+'legacy Structure-First compact sizing invariant');
+fs.writeFileSync('tests/verify-v2.js', verifyV2);
+
 // 3) Lock the browser-learned visual rule into PRD.
 let prd = fs.readFileSync('PRD.md', 'utf8');
 prd = replaceOnce(prd,
@@ -231,7 +247,7 @@ state = replaceOnce(state,
 state = replaceOnce(state,
 `- Operational errors use compact toast/status UI.`,
 `- Operational errors use compact toast/status UI.
-- Current visual refinement: collapsed Concepts use a compact, quiet oval/capsule footprint (about 76–190px) with earlier wrapping, reduced border/shadow weight, and a more subordinate Source badge so relationships and handwriting dominate the canvas.` ,
+- Current visual refinement: collapsed Concepts use a compact, quiet oval/capsule footprint (about 76–190px) with earlier wrapping, reduced border/shadow weight, and a more subordinate Source badge so relationships and handwriting dominate the canvas.`,
 'project concept visual state');
 
 state = replaceOnce(state,
