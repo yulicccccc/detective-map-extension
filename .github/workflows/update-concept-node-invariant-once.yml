@@ -1,0 +1,38 @@
+name: Update Concept Node V2 Invariant Once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/update-concept-node-invariant.js'
+      - '.github/workflows/update-concept-node-invariant-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  update-invariant:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch stale Structure-First invariant
+        run: node scripts/update-concept-node-invariant.js
+
+      - name: Verify V2 and Concept Node suites
+        run: |
+          node tests/verify-v2.js
+          node tests/verify-concept-nodes-v2.js
+
+      - name: Commit test update
+        shell: bash
+        run: |
+          git config user.name 'detective-map-ui-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add tests/verify-v2.js
+          git diff --cached --check
+          git commit -m 'test(ui): align Structure-First invariants with adaptive Concept nodes'
+          git push origin HEAD:main
