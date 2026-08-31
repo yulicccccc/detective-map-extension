@@ -36,22 +36,23 @@ The Chrome extension supports right-click capture, Workspace selection, AI propo
 
 ```text
 Pen         = Fountain Pen behavior
-Highlighter = Watercolor Brush behavior
+Highlighter = Transparent Marker behavior
 ```
 
-There is no separate Fountain button, no separate Watercolor button, and no third Ink Wash brush in the primary toolbar.
+There is no separate Fountain button and no separate Marker button. Watercolor/Ink Wash is not a current third primary brush.
 
-Historical generic `tool: pen` / `tool: highlighter` strokes remain replay-compatible.
+Historical generic `tool: pen` / `tool: highlighter` and Watercolor V1/V2 strokes remain replay-compatible.
 
 ### Independent Colors
 
-Each of the two ink tools now has its own compact color dot/palette:
+Each of the two ink tools has its own compact color dot/palette:
 
 - Pen color and Highlighter color are independent.
 - Each tool has quick presets plus a custom color picker.
 - The last selected color is remembered per browser/device.
 - Changing the selected color only affects future strokes.
 - Every stroke persists its actual color, so saved/reloaded/cross-device stroke appearance remains stable.
+- `transparent_marker`, historical `watercolor`, and generic `highlighter` semantics map to the Highlighter color preference.
 
 ### Pen Input
 
@@ -67,21 +68,29 @@ New active Pen strokes persist `tool: fountain_pen`; historical `tool: pen` stro
 
 Implemented behavior includes strong pressure modulation, Light Touch/Balanced/Expressive presets, velocity influence, start/end taper, optional tilt/orientation variation, deterministic replay, and O(1) hydration + incremental rendering.
 
-### Highlighter → Watercolor
+### Highlighter → Transparent Marker V1
 
-#### Watercolor V1
+🖍 **CODE/CI VERIFIED; MANUAL WACOM ACCEPTANCE REQUIRED.**
 
-🖌 **CODE/CI VERIFIED but MANUAL FAIL ❌.**
+The product deliberately moved away from Watercolor as the default Highlighter after real use showed that even a visually attractive watercolor wash created more visual blocking than desired for a dense concept map.
 
-The real Wacom screenshot showed a dense saturated orange block that obscured underlying map text. Automated tests did not make that visual result acceptable.
+Transparent Marker V1 is optimized for readable emphasis:
 
-#### Watercolor V2 Light Wash
+- low-opacity first pass,
+- mostly uniform controlled fill,
+- faint soft shoulder rather than watercolor bloom,
+- flat marker-like line caps,
+- stable width with only subtle pressure response,
+- gradual overlap/crossing darkening,
+- deterministic replay,
+- O(1) incremental active rendering,
+- independent selectable Highlighter color.
 
-🖌 **CODE/CI VERIFIED + MANUAL PASS / ACCEPTED FOR THIS PHASE ✅.**
+#### Historical Watercolor
 
-The user judged the V2 Highlighter as sufficiently watercolor-like; the remaining requested Highlighter issue moved to selectable color rather than brush feel.
-
-V2 includes a light first pass, three translucent pigment layers, no dense center core, one-pass readability budget, gradual overlap accumulation, deterministic replay, and O(1) active rendering.
+- Watercolor V1: **MANUAL FAIL ❌** — too dense and obscured content.
+- Watercolor V2 Light Wash: **MANUAL PASS as a watercolor effect ✅**, but retired as the default Highlighter because the product role favors cleaner, more precise readability.
+- V1/V2 remain in the runtime only so historical saved strokes replay unchanged.
 
 ## Cloud Architecture
 
@@ -125,6 +134,7 @@ node tests/verify-v2.js
 node tests/verify-fountain-v2.js
 node tests/verify-watercolor-v1.js
 node tests/verify-watercolor-v2.js
+node tests/verify-transparent-marker-v1.js
 node tests/verify-ink-colors.js
 node tests/verify-cloud.js   # live isolated cloud fixtures when intentionally run
 ```
