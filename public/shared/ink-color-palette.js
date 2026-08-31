@@ -25,7 +25,7 @@ const InkColorPalette = (() => {
       '#111827'  // black / light-background use
     ]),
     highlighter: Object.freeze([
-      '#ffd166', // warm yellow / current watercolor default
+      '#ffd166', // warm yellow / current marker default
       '#ff9f9f', // coral pink
       '#f0a6ca', // pink
       '#a8d8ff', // pale blue
@@ -46,7 +46,7 @@ const InkColorPalette = (() => {
 
   function normalizeTool(tool) {
     if (tool === 'pen' || tool === 'fountain_pen') return 'pen';
-    if (tool === 'highlighter' || tool === 'watercolor') return 'highlighter';
+    if (tool === 'highlighter' || tool === 'transparent_marker' || tool === 'watercolor') return 'highlighter';
     return null;
   }
 
