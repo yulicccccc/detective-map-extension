@@ -30,20 +30,9 @@ If another document, old report, local clone, or AI memory conflicts with these 
 
 ### Chrome Side Panel / Full Canvas
 
-The Chrome extension supports:
-
-- right-click capture: **Add to Detective Map**,
-- Workspace selection,
-- AI proposal review and subset apply,
-- Concept/Edge editing,
-- collapsed structure-first nodes,
-- Detail Drawer for complete Concept knowledge/evidence,
-- infinite canvas pan/zoom,
-- stylus handwriting and annotation.
+The Chrome extension supports right-click capture, Workspace selection, AI proposal review/subset apply, Concept/Edge editing, structure-first Concept nodes, Detail Drawer, infinite canvas pan/zoom, and stylus annotation.
 
 ### Locked Two-Button Ink Model
-
-The primary toolbar intentionally keeps only the existing two ink controls:
 
 ```text
 Pen         = Fountain Pen behavior
@@ -52,53 +41,50 @@ Highlighter = Watercolor Brush behavior
 
 There is no separate Fountain button, no separate Watercolor button, and no third Ink Wash brush in the primary toolbar.
 
-Historical generic `tool: pen` / `tool: highlighter` strokes remain replay-compatible, but new strokes use the expressive brush semantics.
+Historical generic `tool: pen` / `tool: highlighter` strokes remain replay-compatible.
 
 ### Pen Input
 
-The browser ink engine accepts Pointer Events from devices such as:
+The browser ink engine accepts Pointer Events from Wacom-class desktop pen tablets, Apple Pencil where supported, and mouse as a basic fallback.
 
-- Wacom-class desktop pen tablets,
-- Apple Pencil where the browser/device exposes pen input,
-- mouse as a basic fallback.
-
-**Manual baseline:** desktop Wacom input is low-latency enough for normal annotation. iPad Safari handwriting is optional rather than a required dependency.
+**Manual baseline:** desktop Wacom input is low-latency enough for normal annotation. iPad Safari is optional rather than a required handwriting dependency.
 
 ### Pen → Fountain Pen V2
 
-✒ **Fountain Pen V2 is implemented and CODE/CI VERIFIED; real Wacom feel remains user-authoritative.**
+✒ **CODE/CI VERIFIED; real Wacom feel remains user-authoritative.**
 
-New active Pen strokes use persistent `tool: fountain_pen` semantics while historical `tool: pen` strokes retain the legacy renderer.
+New active Pen strokes persist `tool: fountain_pen`; historical `tool: pen` strokes retain the legacy renderer.
 
-Implemented Fountain behavior includes:
+Implemented behavior includes strong pressure modulation, Light Touch/Balanced/Expressive presets, velocity influence, start/end taper, optional tilt/orientation variation, deterministic replay, and O(1) hydration + incremental rendering.
 
-- strong pressure modulation,
-- `Light Touch / Balanced / Expressive` pressure presets (`Expressive` default),
-- modest velocity influence,
-- start and pen-lift taper,
-- smooth variable-width interpolation,
-- optional tilt/orientation variation when the device exposes it,
-- graceful missing-time/missing-tilt fallback,
+### Highlighter → Watercolor
+
+#### Watercolor V1
+
+🖌 **CODE/CI VERIFIED but MANUAL FAIL ❌.**
+
+The real Wacom screenshot showed a dense saturated orange block that obscured underlying map text. Automated tests did not make that visual result acceptable.
+
+#### Watercolor V2 Light Wash — current candidate
+
+🖌 **CODE/CI VERIFIED; MANUAL RETEST REQUIRED.**
+
+New active Highlighter strokes use the V2 light-wash renderer while persisted V1 watercolor strokes continue using V1 so historical appearance does not silently change.
+
+V2 corrections include:
+
+- opacity reduced from the legacy `0.35` path to `0.18`,
+- width reduced from `20` to `17`,
+- lighter warm-yellow default,
+- three translucent layers instead of five,
+- no dense center pigment core,
+- one quadratic path per translucent layer instead of many round-capped mini-segments,
+- strict one-pass readability/translucency regression budget,
+- gradual repeat/crossing accumulation,
 - deterministic replay,
-- O(1) hydration + incremental active rendering.
+- O(1) active path.
 
-### Highlighter → Watercolor Brush V1
-
-🖌 **Watercolor Brush V1 is implemented behind the existing Highlighter button and is CODE/CI VERIFIED; visual similarity to iPad Freeform Watercolor requires manual comparison.**
-
-New active Highlighter strokes use persistent `tool: watercolor` semantics while historical `tool: highlighter` strokes retain the legacy flat-marker renderer.
-
-Implemented Watercolor behavior includes:
-
-- translucent layered pigment,
-- soft/feathered multi-layer edge,
-- natural darkening when strokes overlap,
-- modest pressure-sensitive width,
-- slightly richer pigment during slower movement,
-- deterministic micro-variation for a less uniform digital edge,
-- deterministic replay,
-- O(1) hydration and bounded incremental rendering,
-- no blur/diffusion/full-canvas processing on pointer move.
+The human benchmark remains the same class of soft, translucent, layered Watercolor experience as iPad Freeform.
 
 ## Cloud Architecture
 
@@ -117,7 +103,7 @@ Chrome clients / supported pen surfaces
        Cloudflare Workers AI
 ```
 
-The Durable Object is the authoritative shared Workspace state for Concepts, Edges, Sources, proposals, revisions, and durable ink. Client-local storage is a cache/offline-support layer, not the cross-device source of truth.
+The Durable Object is the authoritative shared Workspace state. Client-local storage is cache/offline support, not the cross-device source of truth.
 
 Production deployment:
 
@@ -125,9 +111,9 @@ Production deployment:
 
 ## Development / Verification
 
-Generated assets are rebuilt from source by GitHub Actions on pushes to `main`. `public/` is treated as a clean generated directory, and `src/assets-bundle.js` is rebuilt from the same source tree.
+Generated assets are rebuilt from source by GitHub Actions. `public/` is a clean generated directory and `src/assets-bundle.js` is rebuilt from the same source tree.
 
-Local build commands remain:
+Local build commands:
 
 ```text
 node scripts/bundle-assets.js
@@ -141,40 +127,27 @@ node tests/verify-all.js
 node tests/verify-v2.js
 node tests/verify-fountain-v2.js
 node tests/verify-watercolor-v1.js
+node tests/verify-watercolor-v2.js
 node tests/verify-cloud.js   # live isolated cloud fixtures when intentionally run
 ```
-
-Tests must not mutate the real production Workspace. Cloud fixtures use isolated `__TEST__` workspaces and clean them up.
 
 Verification language:
 
 - **CODE VERIFIED** — implementation/test inspection.
-- **CI VERIFIED** — independent GitHub runner actually executed the specified suites.
-- **CLOUD VERIFIED** — live cloud fixture/API execution.
-- **BROWSER PASS** — real browser UX manually observed.
-- **MANUAL REQUIRED** — physical/subjective device test pending.
+- **CI VERIFIED** — independent GitHub runner executed the specified suites.
+- **CLOUD VERIFIED** — live isolated cloud evidence.
+- **BROWSER PASS** — real browser UX observed.
+- **MANUAL PASS/FAIL/REQUIRED** — physical/subjective device judgment.
 
-Automated tests do not prove either brush feels like iPad Freeform.
+Automated tests never override human brush-feel evidence.
 
 ## Multi-Computer / Multi-AI Safety
 
-Before editing:
-
-- pull/fetch latest `main`,
-- check remote HEAD,
-- read the source-of-truth files above,
-- verify another agent did not already implement the task,
-- never overwrite newer remote work from a stale clone.
-
-After meaningful product/architecture changes:
-
-- update `PRD.md` if requirements changed,
-- update `PROJECT_STATE.md` if implementation/verification status changed,
-- update `.ai-bridge/current-plan.md` so the next agent has one next action.
+Before editing, fetch/pull latest `main`, check remote HEAD, read the source-of-truth files, verify another agent has not already implemented the task, and never overwrite newer remote work from a stale clone.
 
 ## Legacy Files
 
-V1/V1.1 Pages/LAN/spacedesk-era scripts and the former local `server.js` live under `legacy/` and are historical only. PeerJS-era runtime/build assets are no longer part of the current V2 production source tree.
+V1/V1.1 Pages/LAN/spacedesk-era scripts and the former local `server.js` live under `legacy/` and are historical only. PeerJS-era runtime/build assets are not part of current V2 production source.
 
 ## License
 
