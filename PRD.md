@@ -25,6 +25,35 @@ The learner can continuously add new learning material, let AI propose how the n
 
 The product must feel like a **living external model of understanding**, not a collection of disconnected notes.
 
+## 1.2 Core Product Formula — Locked
+
+Detective Map is defined by **four capabilities working together**:
+
+1. **AI-Generated Concept Map** — the learner can add raw learning material and receive an automatically extracted, source-grounded concept-and-relationship structure without manually building the graph from scratch.
+2. **Human-Editable Structure** — every AI-created Concept, relationship, label, position, grouping, and structural decision remains directly editable by the learner. AI-generated does not mean AI-owned.
+3. **Handwriting-Native Thinking** — the learner can write, circle, underline, highlight, sketch, and draw freehand arrows directly on the same spatial map. Handwriting is a first-class thinking layer, not an exported screenshot or separate notebook.
+4. **Persistent Incremental Growth** — new learning is merged into the same Workspace over time instead of producing a disposable new visualization on every input.
+
+The differentiator is **not automatic visualization alone**. The product combines automatic structure generation with human structural ownership and direct pen-based thinking on a persistent map.
+
+Product shorthand:
+
+```text
+AI builds the map.
+You shape it.
+You think on it.
+It keeps growing.
+```
+
+Chinese product shorthand:
+
+```text
+AI 帮你长出知识地图。
+你负责修改它。
+你直接在上面思考。
+它会随着学习持续生长。
+```
+
 ---
 
 # 2. Core Product Thesis
@@ -108,6 +137,8 @@ Every AI-created or AI-enriched concept should maintain provenance links back to
 The system automates mechanical work: parsing, concept extraction, deduplication, relationship detection, source linking, and initial placement.
 
 The learner retains cognitive decisions: what matters, what is wrong, what belongs together, what should be emphasized, how concepts should be arranged, and what handwritten annotations mean.
+
+**Manual structural editing and handwriting are first-class product modes, not cleanup steps after AI generation.** The learner must be able to reshape AI output and add personal thinking without leaving the map.
 
 ## 3.5 Never Separate an Insight from Its Context
 
@@ -264,9 +295,9 @@ The user receives one proposal, not chunk-level result spam.
 - **Direction & Relation Clarity**: Review modal displays explicit `From → To` directional flow, semantic `relation` badges, and proposed explanatory labels.
 - **Subset Preservation**: Users can selectively check/uncheck individual concepts, enrichments, or edges without dangling references.
 
-## 6.7 Concept Card Dragging & Edge Label Readability
+## 6.7 Concept Node Dragging & Edge Label Readability
 
-- **Dedicated Grab Handle**: Every concept card features a dedicated `.concept-drag-handle` (`⋮⋮`) with `cursor: grab` / `cursor: grabbing` to ensure reliable repositioning on the spatial canvas.
+- **Dedicated Grab Handle**: Every concept node features a dedicated `.concept-drag-handle` (`⋮⋮`) with `cursor: grab` / `cursor: grabbing` to ensure reliable repositioning on the spatial canvas. The handle should remain visually subdued in the resting state and may become stronger on hover/selection so editing affordances do not make the node look like a document card.
 - **Select Mode Enforcement**: Node dragging is strictly bound to `activeTool === 'select'`, preventing accidental node repositioning during pen drawing, highlighting, erasing, or connecting.
 - **Protected Contenteditable**: Clicking editable titles or descriptions preserves text editing and never triggers dragging.
 - **Edge Label Readability**: SVG edge labels feature a protective high-contrast halo (`paint-order: stroke fill; stroke: #0f172a; stroke-width: 4px;`) ensuring text remains legible when crossing grid lines and ink strokes.
@@ -280,15 +311,15 @@ The primary canvas is a **Concept Map**, not a wall of note cards. The default v
 Every Concept renders **collapsed by default**. The collapsed node shows only information required to read the map structurally:
 
 ```text
-┌────────────────────────┐
+╭────────────────────────╮
 │ Spaced Repetition   📚2 │
-└────────────────────────┘
+╰────────────────────────╯
            │
     increases effectiveness
            ↓
-┌────────────────────────┐
-│ Optimized Interval     │
-└────────────────────────┘
+╭──────────────────────╮
+│ Optimized Interval   │
+╰──────────────────────╯
 ```
 
 Default collapsed nodes:
@@ -306,9 +337,10 @@ Concept identity is semantic data and must remain readable.
 
 Rules:
 - no default ellipsis such as `Elaborative Rehe...`,
-- node width may adapt within bounded limits,
-- longer titles wrap naturally when necessary,
-- target sizing: approximately `min-width: 180px`, adaptive preferred width, `max-width: 260px` unless later usability testing changes these values,
+- node width must be content-adaptive rather than using a card-oriented fixed minimum,
+- short labels should be allowed to remain compact enough to read visually as an oval / near-circle,
+- longer titles wrap naturally when necessary and expand into a wider capsule/soft oval,
+- approximate sizing direction: compact floor around `88–120px` when controls/badges permit, adaptive preferred width, and approximately `260px` maximum unless later usability testing changes these values,
 - title wrapping changes node height but must not hide part of the label.
 
 ### 6.8.3 Quick Expand = Temporary Summary View
@@ -345,8 +377,8 @@ The Detail Drawer may contain:
 Principle:
 
 ```text
-Card / Node = Concept identity in the graph
-Drawer      = Concept knowledge and evidence
+Node   = Concept identity in the graph
+Drawer = Concept knowledge and evidence
 ```
 
 Opening full details must not force neighboring nodes to move or destroy the user's spatial mental model.
@@ -383,6 +415,31 @@ Preferred behavior:
 - clear Retry action when relevant.
 
 The majority of canvas real estate must remain dedicated to **Concepts + Relationships + learner annotations**.
+
+### 6.8.8 Concept Should Look Like a Node, Not a Card — Locked
+
+The collapsed Concept must visually read as an **entity in a relationship graph**, not as a miniature document card.
+
+Visual direction:
+- prefer a **soft oval / capsule / highly rounded node silhouette** over a rigid rectangular card silhouette,
+- short labels may approach a compact circular or oval form,
+- longer labels should expand naturally into a wider capsule/soft oval rather than forcing every Concept into a perfect circle,
+- label readability always outranks geometric purity; never truncate or compress semantic identity merely to preserve a circle,
+- descriptions and evidence remain outside the collapsed node through Quick Expand and the Detail Drawer,
+- source/evidence badges stay compact and subordinate to the Concept label,
+- selection/focus may strengthen the node outline and connected relationships without mutating stored layout,
+- drag/edit affordances should remain available but should not visually dominate the Concept in its resting state.
+
+Principle:
+
+```text
+Concept should look like a node, not a card.
+Short concept → compact oval / near-circle
+Long concept  → adaptive soft capsule
+Detail        → Drawer, not a larger card
+```
+
+The goal is for the default canvas to read immediately as a **Concept Map / relationship network**, while retaining the flexibility needed for real-world concept names.
 
 ## 6.9 Ink Engine Foundation V1 — Low-Latency, Pressure-Aware, Replay-Safe
 
@@ -723,7 +780,7 @@ Infinite World Space
 │
 ├── Ink Layer
 │   ├── Fountain Pen handwriting
-│   ├── Watercolor Brush highlighting/emphasis
+│   ├── Transparent Marker highlighting/emphasis
 │   ├── utility Pen / Highlighter
 │   ├── free arrows
 │   └── sketches
@@ -745,6 +802,8 @@ V2.0 must support drag Concept, edit label, edit description, delete Concept wit
 
 Concept-map view requirements additionally include:
 - collapsed Concept nodes by default,
+- soft oval / capsule node silhouettes rather than rigid card-like rectangles,
+- content-adaptive node sizing so short concepts can stay compact and long concepts remain fully readable,
 - complete non-truncated labels,
 - double-click or explicit control for Quick Expand,
 - a full Detail Drawer for long descriptions and evidence,
@@ -762,7 +821,7 @@ Primary toolbar mapping is locked to the existing two ink controls:
 ```text
 👆 Select
 ✒ Pen         = Fountain Pen behavior
-🖌 Highlighter = Watercolor Brush behavior
+🖌 Highlighter = Transparent Marker behavior
 🧽 Eraser
 ↩ Undo
 ```
@@ -919,15 +978,19 @@ Capture five additional Sources over multiple sessions. The same Workspace keeps
 
 ## Scenario 7 — Structure-First Concept Map Reading
 
-Open a mature Workspace containing many Concepts with long descriptions. By default, the canvas shows compact Concept identities and readable relationship labels rather than paragraph-heavy cards. No Concept title is truncated. Double-clicking or activating the expand control temporarily reveals a concise description; opening Details shows full description and Sources in a drawer without permanently changing the map layout. Closing details returns the learner to the same spatial structure.
+Open a mature Workspace containing many Concepts with long descriptions. By default, the canvas shows compact Concept identities and readable relationship labels rather than paragraph-heavy cards. No Concept title is truncated. Short Concepts appear as compact oval/near-circle nodes; longer names expand into soft capsules. Double-clicking or activating the expand control temporarily reveals a concise description; opening Details shows full description and Sources in a drawer without permanently changing the map layout. Closing details returns the learner to the same spatial structure.
 
 ## Scenario 8 — Expressive Fountain Pen Writing
 
 Using a Wacom-class pen tablet, write `hello`, `oooooo`, `888888`, and `Spaced Repetition`, then draw light/normal/firm lines and fast flicks. Fountain Pen shows clearly visible pressure modulation, smooth taper, stable pointer-tip tracking, and no new perceptible lag versus the current low-latency Pen baseline. Reloading reproduces the same stroke geometry/character.
 
-## Scenario 9 — Watercolor Layering
+## Scenario 9 — Transparent Marker Readability
 
-Paint one translucent wash, repaint half of it, and cross it with same-color and different-color washes. Repeated/overlapping regions visibly deepen, edges remain softer than classic Highlighter, underlying Concept Map content remains readable, and the brush stays responsive during normal annotation.
+Highlight directly across a Concept title and an Edge label. One normal pass must leave both clearly readable. Repaint half of the first highlight and cross it once; overlap deepens gradually without becoming opaque. Repeat with at least two colors. The marker remains controlled, predictable, and responsive, while historical Watercolor strokes still replay unchanged.
+
+## Scenario 10 — AI Generates, Human Reshapes, Human Writes
+
+Add a new Source to an existing Workspace. AI proposes new Concepts and relationships and the learner applies them. The learner then drags one Concept, renames another, manually adds or edits an Edge, circles an important Concept with Pen, highlights a relationship with Highlighter, and writes a freehand note beside the structure. Add another Source afterward: AI must incrementally extend the same map while preserving the learner’s structural edits, layout, and ink. This scenario embodies the core product formula: **AI builds the map; the learner shapes it and thinks on it; the map keeps growing.**
 
 ---
 
@@ -974,10 +1037,14 @@ AI Provider Abstraction Layer
 
 # 20. Product Definition
 
-> **Detective Map is a persistent visual learning workspace that continuously updates with what you learn, while preserving your own spatial edits, handwritten thinking, and source context.**
+> **Detective Map is a persistent AI-generated, human-editable, handwriting-native Concept Map that keeps growing with what you learn while preserving your source context and cognitive ownership.**
 
-Short form:
+Product formula:
 
-> **Learn → Add → AI Merge → Edit → Ink → Sync → Keep Learning.**
+> **AI builds the map. You shape it. You think on it. It keeps growing.**
+
+Short workflow:
+
+> **Learn → Add → AI Map / Merge → Shape → Ink → Sync → Keep Learning.**
 
 The product succeeds when the learner can study for days or weeks and feel that one map is becoming an increasingly accurate external representation of their own understanding.
