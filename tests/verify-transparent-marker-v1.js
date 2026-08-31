@@ -128,10 +128,11 @@ test('8. Incremental renderer finalizes only newly stable segments', () => {
   assert.strictEqual(state.finalizedCount, s.points.length - 2);
 });
 
-test('9. Color palette still maps Highlighter independently', () => {
+test('9. Color palette maps Transparent Marker to Highlighter preference', () => {
   const source = fs.readFileSync(path.join(__dirname, '../shared/ink-color-palette.js'), 'utf8');
   assert(source.includes("highlighter: 'dm_highlighter_color_v1'"));
-  assert(source.includes("if (tool === 'highlighter' || tool === 'watercolor') return 'highlighter';"));
+  assert(source.includes("tool === 'transparent_marker'"));
+  assert(source.includes("return 'highlighter';"));
 });
 
 test('10. Canvas loads Transparent Marker after Watercolor histories and before controller', () => {
