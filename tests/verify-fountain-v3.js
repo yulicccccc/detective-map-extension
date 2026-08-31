@@ -235,44 +235,69 @@ test('9. Full replay is deterministic for persisted Fountain Pen V3 points', () 
   assert.strictEqual(JSON.stringify(a.ops), JSON.stringify(b.ops), 'Same persisted data must replay identically');
 });
 
-test('10. Incremental finalized + live tail matches full replay segment geometry/width', () => {
-  const points = [
-    { x: 0, y: 0, pressure: 0.2, t: 0, fountainPreset: 'expressive' },
-    { x: 15, y: 8, pressure: 0.4, t: 10 },
-    { x: 30, y: 16, pressure: 0.8, t: 20 },
-    { x: 45, y: 10, pressure: 0.6, t: 30 },
-    { x: 60, y: 18, pressure: 0.5, t: 40 },
-    { x: 75, y: 22, pressure: 0.6, t: 50 },
-    { x: 90, y: 15, pressure: 0.4, t: 60 },
-    { x: 105, y: 20, pressure: 0.3, t: 70 }
-  ];
-  const fullStroke = { tool: 'fountain_pen', brushType: 'fountain_pen', brushVersion: 3, width: 3, opacity: 1, color: '#0f172a', points };
-  const replay = createMockCtx();
-  FountainPenV3.renderFountainV3Stroke(replay, fullStroke);
-  const replaySegments = extractLineSegments(replay.ops);
+test('10. Incremental finalized + live tail matches full replay across 100% of segments (including full exit taper)', () => {
+  const testPointCounts = [2, 3, 5, 8, 12, 20];
 
-  const active = createMockCtx();
-  const scratch = createMockCtx();
-  const building = { tool: 'fountain_pen', brushType: 'fountain_pen', brushVersion: 3, width: 3, opacity: 1, color: '#0f172a', points: [] };
-  let state = { finalizedCount: 0, liveTail: null };
-  for (const point of points) {
-    building.points.push({ ...point });
-    state = FountainPenV3.renderIncrementalFountainV3(active, scratch, building, state);
+  for (const count of testPointCounts) {
+    const points = [];
+    for (let i = 0; i < count; i++) {
+      points.push({
+        x: i * 15,
+        y: Math.sin(i / 3) * 20,
+        pressure: 0.2 + (i % 5) * 0.15,
+        t: i * 16,
+        fountainPreset: 'expressive'
+      });
+    }
+
+    const building = {
+      tool: 'fountain_pen',
+      brushType: 'fountain_pen',
+      brushVersion: 3,
+      width: 3,
+      opacity: 1,
+      color: '#0f172a',
+      points: []
+    };
+
+    const active = createMockCtx();
+    const scratch = createMockCtx();
+    let state = { finalizedCount: 0, liveTail: null };
+
+    for (let i = 0; i < points.length; i++) {
+      building.points.push(points[i]);
+      state = FountainPenV3.renderIncrementalFountainV3(active, scratch, building, state);
+
+      // Verify at each point count (and especially at the final point count)
+      const currentFullStroke = {
+        ...building,
+        points: [...building.points]
+      };
+      const replay = createMockCtx();
+      FountainPenV3.renderFountainV3Stroke(replay, currentFullStroke);
+
+      const replaySegments = extractLineSegments(replay.ops);
+      const incrementalSegments = [
+        ...extractLineSegments(active.ops),
+        ...extractLineSegments(opsAfterLastClear(scratch.ops))
+      ];
+
+      assert.strictEqual(
+        incrementalSegments.length,
+        replaySegments.length,
+        `Segment count mismatch at total points ${i + 1}: incremental=${incrementalSegments.length}, replay=${replaySegments.length}`
+      );
+
+      // 100% segment-by-segment comparison across the entire stroke with NO exclusions
+      for (let s = 0; s < replaySegments.length; s++) {
+        assert.deepStrictEqual(
+          incrementalSegments[s],
+          replaySegments[s],
+          `Segment ${s}/${replaySegments.length} mismatch at point count ${i + 1}`
+        );
+      }
+    }
   }
-
-  const incrementalSegments = [
-    ...extractLineSegments(active.ops),
-    ...extractLineSegments(opsAfterLastClear(scratch.ops))
-  ];
-
-  assert.strictEqual(incrementalSegments.length, replaySegments.length, 'Incremental and replay segment counts must match');
-  // First 3 curves (18 subsegments) precede exit taper and must match replay exactly
-  for (let i = 0; i < 18; i++) {
-    assert.deepStrictEqual(incrementalSegments[i], replaySegments[i], `Segment ${i} must match replay exactly`);
-  }
-  assert.strictEqual(state.finalizedCount, points.length - 2);
-  assert.strictEqual(state.liveTail.to.x, points[points.length - 1].x);
-  assert.strictEqual(state.liveTail.to.y, points[points.length - 1].y);
 });
 
 test('11. Full active path stays O(1) as stroke grows to 500 points', () => {
@@ -328,10 +353,43 @@ test('11. Full active path stays O(1) as stroke grows to 500 points', () => {
   }
 
   assert.strictEqual(opsAt500, opsAt20, `Point 500 render work (${opsAt500}) must equal point 20 (${opsAt20})`);
-  assert(opsAt500 < 100, 'Per-point render operation budget must remain constant and bounded');
-  assert.strictEqual(state.finalizedCount, stroke.points.length - 2);
+  assert(opsAt500 < 200, `Per-point render operation budget must remain constant and bounded, got ${opsAt500}`);
+  assert.strictEqual(state.finalizedCount, stroke.points.length - 5, 'Finalized count must be total - 5');
   assert.strictEqual(FountainPenV3._inputCapture.queue.length, 0, 'Captured sample queue must remain aligned/drained');
 });
 
-console.log(`\nVerification Complete: ${passed}/${total} tests passed.`);
+test('12. Version isolation: persisted V2 stroke remains V2 and renders identically without V3 mutation', () => {
+  const v2Stroke = {
+    tool: 'fountain_pen',
+    brushType: 'fountain_pen',
+    brushVersion: 2,
+    width: 3,
+    opacity: 1,
+    color: '#38bdf8',
+    points: [
+      { x: 10, y: 10, pressure: 0.3, t: 0, brushVersion: 2 },
+      { x: 25, y: 20, pressure: 0.6, t: 15, brushVersion: 2 },
+      { x: 45, y: 35, pressure: 0.8, t: 30, brushVersion: 2 },
+      { x: 70, y: 40, pressure: 0.4, t: 45, brushVersion: 2 }
+    ]
+  };
+
+  const v2Snapshot = JSON.stringify(v2Stroke);
+  const upgraded = FountainPenV3.ensureActiveFountainV3Stroke(v2Stroke);
+  assert.strictEqual(upgraded, false, 'ensureActiveFountainV3Stroke must return false for V2 strokes');
+  assert.strictEqual(v2Stroke.brushVersion, 2, 'brushVersion must stay 2');
+  assert.strictEqual(v2Stroke.points[0].brushVersion, 2, 'points[0].brushVersion must stay 2');
+  assert.strictEqual(JSON.stringify(v2Stroke), v2Snapshot, 'v2Stroke object must not be mutated');
+
+  // Verify that CanvasCore delegates to V2 renderer
+  const ctx = createMockCtx();
+  CanvasCore.renderStroke(ctx, v2Stroke);
+  assert(ctx.ops.length > 0, 'Must render via V2');
+  assert.strictEqual(v2Stroke.brushVersion, 2, 'renderStroke must not mutate brushVersion');
+});
+
+console.log(`\n========================================`);
+console.log(`Verification Complete: ${passed}/${total} tests passed.`);
+console.log(`========================================`);
+
 if (passed !== total) process.exit(1);

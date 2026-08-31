@@ -270,75 +270,35 @@ const FountainPenV3 = (() => {
     return Math.max(0.30, Math.min(baseWidth * 0.18, liveWidth * 0.16));
   }
 
-  function drawFinalizedCurve(ctx, stroke, j) {
+  function drawCurveSegment(ctx, stroke, j, totalPoints = null) {
     const pts = stroke.points;
+    const total = totalPoints !== null ? totalPoints : pts.length;
+
     if (j === 0) {
       const to = midpoint(pts[1], pts[2]);
-      drawVariableQuadratic(
-        ctx,
-        pts[0],
-        pts[1],
-        to,
-        computePointWidth(stroke, 0),
-        midpointWidth(stroke, 1, 2)
-      );
+      const w0 = computePointWidth(stroke, 0, totalPoints);
+      const w1 = midpointWidth(stroke, 1, 2, totalPoints);
+      drawVariableQuadratic(ctx, pts[0], pts[1], to, w0, w1, 6);
+      return;
+    }
+
+    if (j === total - 2) {
+      const lastIdx = total - 1;
+      const from = midpoint(pts[lastIdx - 1], pts[lastIdx]);
+      const cp = pts[lastIdx];
+      const to = pts[lastIdx];
+      const w0 = midpointWidth(stroke, lastIdx - 1, lastIdx, totalPoints);
+      const w1 = computePointWidth(stroke, lastIdx, totalPoints);
+      drawVariableQuadratic(ctx, from, cp, to, w0, w1, 6);
       return;
     }
 
     const from = midpoint(pts[j], pts[j + 1]);
     const cp = pts[j + 1];
     const to = midpoint(pts[j + 1], pts[j + 2]);
-    drawVariableQuadratic(
-      ctx,
-      from,
-      cp,
-      to,
-      midpointWidth(stroke, j, j + 1),
-      midpointWidth(stroke, j + 1, j + 2)
-    );
-  }
-
-  function drawLiveTail(scratchCtx, stroke) {
-    const pts = stroke.points;
-    const count = pts.length;
-    if (count <= 0) return null;
-
-    if (count === 1) {
-      const w = computePointWidth(stroke, 0);
-      scratchCtx.beginPath();
-      scratchCtx.arc(pts[0].x, pts[0].y, w / 2, 0, Math.PI * 2);
-      scratchCtx.fill();
-      return { type: 'fountain_dot', to: { x: pts[0].x, y: pts[0].y }, width: w };
-    }
-
-    if (count === 2) {
-      const w0 = computePointWidth(stroke, 0);
-      const w1 = tipWidth(stroke);
-      drawVariableLine(scratchCtx, pts[0], pts[1], w0, w1);
-      return {
-        type: 'fountain_tail',
-        from: { x: pts[0].x, y: pts[0].y },
-        to: { x: pts[1].x, y: pts[1].y },
-        widthStart: w0,
-        widthEnd: w1
-      };
-    }
-
-    const lastIdx = count - 1;
-    const from = midpoint(pts[lastIdx - 1], pts[lastIdx]);
-    const cp = pts[lastIdx];
-    const to = pts[lastIdx];
-    const widthStart = midpointWidth(stroke, lastIdx - 1, lastIdx);
-    const widthEnd = tipWidth(stroke);
-
-    drawVariableQuadratic(scratchCtx, from, cp, to, widthStart, widthEnd, 6);
-    return {
-      type: 'fountain_tail',
-      from,
-      to,
-      widthStart,
-      widthEnd
-    };
+    const w0 = midpointWidth(stroke, j, j + 1, totalPoints);
+    const w1 = midpointWidth(stroke, j + 1, j + 2, totalPoints);
+    drawVariableQuadratic(ctx, from, cp, to, w0, w1, 6);
   }
 
   function renderFountainV3Stroke(targetCtx, stroke) {
@@ -361,48 +321,14 @@ const FountainPenV3 = (() => {
     if (total === 2) {
       const w0 = computePointWidth(stroke, 0, total);
       const w1 = computePointWidth(stroke, 1, total);
-      drawVariableLine(targetCtx, pts[0], pts[1], w0, w1);
+      drawVariableLine(targetCtx, pts[0], pts[1], w0, w1, 6);
       targetCtx.restore();
       return;
     }
 
-    // Segment 0: pts[0] -> mid(1,2)
-    const mid12 = midpoint(pts[1], pts[2]);
-    drawVariableQuadratic(
-      targetCtx,
-      pts[0],
-      pts[1],
-      mid12,
-      computePointWidth(stroke, 0, total),
-      midpointWidth(stroke, 1, 2, total)
-    );
-
-    // Intermediate segments: mid(j, j+1) -> mid(j+1, j+2)
-    for (let j = 1; j <= total - 3; j++) {
-      const from = midpoint(pts[j], pts[j + 1]);
-      const cp = pts[j + 1];
-      const to = midpoint(pts[j + 1], pts[j + 2]);
-      drawVariableQuadratic(
-        targetCtx,
-        from,
-        cp,
-        to,
-        midpointWidth(stroke, j, j + 1, total),
-        midpointWidth(stroke, j + 1, j + 2, total)
-      );
+    for (let j = 0; j <= total - 2; j++) {
+      drawCurveSegment(targetCtx, stroke, j, total);
     }
-
-    // Final segment: mid(N-2, N-1) -> pts[N-1]
-    const lastIdx = total - 1;
-    const fromFinal = midpoint(pts[lastIdx - 1], pts[lastIdx]);
-    drawVariableQuadratic(
-      targetCtx,
-      fromFinal,
-      pts[lastIdx],
-      pts[lastIdx],
-      midpointWidth(stroke, lastIdx - 1, lastIdx, total),
-      computePointWidth(stroke, lastIdx, total)
-    );
 
     targetCtx.restore();
   }
@@ -487,16 +413,29 @@ const FountainPenV3 = (() => {
   function ensureActiveFountainV3Stroke(stroke) {
     if (!stroke) return false;
 
-    // When the user has Pen selected, upgrade new active strokes to Fountain Pen V3
+    // Strict version isolation: if stroke is already marked with a prior version, DO NOT mutate or capture
+    if (stroke.brushType && stroke.brushType !== 'fountain_pen') return false;
+    if (Number.isFinite(stroke.brushVersion) && stroke.brushVersion < BRUSH_VERSION) {
+      return false;
+    }
+    const first = stroke.points && stroke.points[0];
+    if (first && Number.isFinite(first.brushVersion) && first.brushVersion < BRUSH_VERSION) {
+      return false;
+    }
+    if (first && Number.isFinite(first.fountainVersion) && first.fountainVersion < BRUSH_VERSION) {
+      return false;
+    }
+
+    // When the user has Pen selected, newly created active stroke has tool: 'pen' and no brushType
     if (stroke.tool === 'pen' && !stroke.brushType) {
       const presetId = currentPresetId();
       stroke.tool = 'fountain_pen';
       stroke.brushType = 'fountain_pen';
       stroke.brushVersion = BRUSH_VERSION;
       stroke.brushParams = { preset: presetId, version: BRUSH_VERSION };
-      if (stroke.points && stroke.points[0]) {
-        stroke.points[0].fountainPreset = presetId;
-        stroke.points[0].brushVersion = BRUSH_VERSION;
+      if (first) {
+        first.fountainPreset = presetId;
+        first.brushVersion = BRUSH_VERSION;
       }
     }
 
@@ -505,7 +444,7 @@ const FountainPenV3 = (() => {
     if (!stroke.brushType) stroke.brushType = 'fountain_pen';
     if (!stroke.brushVersion || stroke.brushVersion < BRUSH_VERSION) stroke.brushVersion = BRUSH_VERSION;
     if (!stroke.brushParams) {
-      const firstPreset = stroke.points && stroke.points[0] && stroke.points[0].fountainPreset;
+      const firstPreset = first && first.fountainPreset;
       stroke.brushParams = { preset: firstPreset || DEFAULT_PRESET, version: BRUSH_VERSION };
     }
     hydratePointDynamics(stroke);
@@ -516,7 +455,8 @@ const FountainPenV3 = (() => {
     if (!stroke || !stroke.points || stroke.points.length === 0) return state;
 
     const pts = stroke.points;
-    let finalizedCount = (state && state.finalizedCount) || 0;
+    const total = pts.length;
+    let finalizedCount = (state && typeof state.finalizedCount === 'number') ? state.finalizedCount : 0;
     let liveTail = null;
 
     if (scratchCtx) {
@@ -525,48 +465,60 @@ const FountainPenV3 = (() => {
       configureContext(scratchCtx, stroke);
     }
 
-    if (pts.length === 1) {
-      const w = computePointWidth(stroke, 0);
+    if (total === 1) {
+      const w = computePointWidth(stroke, 0, total);
       if (scratchCtx) {
         scratchCtx.beginPath();
         scratchCtx.arc(pts[0].x, pts[0].y, w / 2, 0, Math.PI * 2);
         scratchCtx.fill();
       }
       liveTail = { type: 'fountain_dot', to: { x: pts[0].x, y: pts[0].y }, width: w };
-    } else if (pts.length === 2) {
-      if (scratchCtx) liveTail = drawLiveTail(scratchCtx, stroke);
-      else liveTail = {
-        type: 'fountain_tail',
+    } else if (total === 2) {
+      const w0 = computePointWidth(stroke, 0, total);
+      const w1 = computePointWidth(stroke, 1, total);
+      if (scratchCtx) {
+        drawVariableLine(scratchCtx, pts[0], pts[1], w0, w1, 6);
+      }
+      liveTail = {
+        type: 'fountain_line',
         from: { x: pts[0].x, y: pts[0].y },
         to: { x: pts[1].x, y: pts[1].y },
-        widthStart: computePointWidth(stroke, 0),
-        widthEnd: tipWidth(stroke)
+        widthStart: w0,
+        widthEnd: w1
       };
     } else {
-      if (activeCtx) {
+      // Safe finalization horizon:
+      // Curve j uses points j, j+1, j+2. When j+2 <= total - 4 (i.e. j <= total - 6),
+      // all points used by curve j have fromEnd >= 3, which means exitTaperFactor === 1.0 permanently.
+      // Curves j <= total - 6 will NEVER change in width or geometry for any future points added.
+      const safeFinalizeMax = total - 6;
+
+      if (activeCtx && safeFinalizeMax >= 0) {
         activeCtx.save();
         configureContext(activeCtx, stroke);
-        while (finalizedCount <= pts.length - 3) {
-          drawFinalizedCurve(activeCtx, stroke, finalizedCount);
+        while (finalizedCount <= safeFinalizeMax) {
+          drawCurveSegment(activeCtx, stroke, finalizedCount, null);
           finalizedCount++;
         }
         activeCtx.restore();
-      } else {
-        finalizedCount = pts.length - 2;
       }
 
-      if (scratchCtx) liveTail = drawLiveTail(scratchCtx, stroke);
-      else {
-        const lastIdx = pts.length - 1;
-        const from = midpoint(pts[lastIdx - 1], pts[lastIdx]);
-        liveTail = {
-          type: 'fountain_tail',
-          from,
-          to: { x: pts[lastIdx].x, y: pts[lastIdx].y },
-          widthStart: midpointWidth(stroke, lastIdx - 1, lastIdx),
-          widthEnd: tipWidth(stroke)
-        };
+      // Draw the mutable tail window (curves finalizedCount ... total - 2) on scratchCtx
+      // with totalPoints = total so it reflects the live exit taper right up to the pointer tip:
+      if (scratchCtx) {
+        for (let j = finalizedCount; j <= total - 2; j++) {
+          drawCurveSegment(scratchCtx, stroke, j, total);
+        }
       }
+
+      const lastIdx = total - 1;
+      liveTail = {
+        type: 'fountain_tail',
+        from: midpoint(pts[lastIdx - 1], pts[lastIdx]),
+        to: { x: pts[lastIdx].x, y: pts[lastIdx].y },
+        widthStart: midpointWidth(stroke, lastIdx - 1, lastIdx, total),
+        widthEnd: computePointWidth(stroke, lastIdx, total)
+      };
     }
 
     if (scratchCtx) scratchCtx.restore();
