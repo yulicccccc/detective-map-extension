@@ -25,6 +25,9 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Reconcile Watercolor PRD visual standard
+        run: node scripts/reconcile-watercolor-gold-standard.js
+
       - name: Build generated assets
         run: |
           node scripts/bundle-assets.js
@@ -38,15 +41,15 @@ jobs:
           if [ -f tests/verify-watercolor-v1.js ]; then node tests/verify-watercolor-v1.js; fi
           if [ -f tests/verify-watercolor-v2.js ]; then node tests/verify-watercolor-v2.js; fi
 
-      - name: Commit generated artifacts if needed
+      - name: Commit PRD and generated artifacts if needed
         shell: bash
         run: |
-          if git diff --quiet -- public src/assets-bundle.js; then
-            echo 'Generated assets already aligned.'
+          if git diff --quiet -- PRD.md public src/assets-bundle.js; then
+            echo 'PRD and generated assets already aligned.'
             exit 0
           fi
           git config user.name 'detective-map-build-bot'
           git config user.email 'actions@users.noreply.github.com'
-          git add public src/assets-bundle.js
-          git commit -m 'chore: rebuild generated assets [skip ci]'
+          git add PRD.md public src/assets-bundle.js
+          git commit -m 'docs: lock Watercolor visual gold standard [skip ci]'
           git push origin HEAD:main
