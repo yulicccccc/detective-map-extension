@@ -3,6 +3,9 @@ name: Apply Concept Node V2 Once
 on:
   push:
     branches: [main]
+    paths:
+      - 'scripts/apply-concept-node-v2.js'
+      - '.github/workflows/apply-concept-node-v2-once.yml'
 
 permissions:
   contents: write
@@ -22,14 +25,12 @@ jobs:
       - name: Verify focused Concept Node suite
         run: node tests/verify-concept-nodes-v2.js
 
-      - name: Commit migration and remove one-time activation files
+      - name: Commit migration only
         shell: bash
         run: |
           git config user.name 'detective-map-ui-bot'
           git config user.email 'actions@users.noreply.github.com'
-          git rm scripts/apply-concept-node-v2.js
-          git rm .github/workflows/apply-concept-node-v2-once.yml
-          git add canvas.css canvas.js tests/verify-concept-nodes-v2.js .github/workflows/verify-generated-assets.yml PROJECT_STATE.md .ai-bridge/current-plan.md
+          git add canvas.css canvas.js tests/verify-concept-nodes-v2.js PROJECT_STATE.md .ai-bridge/current-plan.md
           git diff --cached --check
-          git commit -m 'feat(ui): adopt soft adaptive Concept nodes [skip ci]'
+          git commit -m 'feat(ui): adopt soft adaptive Concept nodes'
           git push origin HEAD:main
