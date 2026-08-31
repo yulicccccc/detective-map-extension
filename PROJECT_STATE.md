@@ -279,3 +279,12 @@ Acceptance:
 - endpoints feel flatter/more chisel-like,
 - no perceptible new lag,
 - old Watercolor strokes remain unchanged.
+
+
+## Concept Node V2 — Soft Oval / Adaptive Capsule (31Aug26)
+
+Product direction is now locked to **Concept should look like a node, not a card**. The collapsed Concept surface uses a compact content-adaptive soft oval/capsule silhouette: short labels can approach a near-circle, while long labels expand/wrap without truncation. Drag/edit/delete/expand affordances move visually out of the resting silhouette so controls do not force every Concept into a card-width rectangle. Expanded summaries stay bounded and spatially stable.
+
+Automated coverage: `tests/verify-concept-nodes-v2.js`.
+
+State: **CODE / CI verification required after activation; BROWSER / MANUAL visual acceptance required.**
