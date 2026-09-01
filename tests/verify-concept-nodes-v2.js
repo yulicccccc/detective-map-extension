@@ -19,15 +19,15 @@ function test(name, fn) {
 }
 
 console.log('========================================');
-console.log('🫧 Concept Node V2 Verification');
+console.log('🫧 Concept Node V4 Verification');
 console.log('========================================');
 
 test('1. Collapsed Concept uses a soft pill/oval silhouette', () => {
   const block = css.match(/\.concept-node \{([\s\S]*?)\n\}/);
   assert(block, 'Missing .concept-node rule');
   assert(/border-radius:\s*999px/.test(block[1]), 'Collapsed node must use pill/oval radius');
-  assert(/min-width:\s*76px/.test(block[1]), 'Short concepts must be allowed to stay visually compact');
-  assert(/max-width:\s*190px/.test(block[1]), 'Collapsed nodes must avoid button-like horizontal growth');
+  assert(/min-width:\s*72px/.test(block[1]), 'Short concepts must be allowed to approach a near-circle footprint');
+  assert(/max-width:\s*148px/.test(block[1]), 'Collapsed nodes must resist elongated pill growth');
   assert(/width:\s*max-content/.test(block[1]), 'Node width must remain content-adaptive');
 });
 
@@ -45,7 +45,7 @@ test('3. Long labels remain complete and wrap instead of ellipsizing', () => {
   assert(/white-space:\s*normal/.test(block[1]));
   assert(/overflow-wrap:\s*break-word/.test(block[1]));
   assert(!/text-overflow:\s*ellipsis/.test(block[1]));
-  assert(/max-width:\s*156px/.test(block[1]), 'Title measure should encourage earlier wrapping instead of a wide button-like pill');
+  assert(/max-width:\s*104px/.test(block[1]), 'Title measure should make common multi-word Concepts wrap earlier');
 });
 
 test('4. Structural controls are visually out-of-flow so short nodes stay compact', () => {
@@ -80,6 +80,7 @@ test('8. Product rule is locked in PRD', () => {
   assert(prd.includes('Short concept → compact oval / near-circle'));
   assert(prd.includes('Long concept  → adaptive soft capsule'));
   assert(prd.includes('avoid elongated, button-like pills'));
+  assert(prd.includes('Relationship labels should visually outrank Source badges'));
 });
 
 test('9. Resting node chrome is visually subordinate', () => {
@@ -87,8 +88,17 @@ test('9. Resting node chrome is visually subordinate', () => {
   const badge = css.match(/\.badge-sources \{([\s\S]*?)\n\}/);
   assert(node && /border:\s*1px solid rgba\(100, 116, 139, 0\.38\)/.test(node[1]), 'Resting outline should stay subtle');
   assert(node && /box-shadow:\s*0 2px 8px -5px/.test(node[1]), 'Resting shadow should stay minimal');
-  assert(badge && /opacity:\s*0\.72/.test(badge[1]), 'Source badge should be visually subordinate');
+  assert(badge && /opacity:\s*0\.46/.test(badge[1]), 'Source badge should be clearly third-level information');
   assert(badge && /box-shadow:\s*none/.test(badge[1]), 'Source badge should not float like a card control');
+});
+
+test('10. Relationship labels visually outrank Source badges', () => {
+  const edge = css.match(/\.edge-label-text \{([\s\S]*?)\n\}/);
+  const badge = css.match(/\.badge-sources \{([\s\S]*?)\n\}/);
+  assert(edge && /font-size:\s*11\.5px/.test(edge[1]), 'Relationship label should receive slightly more visual weight');
+  assert(edge && /font-weight:\s*650/.test(edge[1]), 'Relationship label weight should remain stronger than metadata');
+  assert(edge && /fill:\s*#bfdbfe/.test(edge[1]), 'Relationship label should remain clearly readable on the dark map');
+  assert(badge && /font-size:\s*7px/.test(badge[1]), 'Source badge should stay materially smaller than relationship semantics');
 });
 
 console.log('\n========================================');

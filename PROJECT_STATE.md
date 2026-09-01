@@ -1,13 +1,13 @@
 # Detective Map V2.0 — Current Project State
 
-**Last reconciled:** 2026-08-31  
-**Product:** Living Learning Map  
-**Production:** `https://detectivemap.qchen9108.workers.dev`  
-**Status:** 🟢 Core Living Map stable; Structure-First interaction model browser-verified; Concept Node V3 compact visual refinement implemented and awaiting browser acceptance; Fountain Pen V3 and Transparent Marker retain separate manual device checks.
+**Last reconciled:** 2026-09-01
+**Product:** Living Learning Map
+**Production:** `https://detectivemap.qchen9108.workers.dev`
+**Status:** 🟢 Core Living Map stable; Structure-First interaction model browser-verified; Concept Node V3 browser/manual accepted; Concept Node V4 relationship-first visual refinement implemented and awaiting browser acceptance; Fountain Pen V3 and Transparent Marker retain separate manual device checks.
 
-> `PRD.md` = product requirements.  
-> `PROJECT_STATE.md` = current implementation/evidence.  
-> `.ai-bridge/current-plan.md` = one next action.  
+> `PRD.md` = product requirements.
+> `PROJECT_STATE.md` = current implementation/evidence.
+> `.ai-bridge/current-plan.md` = one next action.
 > `AGENTS.md` = engineering/multi-agent rules.
 
 ---
@@ -90,7 +90,8 @@ Rules:
 - Spatial coordinates remain stable while inspecting details.
 - Edge labels retain readable halo.
 - Operational errors use compact toast/status UI.
-- Current visual refinement: collapsed Concepts use a compact, quiet oval/capsule footprint (about 76–190px) with earlier wrapping, reduced border/shadow weight, and a more subordinate Source badge so relationships and handwriting dominate the canvas.
+- Concept Node V3 browser/manual result: PASS — the map reads materially more like a Concept Map than a row of UI cards/buttons.
+- Current V4 refinement: collapsed Concepts target roughly 72–148px with a ~104px title measure so common multi-word labels wrap earlier; Source badges are further de-emphasized; Relationship labels are slightly strengthened so Concept + Relationship + handwriting dominate node chrome/metadata.
 
 ---
 
@@ -118,8 +119,8 @@ Historical manual evidence:
 
 Implementation: `shared/fountain-pen-v3.js`
 
-**CODE VERIFIED ✅**  
-**CI VERIFIED ✅**  
+**CODE VERIFIED ✅**
+**CI VERIFIED ✅**
 **MANUAL WACOM ACCEPTANCE REQUIRED ⏳**
 
 Includes:
@@ -143,7 +144,7 @@ Automated suites: `tests/verify-fountain-v2.js` and `tests/verify-fountain-v3.js
 
 `shared/watercolor-brush-v1.js`
 
-**CODE / CI VERIFIED ✅**  
+**CODE / CI VERIFIED ✅**
 **MANUAL FAIL ❌**
 
 V1 was too dense and obscured map information.
@@ -152,8 +153,8 @@ V1 was too dense and obscured map information.
 
 `shared/watercolor-brush-v2.js`
 
-**CODE / CI VERIFIED ✅**  
-**MANUAL PASS as a watercolor effect ✅**  
+**CODE / CI VERIFIED ✅**
+**MANUAL PASS as a watercolor effect ✅**
 **PRODUCT DIRECTION RETIRED ⚪**
 
 The user later judged the watercolor look aesthetically acceptable but still too visually blocking for Detective Map's knowledge-work highlighting role. Watercolor V1/V2 therefore remain historical replay formats only; they are no longer the default Highlighter product behavior.
@@ -162,8 +163,8 @@ The user later judged the watercolor look aesthetically acceptable but still too
 
 Implementation: `shared/transparent-marker-v1.js`
 
-**CODE VERIFIED ✅**  
-**CI VERIFIED ✅**  
+**CODE VERIFIED ✅**
+**CI VERIFIED ✅**
 **MANUAL WACOM ACCEPTANCE REQUIRED ⏳**
 
 Product rationale: highlighting should emphasize Concept/Edge/text information without competing with or covering it.
@@ -198,8 +199,8 @@ Automated suite: `tests/verify-transparent-marker-v1.js`.
 
 Implementation: `shared/ink-color-palette.js`
 
-**CODE VERIFIED ✅**  
-**CI VERIFIED ✅**  
+**CODE VERIFIED ✅**
+**CI VERIFIED ✅**
 **MANUAL PASS for core independent-color behavior ✅**
 
 - Pen and Highlighter maintain separate selected colors.
@@ -258,7 +259,7 @@ Before work: fetch/pull latest `main`, confirm remote HEAD, then read `PRD.md`, 
 
 ## 11. Single Next Action
 
-**Manual browser acceptance of Concept Node V3 compact visual refinement on a real map.**
+**Manual browser acceptance of Concept Node V4 relationship-first refinement on the same real map.**
 
 After pulling/reloading:
 

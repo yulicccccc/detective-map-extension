@@ -1178,13 +1178,19 @@ async function runSuite() {
     assert(canvasCss.includes('overflow-wrap: break-word;'), 'Concept title must wrap long words');
     assert(canvasCss.includes('white-space: normal;'), 'Concept title must allow natural multi-line wrapping');
 
-    // 22.3 Concept Node V3 footprint: compact, adaptive, visually quiet rather than button-like
+    // 22.3 Concept Node V4 footprint: more node-like, earlier wrapping, relationship-first hierarchy
     const conceptNodeRule = canvasCss.match(/\.concept-node \{([\s\S]*?)\n\}/);
     assert(conceptNodeRule, 'canvas.css must define .concept-node');
-    assert(/min-width:\s*76px/.test(conceptNodeRule[1]), 'Short Concept nodes must be allowed to remain compact (~76px floor)');
-    assert(/max-width:\s*190px/.test(conceptNodeRule[1]), 'Collapsed Concept nodes must avoid button-like growth beyond ~190px');
+    assert(/min-width:\s*72px/.test(conceptNodeRule[1]), 'Short Concept nodes must be allowed to approach a near-circle footprint (~72px floor)');
+    assert(/max-width:\s*148px/.test(conceptNodeRule[1]), 'Collapsed Concept nodes must resist elongated pill growth beyond ~148px');
     assert(/width:\s*max-content/.test(conceptNodeRule[1]), 'Collapsed Concept width must adapt to content');
     assert(/border-radius:\s*999px/.test(conceptNodeRule[1]), 'Collapsed Concept must visually read as a soft oval/capsule node');
+
+    const conceptTitleRule = canvasCss.match(/\.concept-title \{([\s\S]*?)\n\}/);
+    assert(conceptTitleRule && /max-width:\s*104px/.test(conceptTitleRule[1]), 'Common multi-word Concept names should wrap earlier instead of staying in long pills');
+
+    const edgeLabelRule = canvasCss.match(/\.edge-label-text \{([\s\S]*?)\n\}/);
+    assert(edgeLabelRule && /font-size:\s*11\.5px/.test(edgeLabelRule[1]) && /font-weight:\s*650/.test(edgeLabelRule[1]), 'Relationship labels should visually outrank Source metadata');
 
     const conceptHeaderRule = canvasCss.match(/\.concept-header \{([\s\S]*?)\n\}/);
     assert(conceptHeaderRule && /background:\s*transparent/.test(conceptHeaderRule[1]), 'Concept header must not recreate a rectangular card band');

@@ -1,7 +1,7 @@
 # Current Plan — Detective Map V2.0
 
-**Last updated:** 2026-08-31  
-**Single next priority:** **Manual visual acceptance of Concept Node V3 — compact, quiet graph nodes**
+**Last updated:** 2026-09-01
+**Single next priority:** **Manual visual acceptance of Concept Node V4 — relationship-first graph refinement**
 
 ## Locked Product Formula
 
@@ -11,39 +11,48 @@ The primary canvas is a persistent AI-generated, human-editable, handwriting-nat
 
 ## Current Visual Change
 
-Concept Node V2 correctly moved the UI from rectangular cards to soft capsules, but real browser evidence showed the nodes still read too much like large pill-shaped buttons. V3 keeps the same data/interaction model and tightens only the visual footprint:
+Concept Node V3 passed real-browser acceptance: the map now reads as a Concept Map rather than a row of large pill buttons. V4 is a narrow refinement based on that accepted screenshot, not a redesign.
 
-- resting node width roughly 76–190px,
-- title text measure around 156px so common long labels wrap earlier,
-- collapsed height reduced from 54px to about 42px,
-- border and shadow substantially quieter,
-- Source badge smaller and visually subordinate,
-- complete labels remain mandatory; no ellipsis,
-- expanded summary, drag behavior, Detail Drawer, and Edge geometry remain unchanged.
+V4 changes only three visual priorities:
+
+1. **Earlier wrapping / more node-like proportions**
+   - resting node width target roughly 72–148px,
+   - title measure about 104px,
+   - common multi-word Concepts such as `Spaced Repetition`, `Optimized Interval`, and `Distributed Practice` should be allowed to wrap into a more oval/near-circle footprint instead of preserving one long line.
+
+2. **Source badge moves further into the background**
+   - smaller text and padding,
+   - lower opacity,
+   - weaker background/border,
+   - still clickable and readable on intent.
+
+3. **Relationship semantics become slightly stronger**
+   - relationship label size/weight/contrast increases slightly,
+   - relationship information must visually outrank Source metadata without overpowering the Concept name or handwriting.
+
+No changes to Concept coordinates, AI behavior, data model, Ink, Drawer, Quick Expand, drag behavior, or Edge storage.
 
 Principle:
 
-`Concept identity + Relationship + handwriting > node chrome.`
-
-Implementation lives primarily in `canvas.css`. Regression coverage remains `tests/verify-concept-nodes-v2.js` (now including compact V3 visual invariants).
+`Concept Name + Relationship + handwriting > Source metadata > node chrome.`
 
 ## Manual Acceptance
 
-After syncing and reloading, inspect the same real map that previously showed `Spaced Repetition → Optimized Interval`.
+After syncing and reloading, inspect the same real map containing `Spaced Repetition → Optimized Interval`, plus surrounding nodes.
 
 PASS requires:
 
-1. nodes no longer read as large UI buttons,
-2. the relationship line/label feels at least as visually important as the node shell,
-3. handwriting can sit on the map without competing against heavy node chrome,
-4. common multi-word labels stay compact; longer labels wrap naturally,
-5. Source badge remains readable but clearly third-level information,
-6. hover/select controls still work,
-7. Edge endpoints still align with live node dimensions,
-8. Quick Expand / Drawer behavior remains unchanged.
+1. common multi-word Concepts feel more like graph nodes than horizontal UI pills,
+2. labels remain complete and naturally wrapped; no truncation,
+3. relationship labels are easier to read at a glance than Source badges,
+4. Source badges remain discoverable but no longer compete with the Concept name,
+5. handwriting still feels like a first-class thinking layer over the machine-generated structure,
+6. Edge endpoints remain visually aligned with live node dimensions,
+7. hover/select/drag/expand behaviors remain unchanged,
+8. the overall canvas feels closer to an interactive knowledge network than a flowchart or card layout.
 
-Automated tests may establish CODE/CI VERIFIED. The visual result still requires browser/manual acceptance.
+Automated tests may establish CODE/CI VERIFIED. Final aesthetics still require browser/manual acceptance.
 
 ## Separate Open Ink Check
 
-Fountain Pen V3 high-frequency Wacom input has requestAnimationFrame batching and resampling, but the final low-latency Wacom feel still requires a separate human re-check. Do not conflate that with Concept Node V3 visual acceptance.
+Fountain Pen V3 high-frequency Wacom input has requestAnimationFrame batching and resampling, but the final low-latency Wacom feel still requires a separate human re-check. Do not conflate that with Concept Node V4 visual acceptance.
