@@ -1,0 +1,38 @@
+name: Apply Concept Node V4 Once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/apply-concept-node-v4.js'
+
+permissions:
+  contents: write
+
+jobs:
+  apply-concept-node-v4:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply Concept Node V4 refinement
+        run: node scripts/apply-concept-node-v4.js
+
+      - name: Verify focused Concept Node suite
+        run: node tests/verify-concept-nodes-v2.js
+
+      - name: Verify Structure-First regression suite
+        run: node tests/verify-v2.js
+
+      - name: Commit Concept Node V4
+        shell: bash
+        run: |
+          git config user.name 'detective-map-ui-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add canvas.css PRD.md tests/verify-concept-nodes-v2.js tests/verify-v2.js PROJECT_STATE.md .ai-bridge/current-plan.md
+          git diff --cached --check
+          git commit -m 'feat(ui): refine Concept nodes toward relationship-first graph'
+          git push origin HEAD:main
