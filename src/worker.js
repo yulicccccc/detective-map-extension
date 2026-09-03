@@ -1,6 +1,15 @@
 import { ASSETS_MANIFEST } from "./assets-bundle.js";
 import { chunkSourceText, validateAndSanitizeOperations, validateProposalSubset, resolveConceptLabel, formatEdgeReview } from "../shared/engine-core.js";
 
+// Architectural setting for Concept Map cognitive output language (extensible to workspace setting)
+export const MAP_OUTPUT_LANGUAGE = 'en';
+
+// Configurable processing attempt timeout: 5 minutes (300,000 ms)
+// Justification: Detective Map splits large source documents (up to ~10,000 words) into multiple ~2,800-character chunks
+// and runs fallback retries across up to 3 separate LLM models per chunk. 5 minutes provides sufficient headroom
+// for multi-chunk queueing and model inference on Workers AI while preventing permanently hanging 'processing' states.
+export const AI_PROCESSING_TIMEOUT_MS = 5 * 60 * 1000;
+
 export class DetectiveMapWorkspace {
   constructor(ctx, env) {
     this.ctx = ctx;
@@ -35,7 +44,10 @@ export class DetectiveMapWorkspace {
         url TEXT,
         capturedAt TEXT NOT NULL,
         contentHash TEXT,
-        processingStatus TEXT NOT NULL DEFAULT 'completed'
+        processingStatus TEXT NOT NULL DEFAULT 'completed',
+        processingError TEXT,
+        processingStartedAt TEXT,
+        processingAttemptId TEXT
       );
 
       CREATE TABLE IF NOT EXISTS concepts (
@@ -139,6 +151,24 @@ export class DetectiveMapWorkspace {
 
     // Purge expired pairing pins
     this.sql.exec(`DELETE FROM pairing_pins WHERE expiresAt <= ${Date.now()}`);
+
+    // Idempotent migration: ensure processingError, processingStartedAt, processingAttemptId exist on sources
+    try {
+      const sourceCols = this.sql.exec(`PRAGMA table_info(sources)`).toArray();
+      if (sourceCols.length > 0) {
+        if (!sourceCols.some(c => c.name === 'processingError')) {
+          this.sql.exec(`ALTER TABLE sources ADD COLUMN processingError TEXT;`);
+        }
+        if (!sourceCols.some(c => c.name === 'processingStartedAt')) {
+          this.sql.exec(`ALTER TABLE sources ADD COLUMN processingStartedAt TEXT;`);
+        }
+        if (!sourceCols.some(c => c.name === 'processingAttemptId')) {
+          this.sql.exec(`ALTER TABLE sources ADD COLUMN processingAttemptId TEXT;`);
+        }
+      }
+    } catch (migErr) {
+      console.warn('[Idempotent Migration Notice]', migErr.message);
+    }
   }
 
   isAuthorized(token) {
@@ -434,10 +464,12 @@ export class DetectiveMapWorkspace {
         const sourceId = body.id || 'src_' + crypto.randomUUID().replace(/-/g, '').slice(0, 12);
         const now = new Date().toISOString();
 
+        const attemptId = 'att_' + crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+
         this.sql.exec(`
-          INSERT INTO sources (id, workspaceId, type, title, text, url, capturedAt, contentHash, processingStatus)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'processing')
-        `, sourceId, workspaceId, body.type || 'chatgpt_selection', body.title || 'Source Evidence', body.text || '', body.url || '', now, '');
+          INSERT INTO sources (id, workspaceId, type, title, text, url, capturedAt, contentHash, processingStatus, processingError, processingStartedAt, processingAttemptId)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'processing', NULL, ?, ?)
+        `, sourceId, workspaceId, body.type || 'chatgpt_selection', body.title || 'Source Evidence', body.text || '', body.url || '', now, '', now, attemptId);
 
         const newSource = {
           id: sourceId,
@@ -447,13 +479,16 @@ export class DetectiveMapWorkspace {
           text: body.text || '',
           url: body.url || '',
           capturedAt: now,
-          processingStatus: 'processing'
+          processingStatus: 'processing',
+          processingError: null,
+          processingStartedAt: now,
+          processingAttemptId: attemptId
         };
 
         this.broadcast({ type: 'SOURCE_ADDED', source: newSource, workspaceId });
 
         // Trigger Incremental AI Patch Proposal asynchronously
-        this.ctx.waitUntil(this.processSourceWithAI(workspaceId, newSource));
+        this.ctx.waitUntil(this.processSourceWithAI(workspaceId, newSource, attemptId));
 
         return jsonResponse({ success: true, source: newSource, quote: newSource });
       } catch (err) {
@@ -483,19 +518,34 @@ export class DetectiveMapWorkspace {
         ).toArray();
 
         if (existingProps.length > 0) {
-          this.sql.exec(`UPDATE sources SET processingStatus = 'completed' WHERE id = ?`, sourceId);
-          return jsonResponse({ success: true, message: 'Proposal already exists', source: { ...source, processingStatus: 'completed' } });
+          this.sql.exec(`UPDATE sources SET processingStatus = 'completed_with_changes', processingError = NULL WHERE id = ?`, sourceId);
+          return jsonResponse({ success: true, message: 'Proposal already exists', source: { ...source, processingStatus: 'completed_with_changes', processingError: null } });
         }
 
         // Archive any stale proposals for this source so they do not keep reappearing
         this.sql.exec(`UPDATE proposals SET status = 'archived' WHERE sourceId = ? AND status = 'stale'`, sourceId);
 
-        this.sql.exec(`UPDATE sources SET processingStatus = 'processing' WHERE id = ?`, sourceId);
-        const updatedSource = { ...source, processingStatus: 'processing' };
+        // Reset status and clear previous failure diagnostic durably, record new attempt and startedAt while preserving provenance capturedAt
+        const newAttemptId = 'att_' + crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+        const retryTime = new Date().toISOString();
+
+        this.sql.exec(`
+          UPDATE sources
+          SET processingStatus = 'processing', processingError = NULL, processingStartedAt = ?, processingAttemptId = ?
+          WHERE id = ?
+        `, retryTime, newAttemptId, sourceId);
+
+        const updatedSource = {
+          ...source,
+          processingStatus: 'processing',
+          processingError: null,
+          processingStartedAt: retryTime,
+          processingAttemptId: newAttemptId
+        };
         this.broadcast({ type: 'SOURCE_UPDATED', source: updatedSource, workspaceId });
         this.broadcast({ type: 'PROPOSALS_STALE_CLEARED', sourceId, workspaceId });
 
-        this.ctx.waitUntil(this.processSourceWithAI(workspaceId, updatedSource));
+        this.ctx.waitUntil(this.processSourceWithAI(workspaceId, updatedSource, newAttemptId));
 
         return jsonResponse({ success: true, message: 'Retry initiated', source: updatedSource });
       } catch (err) {
@@ -948,14 +998,18 @@ export class DetectiveMapWorkspace {
     const workspaces = this.sql.exec(`SELECT * FROM workspaces WHERE archived = 0 ORDER BY updatedAt DESC`).toArray();
     const wsRow = workspaces.find(w => w.id === workspaceId) || { id: workspaceId, title: 'My Learning Map', revision: 1 };
 
-    // Auto-heal stale processing sources older than 3 minutes
-    const threeMinAgo = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+    // Auto-heal stale processing sources based on processingStartedAt (not immutable capturedAt)
+    const timeoutThreshold = new Date(Date.now() - AI_PROCESSING_TIMEOUT_MS).toISOString();
     try {
       this.sql.exec(`
-        UPDATE sources 
-        SET processingStatus = 'failed' 
-        WHERE processingStatus = 'processing' AND capturedAt < ?
-      `, threeMinAgo);
+        UPDATE sources
+        SET processingStatus = 'failed', processingError = 'AI_MODEL_ERROR: Processing timed out after 5 minutes.'
+        WHERE processingStatus = 'processing'
+          AND (
+            (processingStartedAt IS NOT NULL AND processingStartedAt < ?)
+            OR (processingStartedAt IS NULL AND capturedAt < ?)
+          )
+      `, timeoutThreshold, timeoutThreshold);
     } catch {}
 
     const sources = this.sql.exec(`SELECT * FROM sources WHERE workspaceId = ? ORDER BY capturedAt DESC`, workspaceId).toArray();
@@ -998,7 +1052,15 @@ export class DetectiveMapWorkspace {
   }
 
   // --- Cloudflare Workers AI with Active Models, Structured JSON & Error Broadcast ---
-  async processSourceWithAI(workspaceId, source) {
+  async processSourceWithAI(workspaceId, source, attemptId = source?.processingAttemptId) {
+    // Guard against stale async attempts overwriting newer attempts or writing after timeout
+    const isAttemptWritable = () => {
+      if (!attemptId) return true;
+      const currentRows = this.sql.exec(`SELECT processingAttemptId, processingStatus FROM sources WHERE id = ?`, source.id).toArray();
+      if (currentRows.length === 0) return false;
+      return currentRows[0].processingAttemptId === attemptId && currentRows[0].processingStatus === 'processing';
+    };
+
     try {
       const state = this.getFullWorkspaceState(workspaceId);
       const currentConcepts = state.concepts;
@@ -1006,15 +1068,18 @@ export class DetectiveMapWorkspace {
       const baseRevision = state.workspace.revision || 1;
 
       if (!this.env.AI) {
-        this.sql.exec(`UPDATE sources SET processingStatus = 'failed' WHERE id = ?`, source.id);
-        this.broadcast({ type: 'SOURCE_FAILED', sourceId: source.id, workspaceId, error: 'Workers AI binding not configured.' });
+        if (!isAttemptWritable()) return;
+        const diagErr = 'AI_MODEL_ERROR: Workers AI service binding unavailable.';
+        this.sql.exec(`UPDATE sources SET processingStatus = 'failed', processingError = ? WHERE id = ?`, diagErr, source.id);
+        this.broadcast({ type: 'SOURCE_FAILED', sourceId: source.id, workspaceId, error: diagErr });
         return;
       }
 
       // Check if a pending proposal already exists for this source
       const existingProps = this.sql.exec(`SELECT id FROM proposals WHERE sourceId = ? AND status = 'pending'`, source.id).toArray();
       if (existingProps.length > 0) {
-        this.sql.exec(`UPDATE sources SET processingStatus = 'completed' WHERE id = ?`, source.id);
+        if (!isAttemptWritable()) return;
+        this.sql.exec(`UPDATE sources SET processingStatus = 'completed_with_changes', processingError = NULL WHERE id = ?`, source.id);
         return;
       }
 
@@ -1035,6 +1100,23 @@ export class DetectiveMapWorkspace {
 
         const systemPrompt = `You are the core knowledge graph extraction engine of Detective Map (Living Map).
 Your goal: Analyze new learning material against an existing map of concepts and output an INCREMENTAL JSON PATCH.
+
+--------------------------------------------------
+HARD RULE: LANGUAGE INVARIANT (SOURCE -> ENGLISH MAP)
+--------------------------------------------------
+Target Map Output Language: ${MAP_OUTPUT_LANGUAGE === 'en' ? 'English' : MAP_OUTPUT_LANGUAGE}
+1. MULTILINGUAL INPUT:
+   The source text may be provided in ANY language (e.g., Chinese, Japanese, Spanish, German, French).
+   The original stored source text MUST remain byte-for-byte unchanged in its native language for provenance and evidence tracking.
+2. COGNITIVE MAP OUTPUT IN ENGLISH:
+   Regardless of the source language, you MUST write all generated Concept labels, Concept descriptions, proposal summaries, relationship labels, and conflict notes in clear natural English. Preserve technical meaning; do not merely transliterate. Never modify or translate the stored original source text.
+   - All concept labels ("add_concept.label") MUST be in clear, natural English.
+   - All concept descriptions ("add_concept.description", "enrich_concept.addition") MUST be in clear, natural English.
+   - All relationship labels and relations ("add_edge.label", "add_edge.relation") MUST be in clear, natural English.
+   - The proposal "summary" MUST be in clear, natural English.
+   - Any conflict notes ("flag_conflict.note") MUST be in clear, natural English.
+3. TECHNICAL CONCEPTUALIZATION OVER TRANSLITERATION:
+   Translate the technical concept into standard English domain terminology. Do NOT use phonetic transliteration (e.g. pinyin) unless the term is a proper name.
 
 --------------------------------------------------
 PRECONDITION 1: EXPLICIT SOURCE SUBJECT PRESERVATION
@@ -1263,16 +1345,56 @@ ${chunk}
               // Valid schema, empty operations
               chunkSuccess = true;
               break;
+            } else {
+              hadParseError = true;
             }
           } catch (modelErr) {
             lastError = modelErr;
-            console.warn(`[AI Model ${model} Failed for chunk ${i + 1}]`, modelErr.message);
+            hadModelRunError = true;
+            console.warn(`[AI Model ${model} Exception for chunk ${i + 1}]`, modelErr.message);
           }
         }
 
-        if (!chunkSuccess && lastError) {
-          console.error(`[AI Chunk ${i + 1} Error]`, lastError.message);
+        if (!chunkSuccess) {
+          if (!isAttemptWritable()) {
+            console.warn(`[AI Attempt Stale Discarded] Attempt ${attemptId} for source ${source.id} is no longer writable. Aborting chunk failure write.`);
+            return;
+          }
+          const chunkNum = `${i + 1}/${textChunks.length}`;
+          let diagCode = '';
+          if (hadParseError && !hadModelRunError) {
+            diagCode = `AI_INVALID_RESPONSE: Chunk ${chunkNum} did not return a valid structured response.`;
+          } else {
+            diagCode = `AI_MODEL_ERROR: Analysis failed for chunk ${chunkNum} after all fallback models.`;
+          }
+          if (lastError) {
+            console.error(`[AI Chunk Failure Details] Chunk ${chunkNum}:`, lastError.message);
+          }
+          this.sql.exec(`UPDATE sources SET processingStatus = 'failed', processingError = ? WHERE id = ?`, diagCode, source.id);
+          this.broadcast({
+            type: 'SOURCE_FAILED',
+            sourceId: source.id,
+            workspaceId,
+            error: diagCode
+          });
+          return;
         }
+      }
+
+      // Case A: AI explicitly produced no operations across all chunks (true no-change)
+      if (rawExtractedOperations.length === 0) {
+        if (!isAttemptWritable()) {
+          console.warn(`[AI Attempt Stale Discarded] Attempt ${attemptId} for source ${source.id} is no longer writable. Aborting no-change write.`);
+          return;
+        }
+        this.sql.exec(`UPDATE sources SET processingStatus = 'completed_no_change', processingError = NULL WHERE id = ?`, source.id);
+        const updatedSource = { ...source, processingStatus: 'completed_no_change', processingError: null };
+        this.broadcast({
+          type: 'SOURCE_UPDATED',
+          source: updatedSource,
+          workspaceId
+        });
+        return;
       }
 
       // Strict Schema Validation via shared engine core
@@ -1283,18 +1405,29 @@ ${chunk}
         source.id
       );
 
+      // Case B: AI proposed operations, but validation rejected ALL of them
       if (validatedOperations.length === 0) {
-        this.sql.exec(`UPDATE sources SET processingStatus = 'failed' WHERE id = ?`, source.id);
+        if (!isAttemptWritable()) {
+          console.warn(`[AI Attempt Stale Discarded] Attempt ${attemptId} for source ${source.id} is no longer writable. Aborting validation-empty write.`);
+          return;
+        }
+        const diagErr = 'AI_VALIDATION_EMPTY: Proposed map changes did not pass grounding/schema validation.';
+        this.sql.exec(`UPDATE sources SET processingStatus = 'failed', processingError = ? WHERE id = ?`, diagErr, source.id);
         this.broadcast({
           type: 'SOURCE_FAILED',
           sourceId: source.id,
           workspaceId,
-          error: 'AI could not extract structured insights from this text. Click Retry to try again.'
+          error: diagErr
         });
         return;
       }
 
-      // Save valid ChangeProposal in SQLite
+      // Case C: Valid operations exist -> completed_with_changes
+      if (!isAttemptWritable()) {
+        console.warn(`[AI Attempt Stale Discarded] Attempt ${attemptId} for source ${source.id} is no longer writable. Aborting proposal creation.`);
+        return;
+      }
+
       const proposalId = 'prop_' + crypto.randomUUID().replace(/-/g, '').slice(0, 10);
       const now = new Date().toISOString();
 
@@ -1303,7 +1436,7 @@ ${chunk}
         VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
       `, proposalId, workspaceId, baseRevision, source.id, finalSummary, JSON.stringify(validatedOperations), now);
 
-      this.sql.exec(`UPDATE sources SET processingStatus = 'completed' WHERE id = ?`, source.id);
+      this.sql.exec(`UPDATE sources SET processingStatus = 'completed_with_changes', processingError = NULL WHERE id = ?`, source.id);
 
       const proposal = {
         id: proposalId,
@@ -1317,15 +1450,20 @@ ${chunk}
       };
 
       this.broadcast({ type: 'PROPOSAL_CREATED', proposal, sourceId: source.id, workspaceId });
-      this.broadcast({ type: 'SOURCE_UPDATED', source: { ...source, processingStatus: 'completed' }, workspaceId });
+      this.broadcast({ type: 'SOURCE_UPDATED', source: { ...source, processingStatus: 'completed_with_changes', processingError: null }, workspaceId });
     } catch (err) {
-      console.error('[AI Processing Fatal Error]', err);
-      this.sql.exec(`UPDATE sources SET processingStatus = 'failed' WHERE id = ?`, source.id);
+      if (!isAttemptWritable()) {
+        console.warn(`[AI Attempt Stale Discarded] Attempt ${attemptId} for source ${source.id} is no longer writable during catch. Aborting error write.`);
+        return;
+      }
+      console.error('[AI Processing Fatal Error Details]', err);
+      const diagErr = 'AI_MODEL_ERROR: Analysis failed due to an unexpected system error.';
+      this.sql.exec(`UPDATE sources SET processingStatus = 'failed', processingError = ? WHERE id = ?`, diagErr, source.id);
       this.broadcast({
         type: 'SOURCE_FAILED',
         sourceId: source.id,
         workspaceId,
-        error: err.message || 'AI service error during processing.'
+        error: diagErr
       });
     }
   }

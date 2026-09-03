@@ -54,6 +54,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   let staleProposalId = null;
   let dismissedFailedSourceIds = new Set();
 
+  // Source No Change Toast (Informational)
+  const sourceNoChangeToast = document.getElementById('source-no-change-toast');
+  const sourceNoChangeTitle = document.getElementById('source-no-change-title');
+  const sourceNoChangeDesc = document.getElementById('source-no-change-desc');
+  const btnDismissNoChangeX = document.getElementById('btn-dismiss-no-change-x');
+  const knownProcessingSourceIds = new Set();
+
   const staleProposalToast = document.getElementById('stale-proposal-toast');
   const staleProposalTitle = document.getElementById('stale-proposal-title');
   const staleProposalDesc = document.getElementById('stale-proposal-desc');
@@ -170,6 +177,66 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupStorageSync();
 
     setActiveTool('select');
+
+    await initConceptTypographyDiagnostics();
+  }
+
+  async function initConceptTypographyDiagnostics() {
+    console.group('🔍 Detective Map Typography Diagnostics');
+
+    // Diagnostic 1: Check the 3 requested query names
+    const checkTargets = [
+      '16px "AoZZXMCCSN (Non-Commercial Use)"',
+      '16px "AoZZXMCCSN"',
+      '16px "AoZZXMCCSN-Regular"'
+    ];
+    checkTargets.forEach(q => {
+      const isAvailable = (typeof document !== 'undefined' && document.fonts) ? document.fonts.check(q) : false;
+      console.log(`[Diagnostic 1] document.fonts.check('${q}') => ${isAvailable}`);
+    });
+
+    // Diagnostic 3: Register explicit local-font alias via FontFace
+    const candidateLocalNames = [
+      'AaZZXMCCSN (Non-Commercial Use)',
+      'Aa灼灼星目处处是你 (非商业使用)',
+      'AaZZXMCCSN',
+      'AoZZXMCCSN (Non-Commercial Use)',
+      'AoZZXMCCSN'
+    ];
+
+    let activeLoadedName = null;
+    if (typeof FontFace !== 'undefined' && document.fonts) {
+      for (const name of candidateLocalNames) {
+        try {
+          const face = new FontFace('DetectiveMapConceptLocal', `local("${name}")`);
+          const loaded = await face.load();
+          document.fonts.add(loaded);
+          activeLoadedName = name;
+          console.log(`[Diagnostic 3] ✅ Registered FontFace alias "DetectiveMapConceptLocal" for local("${name}")`);
+          break;
+        } catch (e) {
+          // try next candidate
+        }
+      }
+    }
+
+    if (!activeLoadedName) {
+      console.warn('[Diagnostic 4] ⚠️ Could not resolve local font face. Silent fallback to standard UI font.');
+    }
+
+    // Diagnostic 2: Inspect computed font-family on .concept-title
+    if (typeof document !== 'undefined') {
+      setTimeout(() => {
+        const titleEl = document.querySelector('.concept-title');
+        if (titleEl) {
+          const computed = window.getComputedStyle(titleEl);
+          console.log(`[Diagnostic 2] .concept-title computed font-family: "${computed.fontFamily}"`);
+        }
+        renderEdges();
+      }, 60);
+    }
+
+    console.groupEnd();
   }
 
   function setupCanvasResolution() {
@@ -205,6 +272,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       Storage.getStaleProposals(),
       Storage.getDismissedFailedSourceIds()
     ]);
+
+    // Track in-flight processing sources on startup/switch so transitions can be detected
+    knownProcessingSourceIds.clear();
+    sources.forEach(s => {
+      if (s.processingStatus === 'processing') {
+        knownProcessingSourceIds.add(s.id);
+      }
+    });
 
     updateViewportTransforms();
     renderConcepts();
@@ -818,6 +893,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       proposalToast.style.display = 'block';
       if (staleProposalToast) staleProposalToast.style.display = 'none';
       if (sourceFailedToast) sourceFailedToast.style.display = 'none';
+      if (sourceNoChangeToast) sourceNoChangeToast.style.display = 'none';
       return;
     }
     proposalToast.style.display = 'none';
@@ -829,6 +905,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       staleProposalId = sp.id;
       if (staleProposalToast) staleProposalToast.style.display = 'block';
       if (sourceFailedToast) sourceFailedToast.style.display = 'none';
+      if (sourceNoChangeToast) sourceNoChangeToast.style.display = 'none';
       return;
     }
     if (staleProposalToast) staleProposalToast.style.display = 'none';
@@ -844,12 +921,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       const failedSource = activeFailed[activeFailed.length - 1];
       currentFailedSourceId = failedSource.id;
       sourceFailedTitle.textContent = `AI analysis failed for "${failedSource.title || 'Source'}".`;
-      sourceFailedDesc.textContent = failedSource.processingError || 'Your source text is safely saved. Click below to retry AI analysis.';
+      sourceFailedDesc.textContent = failedSource.processingError || 'AI service error during processing. Click below to retry.';
       sourceFailedToast.style.display = 'block';
+      if (sourceNoChangeToast) sourceNoChangeToast.style.display = 'none';
     } else {
       sourceFailedToast.style.display = 'none';
     }
   }
+
+  btnDismissNoChangeX?.addEventListener('click', () => {
+    if (sourceNoChangeToast) sourceNoChangeToast.style.display = 'none';
+  });
 
   btnReanalyzeStale?.addEventListener('click', async () => {
     if (!staleRecoverySourceId && staleProposals.length > 0) {
@@ -1382,6 +1464,26 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       if (changes[STORAGE_KEYS.SOURCES]) {
         sources = await Storage.getSources();
+
+        // Transition-based No-Change notification: only show if the source was actively tracked as processing
+        sources.forEach(s => {
+          if (s.processingStatus === 'completed_no_change' && knownProcessingSourceIds.has(s.id)) {
+            knownProcessingSourceIds.delete(s.id);
+            if (sourceNoChangeToast) {
+              sourceNoChangeTitle.textContent = 'Source analyzed — no new map changes found.';
+              sourceNoChangeDesc.textContent = `"${s.title || 'Source'}" was analyzed against existing concepts. No incremental changes were required.`;
+              sourceNoChangeToast.style.display = 'block';
+              setTimeout(() => {
+                if (sourceNoChangeToast) sourceNoChangeToast.style.display = 'none';
+              }, 6000);
+            }
+          } else if (s.processingStatus === 'processing') {
+            knownProcessingSourceIds.add(s.id);
+          } else {
+            knownProcessingSourceIds.delete(s.id);
+          }
+        });
+
         checkPendingProposals();
       }
       if (changes[STORAGE_KEYS.INK_STROKES]) {

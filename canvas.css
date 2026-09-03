@@ -1,4 +1,12 @@
-/* canvas.css - Detective Map V2.0 Living Learning Map Stylesheet */
+@font-face {
+  font-family: "DetectiveMapConceptLocal";
+  src: local("AaZZXMCCSN (Non-Commercial Use)"),
+       local("Aa灼灼星目处处是你 (非商业使用)"),
+       local("AaZZXMCCSN"),
+       local("AoZZXMCCSN (Non-Commercial Use)"),
+       local("AoZZXMCCSN");
+  font-display: swap;
+}
 
 :root {
   --bg-app: #090d16;
@@ -23,6 +31,7 @@
   --radius-md: 10px;
   --radius-lg: 14px;
   --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-concept: "DetectiveMapConceptLocal", var(--font-family);
 }
 
 * {
@@ -204,6 +213,7 @@ html, body {
 
 .edge-label-text {
   fill: #bfdbfe;
+  font-family: var(--font-concept);
   font-size: 11.5px;
   font-weight: 650;
   text-anchor: middle;
@@ -341,6 +351,7 @@ html, body {
 }
 
 .concept-title {
+  font-family: var(--font-concept);
   font-size: 13px;
   font-weight: 650;
   color: #f8fafc;
@@ -591,6 +602,16 @@ html, body {
 
 .banner-stale .proposal-header {
   color: #f59e0b;
+}
+
+.banner-info {
+  border-color: rgba(56, 189, 248, 0.5);
+  background: #0f172a;
+  box-shadow: 0 10px 30px rgba(56, 189, 248, 0.12);
+}
+
+.banner-info .proposal-header {
+  color: var(--accent-blue);
 }
 
 .btn-primary {

@@ -41,6 +41,7 @@ jobs:
           if [ -f tests/verify-transparent-marker-v1.js ]; then node tests/verify-transparent-marker-v1.js; fi
           if [ -f tests/verify-ink-colors.js ]; then node tests/verify-ink-colors.js; fi
           if [ -f tests/verify-concept-nodes-v2.js ]; then node tests/verify-concept-nodes-v2.js; fi
+          if [ -f tests/verify-ai-outcomes-and-language.js ]; then node tests/verify-ai-outcomes-and-language.js; fi
 
       - name: Commit generated artifacts if needed
         shell: bash

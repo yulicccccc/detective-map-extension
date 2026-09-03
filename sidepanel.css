@@ -1,4 +1,12 @@
-/* sidepanel.css - Detective Map V2.0 Adaptive Side Panel Styling */
+@font-face {
+  font-family: "DetectiveMapConceptLocal";
+  src: local("AaZZXMCCSN (Non-Commercial Use)"),
+       local("Aa灼灼星目处处是你 (非商业使用)"),
+       local("AaZZXMCCSN"),
+       local("AoZZXMCCSN (Non-Commercial Use)"),
+       local("AoZZXMCCSN");
+  font-display: swap;
+}
 
 :root {
   --bg-main: #0b0f19;
@@ -20,6 +28,7 @@
   --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
   --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-concept: "DetectiveMapConceptLocal", var(--font-family);
 }
 
 * {
@@ -255,6 +264,7 @@ body {
 
 .sp-edge-label {
   fill: #93c5fd;
+  font-family: var(--font-concept);
   font-size: 10px;
   font-weight: 600;
   text-anchor: middle;
@@ -340,6 +350,7 @@ body {
 }
 
 .sp-card-title {
+  font-family: var(--font-concept);
   font-size: 11px;
   font-weight: 700;
   color: #fff;
@@ -596,6 +607,11 @@ body {
 .sp-status-completed {
   background: rgba(16, 185, 129, 0.15);
   color: var(--accent-emerald);
+}
+
+.sp-status-no-change {
+  background: rgba(56, 189, 248, 0.15);
+  color: var(--accent-blue);
 }
 
 .sp-status-processing {

@@ -652,7 +652,11 @@ const Storage = {
     const existing = await this.getAllSourcesLocal();
     const idx = existing.findIndex(s => s.id === sourceId);
     if (idx !== -1) {
-      existing[idx] = { ...existing[idx], processingStatus: 'processing' };
+      existing[idx] = {
+        ...existing[idx],
+        processingStatus: 'processing',
+        processingStartedAt: new Date().toISOString()
+      };
       delete existing[idx].processingError;
       await this.saveSourcesLocal(existing);
       triggerChange({

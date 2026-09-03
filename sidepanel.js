@@ -115,8 +115,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupModals();
     setupStorageListener();
 
+    await initLocalConceptFont();
     await loadData();
     fitToContent();
+  }
+
+  async function initLocalConceptFont() {
+    const candidateLocalNames = [
+      'AaZZXMCCSN (Non-Commercial Use)',
+      'Aa灼灼星目处处是你 (非商业使用)',
+      'AaZZXMCCSN',
+      'AoZZXMCCSN (Non-Commercial Use)',
+      'AoZZXMCCSN'
+    ];
+    if (typeof FontFace !== 'undefined' && document.fonts) {
+      for (const name of candidateLocalNames) {
+        try {
+          const face = new FontFace('DetectiveMapConceptLocal', `local("${name}")`);
+          const loaded = await face.load();
+          document.fonts.add(loaded);
+          break;
+        } catch (e) {}
+      }
+    }
   }
 
   // --- Data Loading ---
@@ -541,8 +562,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       const card = document.createElement('div');
       card.className = 'sp-source-card';
 
-      const statusClass = s.processingStatus === 'completed' ? 'sp-status-completed' : (s.processingStatus === 'failed' ? 'sp-status-failed' : 'sp-status-processing');
-      const statusLabel = s.processingStatus === 'completed' ? '✓ Processed' : (s.processingStatus === 'failed' ? '⚠️ Failed (Retry)' : '● Analyzing...');
+      let statusClass = 'sp-status-processing';
+      let statusLabel = '● Analyzing...';
+      if (s.processingStatus === 'completed' || s.processingStatus === 'completed_with_changes') {
+        statusClass = 'sp-status-completed';
+        statusLabel = '✓ Processed';
+      } else if (s.processingStatus === 'completed_no_change') {
+        statusClass = 'sp-status-no-change';
+        statusLabel = '✓ No Change';
+      } else if (s.processingStatus === 'failed') {
+        statusClass = 'sp-status-failed';
+        statusLabel = '⚠️ Failed (Retry)';
+      }
 
       card.innerHTML = `
         <div class="sp-src-head">
